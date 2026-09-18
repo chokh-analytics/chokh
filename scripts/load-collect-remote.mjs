@@ -36,6 +36,7 @@
 //   -e COLLECT_RATE_LIMIT_IP=10000000 -e COLLECT_RATE_LIMIT_SITE=10000000
 
 import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { createRequire } from 'node:module';
@@ -240,27 +241,58 @@ async function run({ seconds, rate, connections }) {
   return { latencies, statuses, errors, elapsed };
 }
 
-// The database this run wrote to, emptied afterwards. The driver comes from the
-// adapter package rather than from here, the way the in-process script resolves
-// it, because a pnpm workspace does not hoist and the image installs nothing at
-// its root.
+// The driver comes from the adapter package rather than from here, the way the
+// in-process script resolves it, because a pnpm workspace does not hoist and the
+// image installs nothing at its root. Which adapter package, though, depends on
+// where this file was copied to: beside the repository in a checkout, and
+// wherever `docker cp` put it in a container. Both are tried rather than assumed,
+// because the first version assumed the checkout and died at the last line of an
+// otherwise finished run, leaving the database it was about to drop.
+function storeMongoPackage() {
+  const candidates = [
+    new URL('../packages/store-mongo/package.json', import.meta.url),
+    // The image's WORKDIR. `docker cp` anywhere plus `docker exec node` lands here.
+    pathToFileURL('/app/packages/store-mongo/package.json'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  throw new Error(
+    'Could not find packages/store-mongo beside this script or at /app, so the mongodb driver cannot be resolved',
+  );
+}
+
+// The database this run wrote to, emptied afterwards.
 async function dropDatabase() {
   const uri = process.env.MONGODB_URI;
   if (uri === undefined || uri === '') {
     throw new Error('--drop-database needs MONGODB_URI, which is the database it drops');
   }
-  const fromStoreMongo = createRequire(
-    new URL('../packages/store-mongo/package.json', import.meta.url),
-  );
+  const fromStoreMongo = createRequire(storeMongoPackage());
   const { MongoClient } = await import(
     pathToFileURL(fromStoreMongo.resolve('mongodb')).href
   );
   const client = new MongoClient(uri);
   await client.connect();
-  const name = client.db().databaseName;
-  await client.db().dropDatabase();
+  const db = client.db();
+  const collections = await db.listCollections().toArray();
+  for (const collection of collections) {
+    await db.collection(collection.name).drop();
+  }
+  // And the database itself, when the user is allowed to. Often it is not: on a
+  // managed cluster the application user holds readWriteAnyDatabase, and
+  // dropDatabase belongs to dbAdmin. Dropping the collections is what actually
+  // empties it, and a database with none left is gone from every listing, so a
+  // refusal here is not a failure.
+  try {
+    await db.dropDatabase();
+  } catch {
+    // Not permitted, and not needed.
+  }
   await client.close();
-  return name;
+  return `${db.databaseName}, ${collections.length} collections`;
 }
 
 async function main() {
@@ -306,8 +338,16 @@ async function main() {
   agent.destroy();
 
   if (flag('drop-database')) {
-    const name = await dropDatabase();
-    console.warn(`  dropped    ${name}`);
+    try {
+      const name = await dropDatabase();
+      console.warn(`  dropped    ${name}`);
+    } catch (error) {
+      // Loudly, and as a failure: a throwaway database nobody knows is there is
+      // how a cluster fills up with the leavings of tests that said they passed.
+      console.error(`  NOT DROPPED: ${error instanceof Error ? error.message : String(error)}`);
+      console.error('  The database this run wrote to is still there. Drop it by hand.');
+      process.exitCode = 1;
+    }
   }
 
   const failures = [];
