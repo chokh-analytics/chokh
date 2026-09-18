@@ -24,9 +24,21 @@ const gzipped = gzipSync(raw, { level: 9 }).byteLength;
 const percent = ((gzipped / BUDGET_BYTES) * 100).toFixed(1);
 const summary = `tracker a.js: ${raw.byteLength} B raw, ${gzipped} B gzipped, budget ${BUDGET_BYTES} B (${percent}%)`;
 
+// v.js is the optional vitals script. It has no budget of its own, because a
+// site only pays for it when it asks for it, but its size is worth reading.
+const vitalsPath = resolve(repoRoot, 'packages/tracker/dist/v.js');
+let vitals = '';
+try {
+  const vitalsRaw = readFileSync(vitalsPath);
+  vitals = `
+     vitals v.js (optional, no budget): ${vitalsRaw.byteLength} B raw, ${gzipSync(vitalsRaw, { level: 9 }).byteLength} B gzipped`;
+} catch {
+  vitals = '';
+}
+
 if (gzipped > BUDGET_BYTES) {
-  console.error(`FAIL ${summary}`);
+  console.error(`FAIL ${summary}${vitals}`);
   process.exit(1);
 }
 
-console.warn(`OK   ${summary}`);
+console.warn(`OK   ${summary}${vitals}`);

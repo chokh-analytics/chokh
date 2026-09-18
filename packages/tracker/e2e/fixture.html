@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chokh tracker fixture</title>
+  </head>
+  <body>
+    <h1>Chokh tracker fixture</h1>
+
+    <button id="marked" data-pa-event="cta_click" data-pa-prop-plan="pro">
+      <span>Buy</span>
+    </button>
+    <a id="outbound" href="https://elsewhere.test/pricing">Elsewhere</a>
+    <a id="download" href="/files/report.pdf">Report</a>
+    <button id="custom">Custom event</button>
+    <button id="identify">Identify</button>
+    <button id="navigate">Navigate</button>
+
+    <script>
+      // The tracker reads clicks in the capture phase, so cancelling the default
+      // here keeps the fixture on one page without hiding anything from it.
+      document.addEventListener('click', function (event) {
+        event.preventDefault();
+      });
+      document.getElementById('custom').addEventListener('click', function () {
+        window.pa('event', 'quiz_start', { quizId: 'q1' });
+      });
+      document.getElementById('identify').addEventListener('click', function () {
+        window.pa('identify', 'user_42', { plan: 'pro' });
+      });
+      document.getElementById('navigate').addEventListener('click', function () {
+        history.pushState({}, '', '/courses/cp-beginners');
+      });
+    </script>
+
+    <script
+      defer
+      data-site="fixture_site"
+      data-visitor-id="persistent"
+      src="/a.js"
+    ></script>
+  </body>
+</html>

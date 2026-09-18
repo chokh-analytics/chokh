@@ -1,14 +1,16 @@
-// Builds the tracker into one dependency-free IIFE. The size of the output is
-// asserted by scripts/tracker-size.mjs in CI.
+// Builds the tracker into one dependency-free IIFE, and the optional vitals
+// script beside it. The size of a.js is asserted by scripts/tracker-size.mjs
+// in CI.
 import { build } from 'esbuild';
 
-await build({
-  entryPoints: ['src/index.ts'],
-  outfile: 'dist/a.js',
+const shared = {
   bundle: true,
   minify: true,
   format: 'iife',
   target: ['es2018'],
   legalComments: 'none',
   logLevel: 'info',
-});
+};
+
+await build({ ...shared, entryPoints: ['src/index.ts'], outfile: 'dist/a.js' });
+await build({ ...shared, entryPoints: ['src/vitals.ts'], outfile: 'dist/v.js' });

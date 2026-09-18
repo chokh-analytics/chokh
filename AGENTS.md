@@ -136,9 +136,11 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `pnpm lint` | ESLint across the repository |
 | `pnpm test` | Vitest in every package that has tests |
 | `pnpm size:tracker` | Assert the built tracker is at most 3 KB gzipped |
+| `pnpm --filter @chokh/tracker test:e2e` | The Playwright smoke against a fixture page |
 | `docker compose up` | Server, MongoDB and Redis for local development |
 
-CI runs two jobs on every push: build, typecheck, lint, test and the tracker
-size gate; and a second job that brings the stack up with
+CI runs three jobs on every push: build, typecheck, lint, test and the tracker
+size gate; a browser job that loads the fixture page in Chromium and asserts the
+collect payloads; and a job that brings the stack up with
 `docker compose up --build -d` and asserts `GET /health` answers with
 `"success":true`, so the image and the compose file are never unproven.
