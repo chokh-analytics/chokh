@@ -549,11 +549,67 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(result.metrics.visits - result.metrics.bounces).toBe(1);
       });
 
+      it('keeps a leave beacon, because time on page is read from it', async () => {
+        const profile = await store.visitor(F.SITE_ID, 'v3');
+        expect(profile?.timeline.map((entry) => entry.type)).toContain('leave');
+      });
+
       it('measures a stay from its first event to its last', async () => {
         const result = await store.aggregate(today);
         expect(result.metrics.avgDurationMs).toBeCloseTo(
           F.EXPECTED.today.durationMs / F.EXPECTED.today.visits,
           10,
+        );
+      });
+    });
+
+    describe('heartbeats', () => {
+      // A tab beats three times a minute. The beat moves the stay and the
+      // presence entry and is then thrown away: no report reads one, and
+      // storing them would make heartbeats most of the events collection.
+      // These cases write, so they come after everything that reads today.
+      it('adds no event row', async () => {
+        const before = await store.visitor(F.SITE_ID, 'v2');
+        await store.ingest([
+          F.heartbeatOf('v2', F.NOW - 20_000, '/checkout'),
+          F.heartbeatOf('v2', F.NOW - 10_000, '/checkout'),
+        ]);
+
+        const after = await store.visitor(F.SITE_ID, 'v2');
+        expect(after?.timeline).toHaveLength(before?.timeline.length ?? -1);
+        expect(after?.timeline.map((entry) => entry.type)).not.toContain('heartbeat');
+        expect(after?.pageviews).toBe(before?.pageviews);
+        expect(after?.sessions).toBe(before?.sessions);
+
+        const totals = await store.aggregate(today);
+        expect(totals.metrics.pageviews).toBe(F.EXPECTED.today.pageviews);
+        expect(totals.metrics.visits).toBe(F.EXPECTED.today.visits);
+      });
+
+      it('extends the stay it belongs to and the presence entry with it', async () => {
+        const snapshot = await store.realtime(F.SITE_ID);
+        const visitor = snapshot.visitors[0];
+        expect(visitor?.visitorId).toBe('v2');
+        // The same stay: it began where it began.
+        expect(visitor?.since).toBe(F.NOW - 600_000);
+        // And it reaches to the last beat, on the page that beat named.
+        expect(visitor?.lastSeenAt).toBe(F.NOW - 10_000);
+        expect(visitor?.path).toBe('/checkout');
+      });
+
+      it('brings a visitor back online without a pageview', async () => {
+        // v3 stopped ninety seconds ago, so they are not online. One beat is
+        // all it takes, and it is still not a pageview and still not a row.
+        expect((await store.realtime(F.SITE_ID)).online).toBe(1);
+        await store.ingest([F.heartbeatOf('v3', F.NOW - 5_000, '/pricing')]);
+
+        const snapshot = await store.realtime(F.SITE_ID);
+        expect(snapshot.online).toBe(2);
+        expect(snapshot.visitors[0]?.visitorId).toBe('v3');
+        const profile = await store.visitor(F.SITE_ID, 'v3');
+        expect(profile?.timeline.map((entry) => entry.type)).not.toContain('heartbeat');
+        expect((await store.aggregate(today)).metrics.pageviews).toBe(
+          F.EXPECTED.today.pageviews,
         );
       });
     });

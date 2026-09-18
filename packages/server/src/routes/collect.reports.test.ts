@@ -164,4 +164,36 @@ describe('a collected batch reaches a report', () => {
     expect(profile?.sessions).toBe(1);
     expect(profile?.firstTouch?.channel).toBe('organic');
   });
+
+  it('leaves no heartbeat behind, in the rows or in the timeline', async () => {
+    // A visible tab beats three times a minute for as long as it is open. The
+    // beat moves the stay and the presence entry, and that is all it is for:
+    // a person reading the visitor's history should see the pages they read,
+    // not a metronome.
+    const at = Date.now() - 120_000;
+    expect(
+      await post({
+        ...(readmeBatch() as object),
+        events: [
+          { type: 'pageview', ts: at, path: '/courses/cp-beginners' },
+          { type: 'heartbeat', ts: at + 20_000, path: '/courses/cp-beginners' },
+          { type: 'heartbeat', ts: at + 40_000, path: '/courses/cp-beginners' },
+          { type: 'heartbeat', ts: at + 60_000, path: '/courses/cp-beginners' },
+          { type: 'leave', ts: at + 61_000, path: '/courses/cp-beginners', duration: 61_000 },
+        ],
+      }),
+    ).toBe(202);
+
+    // One pageview and one leave, and nothing in between.
+    expect(store.stored().map((event) => event.type)).toEqual(['pageview', 'leave']);
+
+    const profile = await store.visitor(site.id, 'kq2b7w3m9pa');
+    expect(profile?.timeline.map((entry) => entry.type)).toEqual(['leave', 'pageview']);
+
+    // The beats still did their work: the stay reaches through them.
+    const sessions = store.sessionsOf(site.id, 'kq2b7w3m9pa');
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.lastSeenAt).toBe(at + 61_000);
+    expect(sessions[0]?.duration).toBe(61_000);
+  });
 });

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { SESSION_GAP_MS, foldVisitor, groupForFold, isBounce, sessionIdFor } from './session.js';
+import {
+  SESSION_GAP_MS,
+  foldVisitor,
+  groupForFold,
+  isBounce,
+  isEphemeral,
+  sessionIdFor,
+} from './session.js';
 import type { StoredEvent, StoredSession, StoredVisitor } from './types.js';
 
 const SITE = 'site_1';
@@ -150,6 +157,71 @@ describe('what a stay records', () => {
   it('is a crawler stay when the event that opened it was tagged one', () => {
     const result = fold([event(0, { path: '/a', bot: true })]);
     expect(result.sessions[0]?.bot).toBe(true);
+  });
+});
+
+describe('a heartbeat', () => {
+  it('is the only ephemeral event', () => {
+    expect(isEphemeral(event(0, { type: 'heartbeat' }))).toBe(true);
+    for (const type of ['pageview', 'event', 'leave', 'identify', 'vital'] as const) {
+      expect(isEphemeral(event(0, { type }))).toBe(false);
+    }
+  });
+
+  it('moves the stay and is then thrown away', () => {
+    const result = fold([
+      event(0, { path: '/a' }),
+      event(20_000, { type: 'heartbeat', path: '/a' }),
+      event(40_000, { type: 'heartbeat', path: '/b' }),
+    ]);
+
+    // One row to store, and it is the pageview.
+    expect(result.events.map((one) => one.type)).toEqual(['pageview']);
+    // The stay heard all three.
+    const session = result.sessions[0];
+    expect(session?.lastSeenAt).toBe(START + 40_000);
+    expect(session?.duration).toBe(40_000);
+    expect(session?.exitPath).toBe('/b');
+    expect(session?.pageviews).toBe(1);
+  });
+
+  it('can be a whole batch and still leave nothing to store', () => {
+    const first = fold([event(0, { path: '/a' })]);
+    const second = fold(
+      [event(60_000, { type: 'heartbeat', path: '/a' })],
+      first.sessions[0] ?? null,
+      first.visitor,
+    );
+
+    expect(second.events).toEqual([]);
+    expect(second.sessions).toHaveLength(1);
+    expect(second.sessions[0]?.lastSeenAt).toBe(START + 60_000);
+    expect(second.visitor.lastSeenAt).toBe(START + 60_000);
+  });
+
+  it('still opens a stay of its own after a gap, so a returning tab is seen', () => {
+    const first = fold([event(0, { path: '/a' })]);
+    const second = fold(
+      [event(2 * SESSION_GAP_MS, { type: 'heartbeat', path: '/a' })],
+      first.sessions[0] ?? null,
+      first.visitor,
+    );
+
+    expect(second.events).toEqual([]);
+    expect(second.visitor.sessions).toBe(2);
+    expect(second.sessions[0]?.pageviews).toBe(0);
+  });
+
+  it('keeps a leave beacon, which carries the time on page', () => {
+    const result = fold([
+      event(0, { path: '/a' }),
+      event(20_000, { type: 'heartbeat', path: '/a' }),
+      event(30_000, { type: 'leave', path: '/a', duration: 30_000, scrollDepth: 75 }),
+    ]);
+
+    expect(result.events.map((one) => one.type)).toEqual(['pageview', 'leave']);
+    expect(result.events[1]?.duration).toBe(30_000);
+    expect(result.events[1]?.scrollDepth).toBe(75);
   });
 });
 

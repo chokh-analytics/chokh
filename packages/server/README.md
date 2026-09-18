@@ -259,6 +259,12 @@ survives the purge; only the per-visitor detail ages out.
   visitor, and its events add up against the 240-events-a-minute bot heuristic,
   which can tag the whole lab as a bot. Persistent mode has neither problem,
   because each browser keeps its own id.
+- **In cookieless mode `pa('reset')` cannot rotate the visitor id either**,
+  because nothing is stored to rotate. After a logout on a shared device, the
+  next person on that address and browser is attributed to the person who
+  logged out, until the daily salt turns. Persistent mode throws the stored id
+  away on `reset` and has no such window, so a site where people sign in on
+  shared machines should run `persistent`.
 
 ## Layering
 

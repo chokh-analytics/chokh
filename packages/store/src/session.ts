@@ -42,6 +42,23 @@ export function isBounce(session: StoredSession): boolean {
   return session.pageviews <= 1;
 }
 
+// An event that does its work in the fold and is then thrown away rather than
+// stored.
+//
+// A heartbeat says one thing, "still here a moment ago", and the fold has
+// already heard it: the stay's lastSeenAt moves and the presence entry moves
+// with it. Keeping the row as well would be the most expensive silence in the
+// database. A visible tab beats three times a minute, so a five minute visit
+// writes fifteen heartbeat documents beside its three pageviews, heartbeats
+// become about four fifths of the events collection, and every raw aggregation
+// scans them to find that no report reads one.
+//
+// A leave beacon is not ephemeral. It carries the time on page and the scroll
+// quartile of the page it closes, which is the only place either is recorded.
+export function isEphemeral(event: StoredEvent): boolean {
+  return event.type === 'heartbeat';
+}
+
 export interface VisitorFold {
   siteId: string;
   visitorId: string;
@@ -53,7 +70,9 @@ export interface VisitorFold {
 }
 
 export interface VisitorFoldResult {
-  // The same events, copied, with sessionId and the resolved identity stamped.
+  // The events to store: copied, with sessionId and the resolved identity
+  // stamped, and without the ephemeral ones, which have already done their work
+  // on the stay and the presence entry.
   events: StoredEvent[];
   // Sessions to upsert: the open one when it grew, plus any that began here.
   sessions: StoredSession[];
@@ -232,7 +251,7 @@ export function foldVisitor(input: VisitorFold): VisitorFoldResult {
   if (lastTouch !== undefined) visitor.lastTouch = lastTouch;
 
   const result: VisitorFoldResult = {
-    events: ordered,
+    events: ordered.filter((event) => !isEphemeral(event)),
     sessions: [...touched.values()],
     visitor,
   };

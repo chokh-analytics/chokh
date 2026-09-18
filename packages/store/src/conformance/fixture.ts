@@ -71,6 +71,8 @@ interface Draft {
   // Only from the identify onwards, because that is all the collector ever
   // sends: everything before it is anonymous until the merge names it.
   userId?: string;
+  duration?: number;
+  scrollDepth?: number;
 }
 
 const PROFILES = {
@@ -116,35 +118,56 @@ const DRAFTS: Draft[] = [
   { ts: Date.UTC(2026, 8, 18, 3, 50, 0), type: 'event', visitor: 'v1', name: 'signup', userId: USER_ID },
 
   // The last minute decides who is online: v2 is, v3 stopped 90 seconds ago.
+  // A heartbeat moves the stay and the presence entry and is never stored, so
+  // neither of these leaves a row behind; the leave beacon beside v3's does,
+  // because the time on page and the scroll quartile are only recorded there.
   { ts: NOW - 30_000, type: 'heartbeat', visitor: 'v2', path: '/pricing' },
   { ts: NOW - 90_000, type: 'heartbeat', visitor: 'v3', path: '/pricing' },
+  {
+    ts: NOW - 90_000,
+    type: 'leave',
+    visitor: 'v3',
+    path: '/pricing',
+    duration: 90_000,
+    scrollDepth: 75,
+  },
 ];
 
+function build(draft: Draft): StoredEvent {
+  const profile = PROFILES[draft.visitor];
+  const event: StoredEvent = {
+    siteId: SITE_ID,
+    ts: draft.ts,
+    receivedAt: draft.ts,
+    type: draft.type,
+    visitorId: draft.visitor,
+    bot: draft.visitor === 'bot',
+    hostname: 'fixture.test',
+    geo: { ...profile.geo },
+    ua: { ...profile.ua },
+    ip: profile.ip,
+    lang: profile.lang,
+    screen: profile.screen,
+  };
+  if (draft.userId !== undefined) event.userId = draft.userId;
+  if (draft.path !== undefined) event.path = draft.path;
+  if (draft.name !== undefined) event.name = draft.name;
+  if (draft.referrer !== undefined) event.referrer = draft.referrer;
+  if (draft.utm !== undefined) event.utm = { ...draft.utm };
+  if (draft.duration !== undefined) event.duration = draft.duration;
+  if (draft.scrollDepth !== undefined) event.scrollDepth = draft.scrollDepth;
+  if (draft.type === 'identify') event.traits = { plan: 'pro' };
+  return event;
+}
+
 export function fixtureEvents(): StoredEvent[] {
-  return DRAFTS.map((draft) => {
-    const profile = PROFILES[draft.visitor];
-    const event: StoredEvent = {
-      siteId: SITE_ID,
-      ts: draft.ts,
-      receivedAt: draft.ts,
-      type: draft.type,
-      visitorId: draft.visitor,
-      bot: draft.visitor === 'bot',
-      hostname: 'fixture.test',
-      geo: { ...profile.geo },
-      ua: { ...profile.ua },
-      ip: profile.ip,
-      lang: profile.lang,
-      screen: profile.screen,
-    };
-    if (draft.userId !== undefined) event.userId = draft.userId;
-    if (draft.path !== undefined) event.path = draft.path;
-    if (draft.name !== undefined) event.name = draft.name;
-    if (draft.referrer !== undefined) event.referrer = draft.referrer;
-    if (draft.utm !== undefined) event.utm = { ...draft.utm };
-    if (draft.type === 'identify') event.traits = { plan: 'pro' };
-    return event;
-  });
+  return DRAFTS.map(build);
+}
+
+// One more beat from a visitor the fixture already knows, for the cases that
+// prove a heartbeat moves the stay and leaves no row behind.
+export function heartbeatOf(visitor: 'v1' | 'v2' | 'v3', ts: number, path: string): StoredEvent {
+  return build({ ts, type: 'heartbeat', visitor, path });
 }
 
 // The counts the suite asserts against, stated rather than derived.

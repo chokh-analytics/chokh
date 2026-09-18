@@ -163,10 +163,12 @@ describe('POST /api/collect', () => {
   });
 
   it('keeps a repeat of a different path, and a repeat that is not a pageview', async () => {
+    // The dedupe window is a pageview rule. A vital repeated inside it is two
+    // vitals, because two measurements of one page are two measurements.
     await post(batch());
     await post(batch({ events: [{ type: 'pageview', ts: Date.now(), path: '/other' }] }));
-    await post(batch({ events: [{ type: 'heartbeat', ts: Date.now(), path: '/' }] }));
-    await post(batch({ events: [{ type: 'heartbeat', ts: Date.now(), path: '/' }] }));
+    await post(batch({ events: [{ type: 'vital', ts: Date.now(), path: '/', name: 'LCP' }] }));
+    await post(batch({ events: [{ type: 'vital', ts: Date.now(), path: '/', name: 'CLS' }] }));
 
     expect(store.stored()).toHaveLength(4);
   });

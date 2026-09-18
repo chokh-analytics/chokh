@@ -47,6 +47,14 @@ pa('consent', true);
 the account, the signature and, in persistent mode, the stored visitor id, so a
 logout starts a new visitor.
 
+**In cookieless mode `reset` cannot rotate the visitor id**, because the tracker
+stores nothing to rotate: the collector derives the id from the address, the
+user agent and a salt that turns daily. So on a shared device, the next person
+to use the browser after a logout is attributed to the person who logged out,
+until the salt turns at the end of the day. Persistent mode has no such window,
+because `reset` throws the stored id away and the next visitor gets a new one.
+A site where people sign in on shared machines should run `persistent`.
+
 ### Signing an identify
 
 Anything on the page can call `identify` with any id it likes, and the collector
