@@ -138,4 +138,7 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `pnpm size:tracker` | Assert the built tracker is at most 3 KB gzipped |
 | `docker compose up` | Server, MongoDB and Redis for local development |
 
-CI runs build, typecheck, lint, test and the tracker size gate on every push.
+CI runs two jobs on every push: build, typecheck, lint, test and the tracker
+size gate; and a second job that brings the stack up with
+`docker compose up --build -d` and asserts `GET /health` answers with
+`"success":true`, so the image and the compose file are never unproven.
