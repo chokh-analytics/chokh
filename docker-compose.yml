@@ -1,0 +1,53 @@
+# Local development: the server, MongoDB and Redis. Redis is optional for the
+# product; it is here so presence and the live feed behave the way they will in
+# a deployment that has it.
+name: chokh
+
+services:
+  server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '4100:4100'
+    environment:
+      HOST: 0.0.0.0
+      PORT: '4100'
+      LOG_LEVEL: info
+      MONGODB_URI: mongodb://mongo:27017/chokh
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand("ping")']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mongo-data:
+  redis-data:

@@ -1,0 +1,16 @@
+{
+  "name": "@chokh/tracker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Chokh browser tracker: one dependency-free IIFE, at most 3 KB gzipped.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3"
+  }
+}

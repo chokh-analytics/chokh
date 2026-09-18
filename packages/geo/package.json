@@ -1,0 +1,20 @@
+{
+  "name": "@chokh/geo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "IP to location and user agent parsing for Chokh, offline.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

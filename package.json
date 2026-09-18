@@ -1,0 +1,26 @@
+{
+  "name": "chokh",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open source, first-party web analytics: tracker, collector, stats API and dashboard in one process.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r run test",
+    "size:tracker": "node scripts/tracker-size.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0"
+  }
+}
