@@ -52,6 +52,13 @@ Then drop the script into any page you want counted:
 The API, its scopes and its SSO exchange are documented in
 [packages/server/README.md](packages/server/README.md).
 
+## The published image
+
+Every green CI run on `main` publishes one image, `ghcr.io/chokh-analytics/chokh`,
+tagged `sha-<commit>` and `latest`. A deployment pins the digest that run prints
+rather than a tag, because a tag is a pointer somebody can move and a digest is
+the image itself.
+
 ## Layout
 
 | Package | What it is |

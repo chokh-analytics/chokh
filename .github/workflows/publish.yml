@@ -1,0 +1,99 @@
+# The image a deployment pulls. Built here and never on the server: the box this
+# is first deployed to is a 1 vCPU droplet that also serves an API, and a build
+# there competes with production for the one core it has.
+#
+# It runs after CI, not beside it. `workflow_run` fires once the CI workflow for
+# a push to main has finished, and the job below refuses anything but `success`,
+# so an image only ever exists for a commit whose tests, types, lint, tracker
+# size gate, browser smoke and compose job were all green. The alternative,
+# building in the same job as the tests, would either duplicate them or publish
+# before they finished.
+#
+# A deployment pins the digest this prints, not the tag: a tag is a pointer that
+# can be moved, and `sha-<commit>` plus `latest` are here for a person reading
+# `docker image ls`, not for a compose file to depend on.
+name: Publish image
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    name: build and push the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A failed, cancelled or timed out CI run publishes nothing. `workflow_run`
+    # fires on every conclusion, so this condition is what makes "after CI" mean
+    # "after CI passed".
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Resolve the commit to build
+        id: commit
+        run: |
+          SHA='${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}'
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA:0:12}" >> "$GITHUB_OUTPUT"
+
+      # The commit CI proved, which is not necessarily the tip of main by the
+      # time this runs.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+
+      - name: Resolve the image reference
+        id: image
+        run: |
+          # GHCR rejects uppercase, and an owner may have any.
+          IMAGE="${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tagged=${IMAGE}:sha-${{ steps.commit.outputs.short }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.tagged }}
+            ${{ steps.image.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The line a deployment copies. Printed in the log and in the run summary,
+      # so nobody has to open the registry to find it.
+      - name: The reference to pin
+        run: |
+          PINNED='${{ steps.image.outputs.image }}@${{ steps.push.outputs.digest }}'
+          echo "${PINNED}"
+          {
+            echo '### Image'
+            echo ''
+            echo 'Commit `${{ steps.commit.outputs.sha }}`, tagged `${{ steps.image.outputs.tagged }}`.'
+            echo ''
+            echo 'Pin this digest in a deployment:'
+            echo ''
+            echo '```'
+            echo "${PINNED}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

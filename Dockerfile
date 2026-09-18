@@ -30,6 +30,10 @@ COPY --from=build /app/packages/geo/dist ./packages/geo/dist
 COPY --from=build /app/packages/store/dist ./packages/store/dist
 COPY --from=build /app/packages/store-mongo/dist ./packages/store-mongo/dist
 COPY --from=build /app/packages/dashboard/dist ./public
+# The tracker is served from that same root, so a page can point at
+# https://<install>/a.js. Without this the image carries a dashboard and no
+# script to put in a page, which is half an install.
+COPY --from=build /app/packages/tracker/dist ./public/
 
 # The geo refresh job writes here, so it belongs to the user the server runs as.
 RUN mkdir -p /app/data/geo && chown -R node:node /app/data
