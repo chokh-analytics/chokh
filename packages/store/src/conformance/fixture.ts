@@ -81,7 +81,8 @@ const DRAFTS: Draft[] = [
     visitor: 'v2',
     path: '/home',
     referrer: 'https://www.facebook.com/',
-    utm: { utm_source: 'facebook', utm_medium: 'social', utm_campaign: 'iupc' },
+    // The wire shape: the tracker sends utm without the utm_ prefix.
+    utm: { source: 'facebook', medium: 'social', campaign: 'iupc' },
   },
 
   // Dhaka 2026-09-17: v1 once, v3 twice.

@@ -303,11 +303,14 @@ export function botSelector(filters: Filter[] | undefined): boolean {
 export const EVENT_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>>> = {
   page: 'path',
   referrer: 'referrer',
-  utm_source: 'utm.utm_source',
-  utm_medium: 'utm.utm_medium',
-  utm_campaign: 'utm.utm_campaign',
-  utm_term: 'utm.utm_term',
-  utm_content: 'utm.utm_content',
+  // The tracker strips the utm_ prefix before it sends the object, so a
+  // campaign arrives as utm.source and not utm.utm_source. The dimension keeps
+  // the name a person types into a link; the path is the name on the wire.
+  utm_source: 'utm.source',
+  utm_medium: 'utm.medium',
+  utm_campaign: 'utm.campaign',
+  utm_term: 'utm.term',
+  utm_content: 'utm.content',
   country: 'geo.country',
   region: 'geo.region',
   city: 'geo.city',
