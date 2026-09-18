@@ -22,6 +22,8 @@ Thumbs.db
 .vite/
 .cache/
 
+data/
+
 test-results/
 playwright-report/
 playwright/.cache/

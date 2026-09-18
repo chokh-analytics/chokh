@@ -15,6 +15,11 @@ services:
       LOG_LEVEL: info
       MONGODB_URI: mongodb://mongo:27017/chokh
       REDIS_URL: redis://redis:6379
+      # Unset means the keyless DB-IP Lite database. Set it to a MaxMind
+      # license key to read GeoLite2-City instead.
+      GEOIP_LICENSE_KEY: ${GEOIP_LICENSE_KEY:-}
+    volumes:
+      - geo-data:/app/data/geo
     depends_on:
       mongo:
         condition: service_healthy
@@ -51,3 +56,4 @@ services:
 volumes:
   mongo-data:
   redis-data:
+  geo-data:

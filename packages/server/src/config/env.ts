@@ -18,6 +18,35 @@ const envSchema = z.object({
   // here so the compose file and the deployment have one place to look.
   MONGODB_URI: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).optional(),
+
+  // Who may tell the collector a visitor's real address, and in which header.
+  // Without TRUST_PROXY nothing is believed and the socket's peer is the
+  // visitor, which is right for a collector reached directly.
+  TRUST_PROXY: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value === undefined
+        ? []
+        : value
+            .split(',')
+            .map((cidr) => cidr.trim())
+            .filter((cidr) => cidr !== ''),
+    ),
+  REAL_IP_HEADER: z
+    .string()
+    .default('X-Forwarded-For')
+    .transform((value) => value.toLowerCase())
+    .pipe(z.enum(['x-forwarded-for', 'cf-connecting-ip'])),
+
+  // Where the geo database lives, and the MaxMind key that chooses
+  // GeoLite2-City over the keyless DB-IP Lite fallback.
+  GEOIP_DIR: z.string().min(1).default('./data/geo'),
+  GEOIP_LICENSE_KEY: z.string().min(1).optional(),
+
+  // Batches a minute, per address and per site.
+  COLLECT_RATE_LIMIT_IP: z.coerce.number().int().positive().default(600),
+  COLLECT_RATE_LIMIT_SITE: z.coerce.number().int().positive().default(60000),
 });
 
 export type Env = z.infer<typeof envSchema>;
