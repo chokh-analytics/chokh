@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { clientIp, isTrustedProxy } from './client-ip.js';
+import { signForwardedAddress } from './forwarded-address.js';
 
 const CLOUDFLARE = ['173.245.48.0/20', '172.30.0.1/32'];
 
@@ -76,5 +77,73 @@ describe('clientIp', () => {
         { trustProxy: CLOUDFLARE, realIpHeader: 'cf-connecting-ip' },
       ),
     ).toBe('198.51.100.7');
+  });
+});
+
+describe('clientIp in the signed forwarded mode', () => {
+  // A placeholder, never a real key.
+  const SECRET = 'test-proxy-secret-not-a-real-key-0000';
+  const NOW = 1758268800000;
+  const options = {
+    trustProxy: CLOUDFLARE,
+    realIpHeader: 'x-chokh-forwarded-for',
+    proxySecret: SECRET,
+  };
+
+  function forwarded(ip: string, ts: number, secret = SECRET) {
+    return {
+      // The peer chain, which is the proxy's own address and what everybody
+      // would otherwise be stored as.
+      ip: '198.51.100.7',
+      peer: '203.0.113.9',
+      header: ip,
+      signature: `${ts}.${signForwardedAddress(secret, ip, ts)}`,
+      now: NOW,
+    };
+  }
+
+  it('believes the forwarded address when the proxy signed it', () => {
+    expect(clientIp(forwarded('103.87.12.45', NOW), options)).toBe('103.87.12.45');
+  });
+
+  // The signature is the trust here, not a peer range: the proxy is somebody
+  // else's infrastructure with an address range that changes without notice.
+  it('does not ask whether the peer is a trusted proxy', () => {
+    expect(clientIp(forwarded('103.87.12.45', NOW), { ...options, trustProxy: [] })).toBe(
+      '103.87.12.45',
+    );
+  });
+
+  it('falls back to the peer chain on a forged signature, rather than refusing', () => {
+    const source = { ...forwarded('103.87.12.45', NOW), signature: `${NOW}.forged` };
+    expect(clientIp(source, options)).toBe('198.51.100.7');
+  });
+
+  it('falls back when the signature was made with another secret', () => {
+    expect(clientIp(forwarded('103.87.12.45', NOW, 'a-different-placeholder'), options)).toBe(
+      '198.51.100.7',
+    );
+  });
+
+  it('falls back on a ts outside the window, so a header out of a log is worth nothing', () => {
+    expect(clientIp(forwarded('103.87.12.45', NOW - 121_000), options)).toBe('198.51.100.7');
+  });
+
+  it('falls back when the pair is absent, which is every request a proxy did not make', () => {
+    expect(
+      clientIp({ ip: '198.51.100.7', peer: '203.0.113.9', header: undefined }, options),
+    ).toBe('198.51.100.7');
+    expect(
+      clientIp(
+        { ip: '198.51.100.7', peer: '203.0.113.9', header: '103.87.12.45', now: NOW },
+        options,
+      ),
+    ).toBe('198.51.100.7');
+  });
+
+  it('falls back when the install lost its secret', () => {
+    expect(clientIp(forwarded('103.87.12.45', NOW), { ...options, proxySecret: undefined })).toBe(
+      '198.51.100.7',
+    );
   });
 });

@@ -47,6 +47,8 @@ export function createCollectController(
           ip: request.ip,
           peer: request.socket.remoteAddress,
           header: request.headers[ipOptions.realIpHeader],
+          signature: request.headers['x-chokh-forwarded-sig'],
+          now: deps.now(),
         },
         ipOptions,
       ),

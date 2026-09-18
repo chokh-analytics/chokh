@@ -50,7 +50,16 @@ export const envSchema = z.object({
     .transform((value) => (value === '' ? 'X-Forwarded-For' : value))
     .default('X-Forwarded-For')
     .transform((value) => value.toLowerCase())
-    .pipe(z.enum(['x-forwarded-for', 'cf-connecting-ip'])),
+    .pipe(z.enum(['x-forwarded-for', 'cf-connecting-ip', 'x-chokh-forwarded-for'])),
+
+  // The secret a first-party proxy signs a forwarded address with, shared with
+  // that proxy and never with a browser. It is what the x-chokh-forwarded-for
+  // mode believes instead of a peer range, so the mode without it is refused at
+  // boot by the refine below rather than trusting everybody who sets a header.
+  CHOKH_PROXY_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32, 'A proxy secret needs at least 32 characters').optional(),
+  ),
 
   // Where the geo database lives, and the MaxMind key that chooses
   // GeoLite2-City over the keyless DB-IP Lite fallback.
@@ -106,6 +115,14 @@ export const envSchema = z.object({
     )
     .transform((value) => (value === undefined ? undefined : value === 'true')),
 }).superRefine((parsed, context) => {
+  if (parsed.REAL_IP_HEADER === 'x-chokh-forwarded-for' && parsed.CHOKH_PROXY_SECRET === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['CHOKH_PROXY_SECRET'],
+      message:
+        'CHOKH_PROXY_SECRET is required for REAL_IP_HEADER=X-Chokh-Forwarded-For: without it the header is one anybody can set, so every visitor could claim any address',
+    });
+  }
   if (parsed.NODE_ENV === 'production' && parsed.SESSION_SECRET === undefined) {
     context.addIssue({
       code: z.ZodIssueCode.custom,

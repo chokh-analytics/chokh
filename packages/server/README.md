@@ -75,6 +75,63 @@ Nothing unconfirmed reaches a visitor row, merges an anonymous history or
 answers a per-user lookup. The store only ever sees identity the collector has
 already confirmed.
 
+## A first-party proxy
+
+Serving the tracker and the collect path from your own domain (`data-api="/_pa"`)
+is worth doing: filter lists do not carry a first-party path, and a page with
+`Referrer-Policy: no-referrer` has no `Origin` to check on a cross-origin beacon.
+It costs you one thing. Your proxy is now the peer this collector sees, so
+without the header pair below every visitor of your site is stored as the proxy:
+one address, one country, and in cookieless mode one visitor id for everybody.
+
+`TRUST_PROXY` is not the answer. Your proxy is often somebody else's
+infrastructure with an address range that changes without notice, and the hop in
+front of it is trusted already. So the proxy carries the address across and
+signs it, because a header anybody can set is an address anybody can claim:
+
+```
+X-Chokh-Forwarded-For: 103.87.12.45
+X-Chokh-Forwarded-Sig: 1758268800000.<base64url signature>
+```
+
+The signature is the second half of the `Sig` value, and the instant it was made
+is the first, so the collector knows which one to check:
+
+```
+base64url(hmac_sha256(CHOKH_PROXY_SECRET, address + "\n" + ts))
+```
+
+`ts` is the Unix time in **milliseconds**, written in decimal with no leading
+zero, and the same number appears in front of the dot. The collector believes a
+`ts` within 120 seconds of the moment the request arrived, either side, so a
+proxy whose clock drifts a little still works and a header read out of a log is
+worth nothing two minutes later.
+
+In Node that is one line from `@chokh/sdk-node`:
+
+```js
+import { signForwardedAddress } from '@chokh/sdk-node';
+
+const ts = Date.now();
+headers.set('X-Chokh-Forwarded-For', ip);
+headers.set('X-Chokh-Forwarded-Sig', `${ts}.${signForwardedAddress(secret, ip, ts)}`);
+```
+
+Four things to know:
+
+- **Nothing here is ever a refusal.** A missing, forged, stale or unreadable
+  signature falls back to the peer chain and the batch is still collected. A
+  beacon cannot read a refusal, so a mistake in your proxy costs you the
+  addresses and not the traffic.
+- **`CHOKH_PROXY_SECRET` is server side, always.** A browser that could read it
+  could claim any address. It is not a `NEXT_PUBLIC_` or `VITE_` variable.
+- **Forward the browser's headers too.** The user agent, the `sec-ch-ua*` Client
+  Hints and the `Origin` are read from the request as they always were, so a
+  proxy that sends its own runtime's user agent gets a site full of that.
+- **The tracker file does not need any of this.** `a.js` is a static file, so a
+  plain rewrite is right for it. Only the collect path goes through the proxy
+  that signs.
+
 ## The stats API
 
 Every route answers the envelope: `{ success: true, data, meta? }` or
@@ -396,7 +453,8 @@ empty and events are still collected.
 | `LOG_LEVEL` | `info` | pino level |
 | `DASHBOARD_DIR` | the sibling package's `dist` | The built dashboard to serve |
 | `TRUST_PROXY` | none | Comma separated CIDRs allowed to say who a visitor is |
-| `REAL_IP_HEADER` | `X-Forwarded-For` | Or `CF-Connecting-IP`, honoured only from a trusted peer |
+| `REAL_IP_HEADER` | `X-Forwarded-For` | Or `CF-Connecting-IP`, honoured only from a trusted peer, or `X-Chokh-Forwarded-For`, honoured only when signed |
+| `CHOKH_PROXY_SECRET` | none | Shared with your first-party proxy, which signs the address it forwards. Required for `REAL_IP_HEADER=X-Chokh-Forwarded-For` |
 | `GEOIP_DIR` | `./data/geo` | Where the geo database lives |
 | `GEOIP_LICENSE_KEY` | none | Chooses GeoLite2-City over the keyless fallback |
 | `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
@@ -421,6 +479,13 @@ Behind Cloudflare, set `TRUST_PROXY` to Cloudflare's ranges and `REAL_IP_HEADER`
 to `CF-Connecting-IP`, or every visitor's address is Cloudflare's. If your proxy
 already resolves the Cloudflare hop and hands on `X-Forwarded-For`, leave
 `REAL_IP_HEADER` alone and set `TRUST_PROXY` to that proxy.
+
+Behind a first-party proxy of your own, neither of those two can work, because
+the proxy is the peer and its address range is not yours to trust. Set
+`REAL_IP_HEADER` to `X-Chokh-Forwarded-For` and share a `CHOKH_PROXY_SECRET`
+with it instead. See [A first-party proxy](#a-first-party-proxy). The mode
+without the secret is refused at boot: the header would be one anybody could
+set.
 
 One address is not one person. A university lab, an office or a mobile carrier
 puts thousands of visitors behind one NAT address, and a single open tab posts a
@@ -503,7 +568,8 @@ survives the purge; only the per-visitor detail ages out.
   cross-origin beacon, and no `Referer` at all**, so there is nothing to check it
   by and the batch is refused. Serve the tracker and the collect path through a
   first-party proxy path on your own domain (`data-api="/_pa"`), which is worth
-  doing anyway because filter lists do not carry it.
+  doing anyway because filter lists do not carry it. A proxy has to carry the
+  visitor's address across: see [A first-party proxy](#a-first-party-proxy).
 - **In cookieless mode one address plus one user agent string is one visitor.**
   A computer lab of identical browsers behind one address counts as a single
   visitor, and its events add up against the 240-events-a-minute bot heuristic,

@@ -74,6 +74,46 @@ describe('envSchema', () => {
     expect(() => envSchema.parse({ REAL_IP_HEADER: 'X-Real-IP' })).toThrow();
   });
 
+  // The signed forwarded mode believes a header instead of a peer range, so
+  // without the secret it is a header anybody can set and every visitor could
+  // claim any address. A boot that cannot do the mode says so rather than doing
+  // something weaker under the same name.
+  describe('the signed forwarded mode', () => {
+    const SECRET = 'test-proxy-secret-not-a-real-key-0000';
+
+    it('refuses the mode without the proxy secret', () => {
+      expect(() => envSchema.parse({ REAL_IP_HEADER: 'X-Chokh-Forwarded-For' })).toThrow(
+        /CHOKH_PROXY_SECRET/,
+      );
+      expect(() =>
+        envSchema.parse({ REAL_IP_HEADER: 'X-Chokh-Forwarded-For', CHOKH_PROXY_SECRET: '' }),
+      ).toThrow(/CHOKH_PROXY_SECRET/);
+    });
+
+    it('takes the mode with one', () => {
+      const parsed = envSchema.parse({
+        REAL_IP_HEADER: 'X-Chokh-Forwarded-For',
+        CHOKH_PROXY_SECRET: SECRET,
+      });
+
+      expect(parsed.REAL_IP_HEADER).toBe('x-chokh-forwarded-for');
+      expect(parsed.CHOKH_PROXY_SECRET).toBe(SECRET);
+    });
+
+    it('refuses a secret too short to be one', () => {
+      expect(() =>
+        envSchema.parse({ REAL_IP_HEADER: 'X-Chokh-Forwarded-For', CHOKH_PROXY_SECRET: 'short' }),
+      ).toThrow(/CHOKH_PROXY_SECRET/);
+    });
+
+    it('asks nothing of an install that does not use the mode', () => {
+      expect(envSchema.parse({}).CHOKH_PROXY_SECRET).toBeUndefined();
+      expect(envSchema.parse({ REAL_IP_HEADER: 'CF-Connecting-IP' }).CHOKH_PROXY_SECRET).toBe(
+        undefined,
+      );
+    });
+  });
+
   describe('the API variables', () => {
     it('has a twelve hour session, a five minute SSO token and ten attempts a minute', () => {
       const parsed = envSchema.parse({});

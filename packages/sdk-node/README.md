@@ -85,6 +85,43 @@ than importing this package, because a product should not depend on its own clie
 SDK. A shared test vector asserted in both packages is what keeps the two from
 drifting apart.
 
+## Signing a forwarded address
+
+The other signature, for the other half of a first-party setup. If you serve the
+collect path from your own domain (`data-api="/_pa"`), your proxy is the peer the
+collector sees, so without this every visitor of your site is stored as the
+proxy: one address, one country, and in cookieless mode one visitor id for
+everybody.
+
+The proxy carries the visitor's address across and signs it, because a header
+anybody can set is an address anybody can claim:
+
+```ts
+import { signForwardedAddress } from '@chokh/sdk-node';
+
+const ts = Date.now();
+headers.set('X-Chokh-Forwarded-For', ip);
+headers.set('X-Chokh-Forwarded-Sig', `${ts}.${signForwardedAddress(secret, ip, ts)}`);
+```
+
+The secret is the collector's `CHOKH_PROXY_SECRET`, which is server side always:
+a browser that could read it could claim any address. The collector reads the
+pair only when it runs with `REAL_IP_HEADER=X-Chokh-Forwarded-For`, and it falls
+back to the peer chain whenever the signature does not check out, so a mistake
+here costs you the addresses and never the traffic.
+
+The formula, again in one line, so a proxy in another language can issue the same
+signature from this description alone:
+
+```
+base64url(hmac_sha256(CHOKH_PROXY_SECRET, address + "\n" + ts))
+```
+
+`ts` is the Unix time in milliseconds, and the collector believes one within 120
+seconds of the moment the request arrived, either side. Unlike the identify
+signature this one is bound to a moment on purpose: a header read out of a proxy
+log is worth nothing two minutes later.
+
 ## License
 
 MIT.

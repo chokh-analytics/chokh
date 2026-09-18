@@ -11,6 +11,7 @@ import fastifyCookie from '@fastify/cookie';
 
 import { cookieSecure, env, resolveSessionSecret } from './config/env.js';
 import type { ApiDeps } from './lib/api-deps.js';
+import type { ClientIpOptions } from './lib/client-ip.js';
 import { fail } from './lib/envelope.js';
 import { createWindowCounter } from './lib/window-counter.js';
 import { registerAuthDecorations } from './plugins/auth.js';
@@ -47,6 +48,9 @@ export interface AppOptions {
   once?: OnceOnly;
   // Injected so a test can state what time it is, the way the store's is.
   now?: () => number;
+  // How a visitor's address is resolved. The environment decides it for a real
+  // instance; a test hands one in to drive a mode this process did not boot in.
+  ip?: ClientIpOptions;
 }
 
 function wantsHtml(accept: string | undefined): boolean {
@@ -71,7 +75,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   }
   const bus = options.bus ?? openBus().bus;
   const once = options.once ?? openOnce(now).once;
-  const ipOptions = { trustProxy: env.TRUST_PROXY, realIpHeader: env.REAL_IP_HEADER };
+  const ipOptions: ClientIpOptions = options.ip ?? {
+    trustProxy: env.TRUST_PROXY,
+    realIpHeader: env.REAL_IP_HEADER,
+    proxySecret: env.CHOKH_PROXY_SECRET,
+  };
 
   // The tracker posts JSON under a text/plain content type, because a beacon
   // cannot be preflighted and only a simple content type survives a

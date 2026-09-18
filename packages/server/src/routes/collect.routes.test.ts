@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
+import type { ClientIpOptions } from '../lib/client-ip.js';
+import { signForwardedAddress } from '../lib/forwarded-address.js';
 import { signUserId } from '../lib/identity-signature.js';
 import type { CollectBatch } from '../schemas/collect.schema.js';
 import { defaultSiteSettings, type Site } from '../store/AnalyticsStore.js';
@@ -71,9 +73,9 @@ async function post(body: unknown, headers: Record<string, string> = {}) {
   });
 }
 
-async function start(seed: Site = site()): Promise<void> {
+async function start(seed: Site = site(), ip?: ClientIpOptions): Promise<void> {
   store = createMemoryStore([seed]);
-  app = await buildApp({ store, geo });
+  app = await buildApp(ip === undefined ? { store, geo } : { store, geo, ip });
   await app.ready();
 }
 
@@ -369,6 +371,75 @@ describe('the site IP mode, applied before anything is stored', () => {
     const stored = store.stored()[0];
     expect(stored?.visitorId).toBeTruthy();
     expect(stored?.geo).toMatchObject({ country: 'BD' });
+  });
+});
+
+describe('a forwarded address the first-party proxy signed', () => {
+  // A placeholder, never a real key.
+  const SECRET = 'test-proxy-secret-not-a-real-key-0000';
+  // What the peer chain says, which is the proxy's own address: what every
+  // visitor of the site would be stored as without the header pair.
+  const PEER = '198.51.100.7';
+  const VISITOR = '103.87.12.45';
+
+  function pair(ip: string, ts: number, sig?: string): Record<string, string> {
+    return {
+      'x-forwarded-for': PEER,
+      'x-chokh-forwarded-for': ip,
+      'x-chokh-forwarded-sig': `${ts}.${sig ?? signForwardedAddress(SECRET, ip, ts)}`,
+    };
+  }
+
+  beforeEach(async () => {
+    await app.close();
+    await start(site(), {
+      trustProxy: ['127.0.0.1/32', '::1/128'],
+      realIpHeader: 'x-chokh-forwarded-for',
+      proxySecret: SECRET,
+    });
+  });
+
+  it('stores the visitor the proxy named, and looks them up there', async () => {
+    await post(batch(), pair(VISITOR, Date.now()));
+
+    const stored = store.stored()[0];
+    expect(stored?.ip).toBe(VISITOR);
+    expect(stored?.geo).toMatchObject({ country: 'BD', city: 'Dhaka' });
+  });
+
+  // A beacon cannot read a refusal, so a signature that does not check out is
+  // never one. The batch lands on the peer chain instead.
+  it('ignores a forged signature and stores the peer', async () => {
+    const response = await post(batch(), pair(VISITOR, Date.now(), 'forged'));
+
+    expect(response.statusCode).toBe(202);
+    expect(store.stored()[0]?.ip).toBe(PEER);
+  });
+
+  it('ignores a signature made with another secret and stores the peer', async () => {
+    const ts = Date.now();
+    const headers = {
+      'x-forwarded-for': PEER,
+      'x-chokh-forwarded-for': VISITOR,
+      'x-chokh-forwarded-sig': `${ts}.${signForwardedAddress('a-different-placeholder', VISITOR, ts)}`,
+    };
+
+    await post(batch(), headers);
+
+    expect(store.stored()[0]?.ip).toBe(PEER);
+  });
+
+  // One read out of a proxy log is worth nothing two minutes later.
+  it('ignores a stale ts and stores the peer', async () => {
+    await post(batch(), pair(VISITOR, Date.now() - 121_000));
+
+    expect(store.stored()[0]?.ip).toBe(PEER);
+  });
+
+  it('stores the peer for a request that carries no pair at all', async () => {
+    await post(batch(), { 'x-forwarded-for': PEER });
+
+    expect(store.stored()[0]?.ip).toBe(PEER);
   });
 });
 
