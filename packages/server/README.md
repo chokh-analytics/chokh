@@ -72,12 +72,36 @@ empty and events are still collected.
 | `REAL_IP_HEADER` | `X-Forwarded-For` | Or `CF-Connecting-IP`, honoured only from a trusted peer |
 | `GEOIP_DIR` | `./data/geo` | Where the geo database lives |
 | `GEOIP_LICENSE_KEY` | none | Chooses GeoLite2-City over the keyless fallback |
-| `COLLECT_RATE_LIMIT_IP` | `600` | Batches a minute from one address |
+| `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
 | `COLLECT_RATE_LIMIT_SITE` | `60000` | Batches a minute for one site |
 | `MONGODB_URI`, `REDIS_URL` | none | Read by AN-STO01 and AN-SES01 |
 
 Behind Cloudflare, set `TRUST_PROXY` to Cloudflare's ranges and `REAL_IP_HEADER`
-to `CF-Connecting-IP`, or every visitor's address is Cloudflare's.
+to `CF-Connecting-IP`, or every visitor's address is Cloudflare's. If your proxy
+already resolves the Cloudflare hop and hands on `X-Forwarded-For`, leave
+`REAL_IP_HEADER` alone and set `TRUST_PROXY` to that proxy.
+
+One address is not one person. A university lab, an office or a mobile carrier
+puts thousands of visitors behind one NAT address, and a single open tab posts a
+batch on every heartbeat, three a minute. `COLLECT_RATE_LIMIT_IP` therefore
+defaults high enough to hold about a thousand open tabs on one address; a campus
+would otherwise lose every batch past the limit to a `429`. Lower it only for a
+site whose visitors are known to arrive one address each.
+
+## Things to know before you point a site at this
+
+- **The origin check is by exact hostname.** `example.com` and `www.example.com`
+  are two entries. A subdomain is not covered by its parent.
+- **A page served with `Referrer-Policy: no-referrer` sends `Origin: null` on a
+  cross-origin beacon, and no `Referer` at all**, so there is nothing to check it
+  by and the batch is refused. Serve the tracker and the collect path through a
+  first-party proxy path on your own domain (`data-api="/_pa"`), which is worth
+  doing anyway because filter lists do not carry it.
+- **In cookieless mode one address plus one user agent string is one visitor.**
+  A computer lab of identical browsers behind one address counts as a single
+  visitor, and its events add up against the 240-events-a-minute bot heuristic,
+  which can tag the whole lab as a bot. Persistent mode has neither problem,
+  because each browser keeps its own id.
 
 ## Layering
 

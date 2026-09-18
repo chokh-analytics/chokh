@@ -53,7 +53,14 @@ export const envSchema = z.object({
   GEOIP_LICENSE_KEY: optional,
 
   // Batches a minute, per address and per site.
-  COLLECT_RATE_LIMIT_IP: z.coerce.number().int().positive().default(600),
+  //
+  // One address is not one person. A university lab, an office or a mobile
+  // carrier puts thousands of visitors behind one NAT address, and a single
+  // open tab posts a batch on every heartbeat, three a minute. The per-address
+  // default therefore has to hold about a thousand tabs on one address, or a
+  // campus loses every batch after the limit to a 429. Lower it only for a site
+  // whose visitors are known to arrive one address each.
+  COLLECT_RATE_LIMIT_IP: z.coerce.number().int().positive().default(3000),
   COLLECT_RATE_LIMIT_SITE: z.coerce.number().int().positive().default(60000),
 });
 

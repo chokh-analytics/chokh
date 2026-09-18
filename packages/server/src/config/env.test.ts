@@ -46,6 +46,24 @@ describe('envSchema', () => {
     expect(parsed.TRUST_PROXY).toEqual(['173.245.48.0/20', '172.30.0.1/32']);
   });
 
+  it('holds a campus behind one address by default', () => {
+    const parsed = envSchema.parse({});
+
+    // A tab posts three batches a minute, so the default has to carry about a
+    // thousand open tabs on one NAT address.
+    expect(parsed.COLLECT_RATE_LIMIT_IP).toBe(3000);
+    expect(parsed.COLLECT_RATE_LIMIT_SITE).toBe(60000);
+  });
+
+  it('takes a rate limit the operator set instead', () => {
+    expect(envSchema.parse({ COLLECT_RATE_LIMIT_IP: '120' }).COLLECT_RATE_LIMIT_IP).toBe(120);
+  });
+
+  it('refuses a rate limit that would refuse everything', () => {
+    expect(() => envSchema.parse({ COLLECT_RATE_LIMIT_IP: '0' })).toThrow();
+    expect(() => envSchema.parse({ COLLECT_RATE_LIMIT_IP: '-1' })).toThrow();
+  });
+
   it('reads the real IP header whatever case it was written in', () => {
     expect(envSchema.parse({ REAL_IP_HEADER: 'CF-Connecting-IP' }).REAL_IP_HEADER).toBe(
       'cf-connecting-ip',
