@@ -7,28 +7,46 @@ import Fastify, {
   type FastifyRequest,
 } from 'fastify';
 
-import { env } from './config/env.js';
+import fastifyCookie from '@fastify/cookie';
+
+import { cookieSecure, env, resolveSessionSecret } from './config/env.js';
+import type { ApiDeps } from './lib/api-deps.js';
 import { fail } from './lib/envelope.js';
 import { createWindowCounter } from './lib/window-counter.js';
+import { registerAuthDecorations } from './plugins/auth.js';
+import { openBus, openOnce } from './plugins/bus.js';
 import { registerDashboard } from './plugins/dashboard.js';
+import { registerApiRoutes } from './routes/api.routes.js';
 import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
+import { createSessionCodec } from './services/auth.service.js';
+import type { Bus } from './services/bus.js';
 import { createDedupe } from './services/dedupe.js';
+import type { OnceOnly } from './services/once.js';
 import { createVisitorIdSource } from './services/visitor-id.js';
-import type { AnalyticsStore, Presence } from './store/AnalyticsStore.js';
+import type { AccountStore, AnalyticsStore, Presence } from './store/AnalyticsStore.js';
 import { createMemoryStore } from './store/memory.store.js';
 
 const MINUTE_MS = 60_000;
 
+const HOUR_MS = 60 * 60 * 1000;
+
 export interface AppOptions {
   // server.ts chooses the adapter from the environment. Without one, a test
   // or a bare instance runs on memory and keeps nothing across a restart.
-  store?: AnalyticsStore;
+  store?: AnalyticsStore & AccountStore;
   // Where ingest writes who is here now. Only used when this builds the store
   // itself; server.ts hands the presence to the adapter instead.
   presence?: Presence;
   // server.ts opens the database and swaps it in once the refresh job has one.
   geo?: GeoReader;
+  // The nudge that wakes a realtime stream, and the set that stops an SSO token
+  // being exchanged twice. Redis when the environment names one, this process
+  // otherwise; handed in by a test that wants to drive them.
+  bus?: Bus;
+  once?: OnceOnly;
+  // Injected so a test can state what time it is, the way the store's is.
+  now?: () => number;
 }
 
 function wantsHtml(accept: string | undefined): boolean {
@@ -40,6 +58,20 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     logger: { level: env.LOG_LEVEL },
     trustProxy: env.TRUST_PROXY.length === 0 ? false : env.TRUST_PROXY,
   });
+
+  const now = options.now ?? ((): number => Date.now());
+  const store =
+    options.store ??
+    createMemoryStore([], options.presence === undefined ? {} : { presence: options.presence });
+  const session = resolveSessionSecret();
+  if (session.generated) {
+    app.log.warn(
+      'SESSION_SECRET is not set, so one was generated: every restart signs everybody out and two processes will not share a session',
+    );
+  }
+  const bus = options.bus ?? openBus().bus;
+  const once = options.once ?? openOnce(now).once;
+  const ipOptions = { trustProxy: env.TRUST_PROXY, realIpHeader: env.REAL_IP_HEADER };
 
   // The tracker posts JSON under a text/plain content type, because a beacon
   // cannot be preflighted and only a simple content type survives a
@@ -83,14 +115,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     return reply.code(status).send(fail(code, message));
   });
 
+  // The session is an httpOnly cookie, so the request needs parsed cookies and
+  // the reply needs to be able to set one. Nothing here signs with the plugin's
+  // own secret: the cookie carries its own signature, made in auth.service.ts.
+  await app.register(fastifyCookie);
+  registerAuthDecorations(app);
+
   await registerHealthRoutes(app);
 
   await registerCollectRoutes(
     app,
     {
-      store:
-        options.store ??
-        createMemoryStore([], options.presence === undefined ? {} : { presence: options.presence }),
+      store,
       geo: options.geo ?? emptyReader,
       visitorIds: createVisitorIdSource(),
       ipLimit: createWindowCounter(MINUTE_MS),
@@ -98,10 +134,24 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       visitorRate: createWindowCounter(MINUTE_MS),
       dedupe: createDedupe(),
       limits: { perIp: env.COLLECT_RATE_LIMIT_IP, perSite: env.COLLECT_RATE_LIMIT_SITE },
-      now: () => Date.now(),
+      bus,
+      now,
     },
-    { trustProxy: env.TRUST_PROXY, realIpHeader: env.REAL_IP_HEADER },
+    ipOptions,
   );
+
+  const apiDeps: ApiDeps = {
+    store,
+    session: createSessionCodec(session.secret, env.SESSION_TTL_HOURS * HOUR_MS),
+    bus,
+    once,
+    authLimit: createWindowCounter(MINUTE_MS),
+    limits: { authAttempts: env.AUTH_RATE_LIMIT },
+    cookie: { secure: cookieSecure() },
+    sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },
+    now,
+  };
+  await registerApiRoutes(app, apiDeps, ipOptions);
 
   const dashboardRoot = await registerDashboard(app);
 

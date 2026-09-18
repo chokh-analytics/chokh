@@ -15,6 +15,16 @@ services:
       LOG_LEVEL: info
       MONGODB_URI: mongodb://mongo:27017/chokh
       REDIS_URL: redis://redis:6379
+      # What the dashboard session cookie is signed with. The image runs with
+      # NODE_ENV=production, which refuses to start without one, and the value below
+      # is a placeholder so that `docker compose up` works on a laptop. It is not a
+      # secret: anybody reading this repository has it. Set SESSION_SECRET in your
+      # environment before this is reachable by anybody else, or every session cookie
+      # it ever signs is forgeable.
+      SESSION_SECRET: ${SESSION_SECRET:-a-development-only-session-secret-change-me}
+      # Unset means POST /api/sso refuses every exchange, which is the right default.
+      # Set it to the secret shared with whatever application mints the tokens.
+      SSO_SECRET: ${SSO_SECRET:-}
       # Unset means the keyless DB-IP Lite database. Set it to a MaxMind
       # license key to read GeoLite2-City instead.
       GEOIP_LICENSE_KEY: ${GEOIP_LICENSE_KEY:-}

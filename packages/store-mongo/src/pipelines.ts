@@ -4,6 +4,7 @@ import {
   SESSION_PATH_BY_DIMENSION,
   type Dimension,
   type Filter,
+  type Interval,
   type Range,
   type RollupDim,
 } from '@chokh/store';
@@ -317,5 +318,75 @@ export function sessionSourcedBreakdownPipeline(
         durationSum: { $sum: '$durationSum' },
       },
     },
+  ];
+}
+
+// The three pipelines below answer a whole time series in one round trip.
+//
+// A series used to be one totals query per bucket, which is ninety round trips
+// to Atlas for ninety days and about half a second from the droplet. These group
+// by day (or by hour) once and hand every bucket back together; the caller folds
+// each day into the week or month it belongs to. The numbers are the same by
+// construction: visitors over a range of days is already the sum of each day's
+// uniques, and the rates are derived from the sums afterwards.
+//
+// A row comes back under the start instant of its day or hour, so the caller
+// never parses a date string or draws a day boundary a second time.
+export function bucketKeyExpression(
+  timezone: string,
+  interval: Interval,
+  field = '$ts',
+): Document {
+  const unit = interval === 'hour' ? 'hour' : 'day';
+  return { $dateTrunc: { date: { $toDate: field }, unit, timezone } };
+}
+
+// Visitors and pageviews per bucket, from raw events.
+export function rawTotalsByBucketPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  interval: Interval,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: eventMatch(siteId, span, wantsBots, filters) },
+    {
+      $group: {
+        _id: { bucket: bucketKeyExpression(timezone, interval), visitorId: '$visitorId' },
+        pageviews: { $sum: IS_PAGEVIEW },
+      },
+    },
+    { $group: { _id: '$_id.bucket', visitors: { $sum: 1 }, pageviews: { $sum: '$pageviews' } } },
+  ];
+}
+
+// The same per day, out of the daily rollups, which already hold one row a day.
+export function rollupTotalsByDatePipeline(
+  siteId: string,
+  days: string[],
+  dim: RollupDim,
+  key: string,
+): Document[] {
+  return [
+    { $match: { siteId, date: { $in: days }, dim, key } },
+    { $group: { _id: '$date', ...SUM_TOTALS } },
+  ];
+}
+
+// Visits, bounces and time per bucket. A visit belongs to the bucket its stay
+// began in, which is why this truncates startedAt and not ts.
+export function sessionTotalsByBucketPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  interval: Interval,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters) },
+    { $group: { _id: bucketKeyExpression(timezone, interval, '$startedAt'), ...SUM_SESSIONS } },
   ];
 }

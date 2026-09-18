@@ -13,9 +13,12 @@ import * as F from './fixture.js';
 
 export * as fixture from './fixture.js';
 export { runPresenceConformance, type PresenceHarness } from './presence.js';
+export { runAccountConformance, type AccountHarness } from './accounts.js';
 
-// What an adapter hands the suite. addSite and reset live here rather than on
-// AnalyticsStore so that seeding a test never widens the production contract.
+// What an adapter hands the suite. addSite goes through the adapter's real
+// createSite; it stays on the harness because the MongoDB adapter has to be
+// reset between groups and the in-memory one does not, and reset is not
+// something a production contract should have to carry.
 export interface StoreHarness {
   store: AnalyticsStore;
   addSite(site: Site): Promise<void>;

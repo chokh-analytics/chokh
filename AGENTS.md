@@ -61,7 +61,9 @@ If a ticket and this file disagree, stop and report. Do not pick one.
 - Runtime: Node 22, pnpm 10 workspace, TypeScript 5.x strict
 - `packages/tracker`: TypeScript compiled by esbuild to one IIFE `a.js`, no
   dependencies
-- `packages/server`: Fastify 5, Zod, pino (through Fastify's logger)
+- `packages/server`: Fastify 5, Zod, pino (through Fastify's logger),
+  `@fastify/cookie` for the session cookie, `@node-rs/argon2` for password hashing
+  (prebuilt, including the musl build the alpine image needs)
 - `packages/dashboard`: Vite, React 19, built static and served by the server
 - `packages/store`: the `AnalyticsStore` contract and the one conformance suite;
   `packages/server/src/store/AnalyticsStore.ts` re-exports it, so an adapter
@@ -70,7 +72,10 @@ If a ticket and this file disagree, stop and report. Do not pick one.
   and applied by a `migrate` command, never `autoIndex`
 - `packages/geo`: MaxMind GeoLite2-City through `maxmind`, DB-IP Lite as the
   keyless fallback, `ua-parser-js` 1.x for user agents
-- `packages/sdk-node`: server-side `track` and `identify`
+- `packages/sdk-node`: server-side `track` and `identify`, and the one line that
+  signs an identify. It is not imported by the server: a product does not depend on
+  its own client SDK, so the collector keeps its own copy of that line and a shared
+  test vector in both packages is what stops the two drifting
 - Redis is optional everywhere. Presence and the live feed use it when it is
   configured and fall back to memory when it is not, so one image is a complete
   install.

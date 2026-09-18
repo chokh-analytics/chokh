@@ -17,6 +17,11 @@ a collector, a stats API, a realtime stream and a dashboard.
 - Custom events, `identify` for signed-in people, and per-person history
 - Privacy as configuration: cookieless or persistent visitor ids, full, anonymised or
   no IP storage, bot filtering, per-site retention
+- A JSON API for all of it, with a CSV export and a live stream of who is here
+- Accounts, teams and API keys, and a scope of its own for reading addresses and
+  identified people, with an audit row for every such read
+- Single sign-on, so a staff member clicks through from your own admin panel and
+  is already signed in
 
 ## One-line install
 
@@ -25,11 +30,27 @@ git clone https://github.com/chokh-analytics/chokh.git && cd chokh && docker com
 ```
 
 The dashboard and the collector are then on `http://localhost:4100`, with
-MongoDB and Redis beside them. Drop the script into any page you want counted:
+MongoDB and Redis beside them. Register the first account, which owns the install,
+and create a site:
+
+```bash
+curl -c jar -X POST localhost:4100/api/auth/register \
+  -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"a-long-enough-password"}'
+
+curl -b jar -X POST localhost:4100/api/sites \
+  -H 'content-type: application/json' \
+  -d '{"id":"my_site","name":"My site","domains":["example.com"]}'
+```
+
+Then drop the script into any page you want counted:
 
 ```html
-<script defer data-site="YOUR_SITE_KEY" src="https://analytics.example.com/a.js"></script>
+<script defer data-site="my_site" src="https://analytics.example.com/a.js"></script>
 ```
+
+The API, its scopes and its SSO exchange are documented in
+[packages/server/README.md](packages/server/README.md).
 
 ## Layout
 
@@ -41,7 +62,7 @@ MongoDB and Redis beside them. Drop the script into any page you want counted:
 | `packages/store` | The `AnalyticsStore` contract and the conformance suite every adapter passes |
 | `packages/store-mongo` | The MongoDB storage adapter |
 | `packages/geo` | IP to location and user agent parsing, offline |
-| `packages/sdk-node` | Server-side `track` and `identify` |
+| `packages/sdk-node` | Server-side `track` and `identify`, and the identify signature |
 
 Storage sits behind one `AnalyticsStore` interface, so an adapter can be
 swapped without touching a report.

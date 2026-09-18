@@ -14,10 +14,12 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint .",
     "test": "pnpm -r run test",
-    "size:tracker": "node scripts/tracker-size.mjs"
+    "size:tracker": "node scripts/tracker-size.mjs",
+    "load:collect": "node scripts/load-collect.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
+    "autocannon": "^8.0.0",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "typescript": "^5.7.3",

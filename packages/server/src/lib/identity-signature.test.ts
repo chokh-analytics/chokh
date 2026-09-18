@@ -5,6 +5,33 @@ import { signUserId, verifyUserId } from './identity-signature.js';
 // A placeholder, never a real key: no secret belongs in this repository.
 const SECRET = 'test-secret-not-a-real-key';
 
+// The shared identify signature test vector.
+//
+// @chokh/sdk-node makes these signatures and this package verifies them, and the
+// two implementations are deliberately separate: a product must not depend on its
+// own client SDK. What stops them drifting is this vector, asserted here and again
+// in packages/sdk-node/src/index.test.ts with the same three inputs and the same
+// expected string. Change the formula on one side and one of the two suites goes
+// red.
+const VECTOR = {
+  identifySecret: 'chokh-identify-test-vector-secret',
+  siteId: 'ps_web',
+  userId: 'u_42',
+  signature: 'PZKnTzQ2RNvGrAh-ROhA2pmOsHB0CiwrBXfINflfMms',
+} as const;
+
+describe('the shared test vector', () => {
+  it('is what this package issues', () => {
+    expect(signUserId(VECTOR.identifySecret, VECTOR.siteId, VECTOR.userId)).toBe(VECTOR.signature);
+  });
+
+  it('is what this package accepts, so sdk-node and the collector agree', () => {
+    expect(
+      verifyUserId(VECTOR.identifySecret, VECTOR.siteId, VECTOR.userId, VECTOR.signature),
+    ).toBe(true);
+  });
+});
+
 describe('the identify signature', () => {
   it('accepts what it issued', () => {
     const sig = signUserId(SECRET, 'site_1', 'u_rafi');

@@ -75,6 +75,243 @@ Nothing unconfirmed reaches a visitor row, merges an anonymous history or
 answers a per-user lookup. The store only ever sees identity the collector has
 already confirmed.
 
+## The stats API
+
+Every route answers the envelope: `{ success: true, data, meta? }` or
+`{ success: false, error: { code, message, details? } }`. That includes `401` and
+`403`, so a client parses the unhappy path the same way it parses the happy one.
+Two deliberate shapes are not JSON objects: `export.csv` answers a file, and the
+realtime stream answers `text/event-stream` frames whose `data:` line is the
+success envelope. A failure on either is the ordinary envelope.
+
+| Route | Needs | Notes |
+| --- | --- | --- |
+| `POST /api/collect` | nothing | Site key and origin check. See above. |
+| `POST /api/auth/register` | nothing, then `admin` | Open only while there is no account |
+| `POST /api/auth/login` | nothing | Sets the session cookie |
+| `POST /api/auth/logout` | a session | Clears it |
+| `GET /api/me` | a session or a key | Who you are, and your sites with your scopes |
+| `POST /api/sso`, `GET /api/sso` | nothing | A five minute token becomes a session |
+| `GET /api/sites` | a session | The sites you may read |
+| `POST /api/sites` | owner of the team | At least one domain. Returns `identifySecret` once |
+| `GET /api/sites/:siteId` | `read:stats` | Never carries `identifySecret` |
+| `PATCH /api/sites/:siteId` | `admin` | Settings merged field by field |
+| `POST /api/sites/:siteId/identify-secret/rotate` | `admin` | Returns the new secret once |
+| `GET`/`POST /api/sites/:siteId/keys` | `admin` | The token is shown once |
+| `DELETE /api/sites/:siteId/keys/:keyId` | `admin` | Takes effect immediately |
+| `PUT /api/teams/:teamId/members/:userId` | owner of the team | Role and identity flag |
+| `GET /api/sites/:siteId/stats/aggregate` | `read:stats` | Totals for a range |
+| `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=hour\|day\|week\|month` |
+| `GET /api/sites/:siteId/stats/breakdown` | `read:stats` | `dim=page\|referrer\|country\|…` |
+| `GET /api/sites/:siteId/export.csv` | `read:stats` | Any breakdown, as a file |
+| `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
+| `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
+| `GET /api/sites/:siteId/visitors/:visitorId` | `read:stats` | Identity fields gated |
+| `GET /api/sites/:siteId/users/:userId` | `read:identity` | One identified person |
+| `GET /api/sites/:siteId/users/:userId/presence` | `read:identity` | The online badge |
+| `POST /api/sites/:siteId/events` | `write:events` | What a backend sends |
+
+### The query every report takes
+
+`from` and `to` are required: epoch milliseconds, or an ISO 8601 date or
+timestamp. `from` is inclusive, `to` is exclusive, and a range that ends before
+it starts is refused rather than answered with zeroes, because zeroes read as
+"nobody came".
+
+- `interval=hour|day|week|month`, `day` by default. Hourly is capped at 7 days.
+- `compare=previous_period|previous_year` adds `previous` and `previousRange`.
+- `dim=` any dimension, required for a breakdown and for the CSV export.
+- `limit=` rows in a breakdown, 100 by default.
+- `metrics=visitors,pageviews,visits,bounces,bounce_rate,duration` narrows the
+  response. All of them cost the same to compute, so this is about a smaller
+  answer and never a cheaper query.
+- `filters=` in either of two spellings. A dashboard sends JSON:
+  `filters=[{"dim":"page","op":"is","value":"/pricing"}]`. A person types the
+  compact form: `filters=page==/pricing;browser!=Firefox;city~Dhaka`, where `==`
+  is `is`, `!=` is `is_not` and `~` is `contains`. The compact form has no escape,
+  so a value containing a semicolon has to go as JSON.
+
+`meta` carries the site, its timezone and the range that was read, so a chart can
+label itself without drawing a day boundary a second time.
+
+### Two ways to be somebody
+
+**A dashboard session.** `POST /api/auth/login` with an address and a password
+sets `chokh_session`: `httpOnly`, `SameSite=Lax`, `Secure` in production. The
+password is hashed with argon2id.
+
+There is no session table. The cookie carries the user id and an expiry, signed
+with `SESSION_SECRET`, and who that user is now is read from the store on every
+request. Removing somebody from a team therefore takes effect on their next
+request rather than when their cookie runs out. What it costs is revocation:
+"sign this person out of every browser" needs a row to invalidate, and nothing
+here asks for that yet. Shorten `SESSION_TTL_HOURS` if that trade is wrong for
+you.
+
+`SESSION_SECRET` is required in production. Without one the server generates
+another on every boot, which signs everybody out on a deploy and, with two
+processes, all of the time.
+
+**An API key.** `Authorization: Bearer chk_…`, minted by an owner, belonging to
+one site, carrying any of four scopes:
+
+| Scope | Lets the holder |
+| --- | --- |
+| `read:stats` | Read every report, the realtime snapshot and the stream |
+| `read:identity` | See addresses, identified user ids and traits |
+| `write:events` | Send server side events |
+| `admin` | Change settings, mint and revoke keys, rotate the identify secret |
+
+A key is 256 bits from the system random source and only its SHA-256 hash is
+stored: the token is shown once, when it is minted, and a key that was lost is
+replaced rather than recovered. SHA-256 and not argon2 on purpose, because there
+is nothing to guess about 256 random bits and the lookup has to go through a
+unique index. A key cannot be minted carrying a scope its maker does not hold.
+
+A request presenting a key is a program saying which identity it wants used, so a
+key beats a cookie and a bad key is refused rather than falling back to whatever
+cookie the browser sent.
+
+**Roles.** A team owns sites and holds members. A session's scopes come from the
+role it holds in the team that owns the site, so the same person can be an owner
+of one team and a viewer of another:
+
+| Role | Scopes |
+| --- | --- |
+| `owner` | all four |
+| `editor` | `read:stats`, `write:events` |
+| `viewer` | `read:stats` |
+
+`read:identity` is not in the editor's or the viewer's list. An owner has it by
+their role; anybody else only when the `identity` flag is set on their
+membership. Reading the numbers and reading who the numbers are about are two
+different permissions.
+
+A site with no `teamId` belongs to the team `default`, which is what the first
+registered account owns. A fresh install is therefore usable the moment somebody
+registers.
+
+### The identity gate and the audit log
+
+An IP address, the `userId` an identify named and the traits that came with it are
+personal data about a real person, not facts about traffic. They are behind
+`read:identity`, and every response that carries one writes a row to
+`audit_log`: who, when, which site, which route, which person and which fields.
+The log has no TTL, because "who looked at this person" is asked months later.
+
+- The **realtime list** stays visible to anybody with `read:stats`, with `ip` and
+  `userId` removed. The page, the country, the city, the device and the counts
+  are traffic. This is the IP column a dashboard hides, not the list.
+- A **visitor profile** is the same: the history stays, the addresses come back
+  empty and the name and traits are absent.
+- A **user profile** and a **user's presence** are refused outright without the
+  scope. To reach either you have to already know the person's id, so the request
+  itself is "tell me about this named person", and there is no version of that
+  answer with the person taken out.
+- The **stream** writes one row when it opens, not one per frame. A frame every
+  half second would turn the log into a metronome and bury the reads somebody
+  wants to find.
+- A read that revealed nothing personal writes nothing. A snapshot of anonymous
+  visitors names nobody.
+
+### The realtime stream
+
+`GET /api/sites/:siteId/realtime/stream` is server sent events. A frame on
+connect, a frame within half a second of a batch landing, a frame every ten
+seconds so the online count decays on its own, and a `:` keepalive every fifteen.
+Each frame's `data:` is the success envelope, so a client parses a frame the way
+it parses a poll.
+
+The nudge that wakes a stream travels over Redis pub/sub when `REDIS_URL` is set,
+so a dashboard on one container wakes on a batch accepted by another, and over an
+emitter in this process when it is not. Losing it costs at most ten seconds of
+latency, because the refresh timer is still there.
+
+Behind Nginx, turn buffering off for this path or nothing arrives until Nginx
+decides it has enough:
+
+```
+location /api/sites/ {
+  proxy_pass http://127.0.0.1:4100;
+  proxy_buffering off;
+  proxy_read_timeout 1h;
+}
+```
+
+### Server side events
+
+`POST /api/sites/:siteId/events`, with a key carrying `write:events`. For facts a
+backend knows and a page either cannot see or cannot be trusted about: an order
+that was paid, a signup that completed, an identify for a browser that blocks the
+tracker.
+
+```
+POST /api/sites/ps_web/events
+Authorization: Bearer chk_…
+
+{ "userId": "u_42", "visitorId": "v_from_the_browser",
+  "events": [{ "type": "event", "name": "order_paid", "value": 1200 }] }
+```
+
+Four rules make it different from `POST /api/collect`:
+
+1. **The identity is trusted and required.** A key presented by a server is the
+   proof a browser identify needs a signature for.
+2. **It is never a pageview.** A backend did not read a page. Only `event` and
+   `identify` are accepted.
+3. **It never puts anybody online.** A receipt written by a backend is not a sign
+   that somebody is at a keyboard.
+4. **It carries no address.** The stay it joins already has the visitor's
+   location from the browser.
+
+Which visitor it lands on, in order of preference: the `visitorId` the
+application passed, which is best because the event joins the stay in progress;
+otherwise the visitor that person was last seen as; otherwise `u:<userId>`, so
+somebody who only ever exists server side is still one visitor. The response says
+which one it was.
+
+### Single sign-on
+
+`POST /api/sso` with `{ "token": "…" }`, or `GET /api/sso?token=…&next=/realtime`
+for a link in another application's admin panel, which sets the cookie and
+redirects with a `303`.
+
+The token is an HS256 JWT signed with `SSO_SECRET`, shared with that application:
+
+```
+{ "sub": "staff_7", "email": "staff@example.com", "name": "Staff Seven",
+  "teamId": "default", "role": "viewer", "identity": false,
+  "jti": "<unique>", "iat": …, "exp": … }
+```
+
+`sub`, `email` and `jti` are required. `role` defaults to `viewer`. An account is
+created on first arrival from these claims, with no password, so somebody who
+arrives by SSO cannot sign in with one until they set it; their password belongs
+to the other application and this should not be a second place to guess it.
+
+Three things keep a five minute token from being a five minute password. The
+signature has to be ours, and the algorithm is asserted rather than read out of
+the header. The lifetime is bounded by `SSO_MAX_AGE_SECONDS`, so a token claiming
+a longer one is refused however well it is signed. And the `jti` is single use,
+in Redis when there is one and in this process otherwise, so a token read out of a
+URL, a proxy log or a browser history cannot be presented twice. Raising
+`SSO_MAX_AGE_SECONDS` weakens all three, and the `GET` form is the reason they
+exist: it puts the token in a URL.
+
+An install with no `SSO_SECRET` refuses every exchange. An SSO endpoint nobody
+configured is an open door.
+
+### There is no CORS
+
+Deliberately. The dashboard is served by this same process, so it is same origin,
+and a backend consuming this API calls it server to server and proxies the stream
+itself. `POST /api/collect` needs no CORS either: a beacon is a simple request and
+the origin check is the site's allowlist.
+
+Adding `Access-Control-Allow-Origin: *` here would let any page on the internet
+read a site's numbers with the visitor's own cookie. If a cross origin consumer
+ever appears it gets an allowlist and a reason written down, never a wildcard.
+
 ## Sessions and visitors
 
 `ingest` is where a batch becomes a stay.
@@ -165,7 +402,20 @@ empty and events are still collected.
 | `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
 | `COLLECT_RATE_LIMIT_SITE` | `60000` | Batches a minute for one site |
 | `MONGODB_URI` | none | Set it and the server runs on MongoDB, unset and it runs on memory |
-| `REDIS_URL` | none | Set it and presence lives in Redis, unset and it lives in this process |
+| `REDIS_URL` | none | Presence, the realtime nudge and the SSO replay set in Redis rather than in this process |
+| `SESSION_SECRET` | none | Signs the dashboard session cookie. Required in production |
+| `SESSION_TTL_HOURS` | `12` | How long a session lasts |
+| `SSO_SECRET` | none | Shared with the application that mints SSO tokens. Unset means SSO is refused |
+| `SSO_MAX_AGE_SECONDS` | `300` | The longest life an SSO token may claim |
+| `AUTH_RATE_LIMIT` | `10` | Sign-in, registration and SSO attempts a minute, per address |
+| `COOKIE_SECURE` | yes in production | `false` lets a developer sign in over plain http |
+
+An install running more than one process should have `REDIS_URL`. Without it each
+process keeps its own presence set, its own realtime nudges and its own record of
+which SSO tokens have been used, so the online count differs between them, a
+dashboard only wakes on batches its own process accepted, and one SSO token can be
+exchanged once per process. None of the three is storage, so losing Redis costs a
+minute of "online now" and nothing else.
 
 Behind Cloudflare, set `TRUST_PROXY` to Cloudflare's ranges and `REAL_IP_HEADER`
 to `CF-Connecting-IP`, or every visitor's address is Cloudflare's. If your proxy
@@ -265,6 +515,25 @@ survives the purge; only the per-visitor detail ages out.
   logged out, until the daily salt turns. Persistent mode throws the stored id
   away on `reset` and has no such window, so a site where people sign in on
   shared machines should run `persistent`.
+
+## The load test
+
+```
+pnpm load:collect           the in-memory adapter
+pnpm load:collect --mongo   a real mongod, so the database writes are in the number
+```
+
+`POST /api/collect` at 200 requests a second for twenty seconds, asserting a 95th
+percentile under 20 ms. Not in CI: a shared runner's p95 is noise, and a gate that
+fails for somebody else's noisy neighbour teaches people to ignore gates.
+
+Every request is a different visitor sending a custom event, because the two
+obvious shapings measure the wrong thing. All the traffic arrives from one address
+with one user agent, so in cookieless mode the collector would derive one visitor
+id for all of it and every batch would land on one session document, which is a
+write hotspot no real site has. And a repeated pageview is one pageview, so a
+constant path would be swallowed by the dedupe and the store would barely be
+touched. The script says so where it shapes the load.
 
 ## Layering
 

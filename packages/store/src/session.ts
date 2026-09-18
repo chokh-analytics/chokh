@@ -76,6 +76,12 @@ export interface VisitorFoldResult {
   events: StoredEvent[];
   // Sessions to upsert: the open one when it grew, plus any that began here.
   sessions: StoredSession[];
+  // The subset of those a browser was actually seen in, which is what goes into
+  // the presence set. An event an application sent server side moves the stay it
+  // belongs to but puts nobody online: a receipt written by a backend is not a
+  // sign that somebody is at a keyboard, and a realtime page that counted them
+  // would show visitors nobody could see leave.
+  live: StoredSession[];
   visitor: StoredVisitor;
   // Set when a confirmed identity reached this visitor for the first time.
   // Every session and event of theirs written before now takes this userId,
@@ -132,6 +138,7 @@ export function foldVisitor(input: VisitorFold): VisitorFoldResult {
   const created: StoredSession[] = [];
   let pageviews = 0;
   let traits: Attributes | undefined = input.visitor?.traits;
+  const seenInBrowser = new Set<string>();
 
   for (const event of ordered) {
     if (current === null || Math.abs(event.ts - current.lastSeenAt) >= SESSION_GAP_MS) {
@@ -194,6 +201,9 @@ export function foldVisitor(input: VisitorFold): VisitorFoldResult {
     event.sessionId = current.id;
     if (userId !== undefined) event.userId = userId;
     touched.set(current.id, current);
+    if (event.source === undefined) {
+      seenInBrowser.add(current.id);
+    }
   }
 
   const first = ordered[0];
@@ -250,9 +260,11 @@ export function foldVisitor(input: VisitorFold): VisitorFoldResult {
   if (firstTouch !== undefined) visitor.firstTouch = firstTouch;
   if (lastTouch !== undefined) visitor.lastTouch = lastTouch;
 
+  const sessions = [...touched.values()];
   const result: VisitorFoldResult = {
     events: ordered.filter((event) => !isEphemeral(event)),
-    sessions: [...touched.values()],
+    sessions,
+    live: sessions.filter((session) => seenInBrowser.has(session.id)),
     visitor,
   };
   if (merge !== undefined) result.merge = merge;

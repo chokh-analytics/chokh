@@ -3,6 +3,7 @@ import { parseUserAgent } from '@chokh/geo';
 
 import { applyIpMode } from '../lib/ip-privacy.js';
 import type { WindowCounter } from '../lib/window-counter.js';
+import type { Bus } from './bus.js';
 import type { CollectBatch, CollectEvent } from '../schemas/collect.schema.js';
 import type { AnalyticsStore, Attributes, Site, StoredEvent } from '../store/AnalyticsStore.js';
 import { isBot } from './bots.js';
@@ -31,6 +32,10 @@ export interface CollectDeps {
   visitorRate: WindowCounter;
   dedupe: Dedupe;
   limits: { perIp: number; perSite: number };
+  // Wakes the realtime streams watching this site once the batch has landed.
+  // Optional, because the collector is a complete thing without a dashboard
+  // attached and a test of ingestion should not have to build a bus.
+  bus?: Bus;
   now(): number;
 }
 
@@ -187,6 +192,12 @@ export async function collect(deps: CollectDeps, input: CollectInput): Promise<C
 
   if (stored.length > 0) {
     await deps.store.ingest(stored);
+    // After the write, never before: a stream woken early would read the presence
+    // set as it was and then sit still until the next batch. Crawlers are never in
+    // the presence set, so they never wake anybody either.
+    if (!bot) {
+      await deps.bus?.publish(site.id);
+    }
   }
   return { ok: true, accepted: stored.length, identity: identity.kind };
 }

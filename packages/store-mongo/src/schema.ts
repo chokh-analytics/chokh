@@ -19,6 +19,10 @@ export const SITES = 'sites';
 export const SESSIONS = 'sessions';
 export const VISITORS = 'visitors';
 export const ROLLUPS_DAILY = 'rollups_daily';
+export const USERS = 'users';
+export const TEAMS = 'teams';
+export const API_KEYS = 'api_keys';
+export const AUDIT_LOG = 'audit_log';
 
 export const schema: readonly CollectionSchema[] = [
   {
@@ -28,6 +32,11 @@ export const schema: readonly CollectionSchema[] = [
       { name: 'site_id', key: { id: 1 }, unique: true },
       // Multikey and unique together: a domain belongs to one site, so a key
       // stolen from another page cannot borrow somebody else's numbers.
+      //
+      // Multikey also means an empty array indexes as one null key, so two sites
+      // with no domains would collide on it. That is why createSite refuses an
+      // empty domain list rather than letting the driver report a duplicate key
+      // for a reason nobody could read.
       { name: 'site_domains', key: { domains: 1 }, unique: true },
     ],
   },
@@ -102,26 +111,37 @@ export const schema: readonly CollectionSchema[] = [
     }),
   ),
   {
-    name: 'users',
-    purpose: 'Dashboard accounts. Fields arrive with AN-API01.',
-    indexes: [{ name: 'user_email', key: { email: 1 }, unique: true }],
-  },
-  {
-    name: 'teams',
-    purpose: 'Owner, editor and viewer membership. Fields arrive with AN-TEAM01.',
-    indexes: [{ name: 'team_id', key: { id: 1 }, unique: true }],
-  },
-  {
-    name: 'api_keys',
-    purpose: 'Hashed keys and their scopes. Fields arrive with AN-API01.',
+    name: USERS,
+    purpose: 'Dashboard accounts: an address, an argon2id hash and a name.',
     indexes: [
+      { name: 'user_id', key: { id: 1 }, unique: true },
+      // Lowercased by the adapter on the way in, because one address is one
+      // address however it was typed and this index would otherwise hold both.
+      { name: 'user_email', key: { email: 1 }, unique: true },
+    ],
+  },
+  {
+    name: TEAMS,
+    purpose: 'Who may read which sites: owner, editor and viewer membership.',
+    indexes: [
+      { name: 'team_id', key: { id: 1 }, unique: true },
+      // "Which teams is this person in" is asked on every dashboard request, so
+      // it is a multikey index rather than a scan of every team.
+      { name: 'team_members', key: { 'members.userId': 1 } },
+    ],
+  },
+  {
+    name: API_KEYS,
+    purpose: 'Hashed keys and their scopes. The hash is SHA-256 of the token.',
+    indexes: [
+      // The one read on the authentication path, so it has to be an index.
       { name: 'api_key_hash', key: { keyHash: 1 }, unique: true },
       { name: 'api_key_site', key: { siteId: 1 } },
     ],
   },
   {
-    name: 'audit_log',
-    purpose: 'Who read an IP or an identified person. Kept forever.',
+    name: AUDIT_LOG,
+    purpose: 'Who read an IP or an identified person. Kept forever, no TTL.',
     indexes: [{ name: 'audit_site_ts', key: { siteId: 1, ts: 1 } }],
   },
 ];

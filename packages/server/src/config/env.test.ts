@@ -73,4 +73,65 @@ describe('envSchema', () => {
   it('refuses a real IP header the collector does not know how to trust', () => {
     expect(() => envSchema.parse({ REAL_IP_HEADER: 'X-Real-IP' })).toThrow();
   });
+
+  describe('the API variables', () => {
+    it('has a twelve hour session, a five minute SSO token and ten attempts a minute', () => {
+      const parsed = envSchema.parse({});
+
+      expect(parsed.SESSION_TTL_HOURS).toBe(12);
+      expect(parsed.SSO_MAX_AGE_SECONDS).toBe(300);
+      expect(parsed.AUTH_RATE_LIMIT).toBe(10);
+      // No SSO secret means POST /api/sso refuses everything, which is the right
+      // default: an SSO endpoint nobody configured is an open door.
+      expect(parsed.SSO_SECRET).toBeUndefined();
+      // Unset means "Secure in production", decided by cookieSecure() rather than
+      // here, so a developer on plain http can still sign in.
+      expect(parsed.COOKIE_SECURE).toBeUndefined();
+    });
+
+    it('takes the values an operator set', () => {
+      const parsed = envSchema.parse({
+        SESSION_SECRET: 'a'.repeat(32),
+        SESSION_TTL_HOURS: '1',
+        SSO_SECRET: 'b'.repeat(40),
+        SSO_MAX_AGE_SECONDS: '60',
+        AUTH_RATE_LIMIT: '3',
+        COOKIE_SECURE: 'false',
+      });
+
+      expect(parsed.SESSION_TTL_HOURS).toBe(1);
+      expect(parsed.SSO_MAX_AGE_SECONDS).toBe(60);
+      expect(parsed.AUTH_RATE_LIMIT).toBe(3);
+      expect(parsed.COOKIE_SECURE).toBe(false);
+    });
+
+    // A short secret is a secret somebody can search for.
+    it('refuses a secret too short to be one', () => {
+      expect(() => envSchema.parse({ SESSION_SECRET: 'short' })).toThrow();
+      expect(() => envSchema.parse({ SSO_SECRET: 'short' })).toThrow();
+    });
+
+    it('reads an empty secret as unset rather than as a secret of no length', () => {
+      const parsed = envSchema.parse({ SESSION_SECRET: '', SSO_SECRET: '', COOKIE_SECURE: '' });
+
+      expect(parsed.SESSION_SECRET).toBeUndefined();
+      expect(parsed.SSO_SECRET).toBeUndefined();
+      expect(parsed.COOKIE_SECURE).toBeUndefined();
+    });
+
+    // A generated secret is different in every process and after every restart: on
+    // one container that signs everybody out on a deploy, and on two it signs half
+    // the requests out all the time.
+    it('refuses to run in production without a session secret', () => {
+      expect(() => envSchema.parse({ NODE_ENV: 'production' })).toThrow(/SESSION_SECRET/);
+      expect(
+        envSchema.parse({ NODE_ENV: 'production', SESSION_SECRET: 'c'.repeat(32) }).NODE_ENV,
+      ).toBe('production');
+    });
+
+    it('does not ask a developer for one', () => {
+      expect(envSchema.parse({ NODE_ENV: 'development' }).SESSION_SECRET).toBeUndefined();
+      expect(envSchema.parse({ NODE_ENV: 'test' }).SESSION_SECRET).toBeUndefined();
+    });
+  });
 });

@@ -14,9 +14,13 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 // the site's identifySecret and never leaves the server: a browser that could
 // read it could sign anything.
 //
-// AN-API01 puts this behind sdk-node, which is where an application will call
-// it. The formula is one line on purpose, so a server in another language can
-// issue the same signature from the description alone:
+// @chokh/sdk-node carries the same one line, because that is where an application
+// calls it, and this server does not import it: a product depending on its own
+// client SDK is the wrong direction, and it would drag a fetch client into the
+// image for the sake of one HMAC. A shared test vector asserted in both packages is
+// what stops the two copies drifting apart. The formula is one line on purpose, so
+// a server in another language can issue the same signature from the description
+// alone:
 //
 //   base64url(hmac_sha256(identifySecret, siteId + "\n" + userId))
 

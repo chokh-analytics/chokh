@@ -1,4 +1,4 @@
-import { fixture, runStoreConformance } from '@chokh/store/conformance';
+import { fixture, runAccountConformance, runStoreConformance } from '@chokh/store/conformance';
 
 import { createMemoryStore } from './memory.store.js';
 
@@ -10,10 +10,21 @@ runStoreConformance('memory', () => {
   const store = createMemoryStore([], { now: () => fixture.NOW });
   return Promise.resolve({
     store,
-    addSite: (site) => {
-      store.addSite(site);
+    addSite: (site) => store.createSite(site),
+    reset: () => {
+      store.clear();
       return Promise.resolve();
     },
+    close: () => store.close(),
+  });
+});
+
+// The same for the control plane: the accounts, the teams, the keys and the
+// audit log answer the same way in both adapters or one of them is wrong.
+runAccountConformance('memory', () => {
+  const store = createMemoryStore([], { now: () => fixture.NOW });
+  return Promise.resolve({
+    store,
     reset: () => {
       store.clear();
       return Promise.resolve();

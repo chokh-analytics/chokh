@@ -13,8 +13,11 @@ import { apply } from './migrate.js';
 import { createMongoStore } from './mongo.store.js';
 import {
   rawBreakdownPipeline,
+  rawTotalsByBucketPipeline,
+  rollupTotalsByDatePipeline,
   sessionBreakdownPipeline,
   sessionSourcedBreakdownPipeline,
+  sessionTotalsByBucketPipeline,
 } from './pipelines.js';
 
 // The ticket's second verify line: an explain on each breakdown pipeline
@@ -64,7 +67,7 @@ beforeAll(async () => {
   const store = await createMongoStore({ client, now: () => fixture.NOW });
   db = store.db;
   await apply(db);
-  await store.addSite(fixture.fixtureSite());
+  await store.createSite(fixture.fixtureSite());
   await store.ingest(fixture.fixtureEvents());
 }, 120_000);
 
@@ -116,11 +119,64 @@ describe('session pipelines', () => {
   });
 });
 
+// The bucketed pipelines are what makes a time series one query per source rather
+// than one per bucket, so they are on the same footing as the breakdowns: a series
+// that falls back to a collection scan is worse than the round trips it replaced.
+describe('bucketed series pipelines', () => {
+  const span = { from: fixture.DAY_BEFORE_START, to: fixture.NOW };
+
+  async function explain(collection: string, pipeline: Document[]): Promise<string[]> {
+    const explained = (await db
+      .collection(collection)
+      .aggregate(pipeline)
+      .explain('queryPlanner')) as unknown as Document;
+    return scanStages(explained);
+  }
+
+  it.each(['hour', 'day'] as const)('scans an index for raw totals by %s', async (interval) => {
+    const stages = await explain(
+      'events',
+      rawTotalsByBucketPipeline(fixture.SITE_ID, span, fixture.TIMEZONE, interval, false, undefined),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  it.each(['hour', 'day'] as const)('scans an index for session totals by %s', async (interval) => {
+    const stages = await explain(
+      'sessions',
+      sessionTotalsByBucketPipeline(
+        fixture.SITE_ID,
+        span,
+        fixture.TIMEZONE,
+        interval,
+        false,
+        undefined,
+      ),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  it('scans an index for rollup totals by date', async () => {
+    await (await createMongoStore({ client, now: () => fixture.NOW })).rollupDay(
+      fixture.SITE_ID,
+      fixture.DAY_BEFORE,
+    );
+    const stages = await explain(
+      'rollups_daily',
+      rollupTotalsByDatePipeline(fixture.SITE_ID, [fixture.DAY_BEFORE, fixture.YESTERDAY], 'total', ''),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+});
+
 describe('the adapter never creates an index', () => {
   it('leaves a fresh database with nothing but _id until migrate runs', async () => {
     const bare = client.db('chokh_no_auto_index');
     const store = await createMongoStore({ client, dbName: 'chokh_no_auto_index' });
-    await store.addSite(fixture.fixtureSite());
+    await store.createSite(fixture.fixtureSite());
     await store.ingest(fixture.fixtureEvents());
     await store.rollupDay(fixture.SITE_ID, fixture.DAY_BEFORE);
 

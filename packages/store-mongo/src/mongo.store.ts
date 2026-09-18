@@ -11,6 +11,7 @@ import {
   addTotals,
   assertFilterable,
   botSelector,
+  bucketIndexAt,
   bucketsBetween,
   comparisonRange,
   createMemoryPresence,
@@ -53,10 +54,22 @@ import {
   type Totals,
   type UserProfile,
   type VisitorProfile,
+  type AccountStore,
+  type ApiKeyRecord,
+  type AuditRecord,
+  type SitePatch,
+  type StoredApiKey,
+  type StoredTeam,
+  type StoredUser,
+  type TeamMember,
+  type UserPatch,
 } from '@chokh/store';
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 
 import {
+  rawTotalsByBucketPipeline,
+  rollupTotalsByDatePipeline,
+  sessionTotalsByBucketPipeline,
   rawBreakdownPipeline,
   rawTotalsPipeline,
   rollupBreakdownPipeline,
@@ -65,7 +78,17 @@ import {
   sessionSourcedBreakdownPipeline,
   sessionTotalsPipeline,
 } from './pipelines.js';
-import { EVENTS, ROLLUPS_DAILY, SESSIONS, SITES, VISITORS } from './schema.js';
+import {
+  API_KEYS,
+  AUDIT_LOG,
+  EVENTS,
+  ROLLUPS_DAILY,
+  SESSIONS,
+  SITES,
+  TEAMS,
+  USERS,
+  VISITORS,
+} from './schema.js';
 
 // The MongoDB adapter. Everything below reads and writes through aggregation
 // pipelines built in pipelines.ts; nothing here creates an index, because only
@@ -77,12 +100,16 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // without letting a settings change wait longer than a coffee.
 const SITE_CACHE_MS = 60_000;
 
-export interface MongoStore extends AnalyticsStore {
-  // Site creation belongs to AN-API01; this is how a migration, a test or a
-  // seeding script puts one in until then.
-  addSite(site: Site): Promise<void>;
+export interface MongoStore extends AnalyticsStore, AccountStore {
   db: Db;
 }
+
+// Why a site cannot have an empty domain list, said once because both writes
+// refuse it: the unique multikey index on sites.domains stores one null key for
+// an empty array, so the second domainless site collides with the first, and a
+// site with no domain could not pass the collector's origin check anyway.
+const NO_DOMAIN =
+  'A site needs at least one domain: the unique index on sites.domains cannot hold two empty lists';
 
 export interface MongoStoreOptions extends StoreOptions {
   uri?: string;
@@ -119,6 +146,10 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const sessions = db.collection<SessionDoc>(SESSIONS);
   const visitors = db.collection<VisitorDoc>(VISITORS);
   const sites = db.collection<Site>(SITES);
+  const users = db.collection<StoredUser>(USERS);
+  const teams = db.collection<StoredTeam>(TEAMS);
+  const apiKeys = db.collection<StoredApiKey>(API_KEYS);
+  const auditLog = db.collection<AuditRecord>(AUDIT_LOG);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -128,10 +159,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       return cached.site;
     }
     const doc = await sites.findOne({ id: siteId }, { projection: { _id: 0 } });
-    const site: Site | null =
-      doc === null
-        ? null
-        : { id: doc.id, name: doc.name, domains: doc.domains, settings: doc.settings };
+    const site: Site | null = doc === null ? null : siteOf(doc);
     siteCache.set(siteId, { site, until: now() + SITE_CACHE_MS });
     return site;
   }
@@ -294,9 +322,138 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   return {
     db,
 
-    async addSite(site: Site): Promise<void> {
-      await sites.replaceOne({ id: site.id }, site, { upsert: true });
+    async createSite(site: Site): Promise<void> {
+      if (site.domains.length === 0) {
+        throw new StoreQueryError('DOMAIN_REQUIRED', NO_DOMAIN);
+      }
+      if ((await sites.countDocuments({ id: site.id }, { limit: 1 })) > 0) {
+        throw new StoreQueryError('SITE_EXISTS', `A site already answers to ${site.id}`);
+      }
+      const clash = await sites.findOne({ domains: { $in: site.domains } });
+      if (clash !== null) {
+        const taken = site.domains.find((domain) => clash.domains.includes(domain));
+        throw new StoreQueryError('DOMAIN_TAKEN', `${taken} already belongs to another site`);
+      }
+      await sites.insertOne({ ...site });
       siteCache.delete(site.id);
+    },
+
+    async updateSite(siteId: string, patch: SitePatch): Promise<Site> {
+      const current = await siteOrThrow(siteId);
+      const domains = patch.domains ?? current.domains;
+      if (domains.length === 0) {
+        throw new StoreQueryError('DOMAIN_REQUIRED', NO_DOMAIN);
+      }
+      const clash = await sites.findOne({ id: { $ne: siteId }, domains: { $in: domains } });
+      if (clash !== null) {
+        const taken = domains.find((domain) => clash.domains.includes(domain));
+        throw new StoreQueryError('DOMAIN_TAKEN', `${taken} already belongs to another site`);
+      }
+      const updated: Site = {
+        ...current,
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.teamId === undefined ? {} : { teamId: patch.teamId }),
+        domains,
+        // Field by field, so a patch naming one setting does not reset the rest.
+        settings: { ...current.settings, ...patch.settings },
+      };
+      await sites.replaceOne({ id: siteId }, updated);
+      siteCache.delete(siteId);
+      return updated;
+    },
+
+    async createUser(user: StoredUser): Promise<void> {
+      const email = user.email.toLowerCase();
+      if ((await users.countDocuments({ email }, { limit: 1 })) > 0) {
+        throw new StoreQueryError('EMAIL_EXISTS', 'An account already uses that address');
+      }
+      await users.insertOne({ ...user, email });
+    },
+
+    async updateUser(userId: string, patch: UserPatch): Promise<void> {
+      const set: Partial<StoredUser> = {};
+      if (patch.name !== undefined) set.name = patch.name;
+      if (patch.passwordHash !== undefined) set.passwordHash = patch.passwordHash;
+      if (patch.lastLoginAt !== undefined) set.lastLoginAt = patch.lastLoginAt;
+      if (Object.keys(set).length === 0) {
+        return;
+      }
+      const result = await users.updateOne({ id: userId }, { $set: set });
+      if (result.matchedCount === 0) {
+        throw new StoreQueryError('UNKNOWN_USER', `No account answers to ${userId}`);
+      }
+    },
+
+    userById(userId: string): Promise<StoredUser | null> {
+      return users.findOne({ id: userId }, { projection: { _id: 0 } });
+    },
+
+    userByEmail(email: string): Promise<StoredUser | null> {
+      return users.findOne({ email: email.toLowerCase() }, { projection: { _id: 0 } });
+    },
+
+    userCount(): Promise<number> {
+      return users.countDocuments();
+    },
+
+    async createTeam(team: StoredTeam): Promise<void> {
+      if ((await teams.countDocuments({ id: team.id }, { limit: 1 })) > 0) {
+        throw new StoreQueryError('TEAM_EXISTS', `A team already answers to ${team.id}`);
+      }
+      await teams.insertOne({ ...team });
+    },
+
+    team(teamId: string): Promise<StoredTeam | null> {
+      return teams.findOne({ id: teamId }, { projection: { _id: 0 } });
+    },
+
+    teamsForUser(userId: string): Promise<StoredTeam[]> {
+      return teams.find({ 'members.userId': userId }, { projection: { _id: 0 } }).toArray();
+    },
+
+    async setTeamMember(teamId: string, member: TeamMember): Promise<StoredTeam> {
+      const team = await teams.findOne({ id: teamId }, { projection: { _id: 0 } });
+      if (team === null) {
+        throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
+      }
+      const members = team.members.filter((row) => row.userId !== member.userId);
+      members.push({ ...member });
+      await teams.updateOne({ id: teamId }, { $set: { members } });
+      return { ...team, members };
+    },
+
+    async createApiKey(key: StoredApiKey): Promise<void> {
+      if ((await apiKeys.countDocuments({ keyHash: key.keyHash }, { limit: 1 })) > 0) {
+        throw new StoreQueryError('KEY_EXISTS', 'That key already exists');
+      }
+      await apiKeys.insertOne({ ...key });
+    },
+
+    apiKeyByHash(keyHash: string): Promise<StoredApiKey | null> {
+      return apiKeys.findOne({ keyHash }, { projection: { _id: 0 } });
+    },
+
+    apiKeys(siteId: string): Promise<ApiKeyRecord[]> {
+      // A hash is still a secret, so a list of keys is not a list of them.
+      return apiKeys
+        .find({ siteId }, { projection: { _id: 0, keyHash: 0 } })
+        .toArray() as Promise<ApiKeyRecord[]>;
+    },
+
+    async deleteApiKey(siteId: string, keyId: string): Promise<boolean> {
+      const result = await apiKeys.deleteOne({ siteId, id: keyId });
+      return result.deletedCount > 0;
+    },
+
+    async audit(row: AuditRecord): Promise<void> {
+      await auditLog.insertOne({ ...row });
+    },
+
+    auditTrail(siteId: string, from: number, to: number): Promise<AuditRecord[]> {
+      return auditLog
+        .find({ siteId, ts: { $gte: from, $lt: to } }, { projection: { _id: 0 } })
+        .sort({ ts: 1 })
+        .toArray();
     },
 
     site(siteId: string): Promise<Site | null> {
@@ -305,12 +462,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async sites(): Promise<Site[]> {
       const docs = await sites.find({}, { projection: { _id: 0 } }).toArray();
-      return docs.map((doc) => ({
-        id: doc.id,
-        name: doc.name,
-        domains: doc.domains,
-        settings: doc.settings,
-      }));
+      return docs.map(siteOf);
     },
 
     async ingest(batch: StoredEvent[]): Promise<void> {
@@ -347,14 +499,22 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         // moment can both read the same open stay and the later write wins, so
         // a count can be lost; a tab sends its batches one after another, and
         // the cure if that ever matters is a findOneAndUpdate, not a lock.
-        const open = await sessions.findOne<StoredSession>(
-          { siteId, visitorId },
-          { projection: { _id: 0, expiresAt: 0 }, sort: { startedAt: -1 } },
-        );
-        const visitor = await visitors.findOne<StoredVisitor>(
-          { siteId, id: visitorId },
-          { projection: { _id: 0, expiresAt: 0 } },
-        );
+        //
+        // The two reads go together: they are different collections and neither
+        // needs the other's answer, so waiting for them one after the other buys
+        // nothing and costs a round trip. On a laptop against a local mongod that
+        // round trip is most of a millisecond; from a droplet to Atlas it is
+        // several.
+        const [open, visitor] = await Promise.all([
+          sessions.findOne<StoredSession>(
+            { siteId, visitorId },
+            { projection: { _id: 0, expiresAt: 0 }, sort: { startedAt: -1 } },
+          ),
+          visitors.findOne<StoredVisitor>(
+            { siteId, id: visitorId },
+            { projection: { _id: 0, expiresAt: 0 } },
+          ),
+        ]);
         const folded = foldVisitor({ siteId, visitorId, events: group, open, visitor });
 
         // The merge: everything this visitor did before they were named takes
@@ -385,7 +545,9 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
           },
         });
 
-        const entries = folded.sessions
+        // Only the stays a browser was seen in. An event an application sent
+        // server side moves the stay and puts nobody online.
+        const entries = folded.live
           .map((session) => presenceEntryOf(session))
           .filter((entry): entry is PresenceEntry => entry !== null);
         if (entries.length > 0) {
@@ -393,18 +555,21 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         }
       }
 
-      if (docs.length > 0) {
-        await events.insertMany(docs, { ordered: false });
-      }
-      if (sessionWrites.length > 0) {
-        await sessions.bulkWrite(sessionWrites, { ordered: false });
-      }
-      if (visitorWrites.length > 0) {
-        await visitors.bulkWrite(visitorWrites, { ordered: false });
-      }
-      for (const { siteId, entries } of live) {
-        await presence.touch(siteId, entries);
-      }
+      // Three collections and a presence set, none of which needs another's
+      // answer, so they go together for the same reason the two reads above do.
+      // There is no ordering to preserve: nothing about a batch is atomic across
+      // collections either way, and a reader that catches it half written sees a
+      // session whose events are a millisecond behind rather than a wrong number.
+      await Promise.all([
+        docs.length > 0 ? events.insertMany(docs, { ordered: false }) : undefined,
+        sessionWrites.length > 0
+          ? sessions.bulkWrite(sessionWrites, { ordered: false })
+          : undefined,
+        visitorWrites.length > 0
+          ? visitors.bulkWrite(visitorWrites, { ordered: false })
+          : undefined,
+        ...live.map(({ siteId, entries }) => presence.touch(siteId, entries)),
+      ]);
     },
 
     async aggregate(query: Query): Promise<AggregateResult> {
@@ -436,15 +601,75 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         );
       }
       const timezone = site.settings.timezone;
+      // One query per source for the whole range, not one per bucket. Every row
+      // comes back keyed by the instant its day or hour began, and is folded into
+      // whichever bucket holds that instant. See the pipelines for why the
+      // arithmetic is unchanged.
       const series = async (range: Range): Promise<TimeseriesPoint[]> => {
         const starts = bucketsBetween(range.from, range.to, interval, timezone);
-        const points: TimeseriesPoint[] = [];
-        for (const [index, start] of starts.entries()) {
-          const end = starts[index + 1] ?? range.to;
-          const clipped: Range = { from: Math.max(start, range.from), to: Math.min(end, range.to) };
-          points.push({ start, end, metrics: await metricsFor(query, clipped, site) });
+        const buckets = starts.map(() => zeroTotals());
+        const into = (at: number, row: Partial<Totals>): void => {
+          const index = bucketIndexAt(starts, at, range.to);
+          if (index !== -1) {
+            addTotals(buckets[index]!, row);
+          }
+        };
+
+        const plan = readPlan({
+          from: range.from,
+          to: range.to,
+          todayStart: startOfDay(now(), timezone),
+          timezone,
+          filters: query.filters,
+        });
+        if (plan.days.length > 0) {
+          const selector = rollupTotalSelector(query.filters);
+          for (const row of await rollups
+            .aggregate(rollupTotalsByDatePipeline(site.id, plan.days, selector.dim, selector.key))
+            .toArray()) {
+            into(dayBounds(String(row._id), timezone).start, row as Partial<Totals>);
+          }
         }
-        return points;
+        const wantsBots = botSelector(query.filters);
+        for (const span of plan.raw) {
+          for (const row of await events
+            .aggregate(
+              rawTotalsByBucketPipeline(
+                site.id,
+                span,
+                timezone,
+                interval,
+                wantsBots,
+                query.filters,
+              ),
+            )
+            .toArray()) {
+            into(bucketOf(row._id), row as Partial<Totals>);
+          }
+          if (!sessionsAnswerFilters(query.filters)) {
+            continue;
+          }
+          for (const row of await sessions
+            .aggregate(
+              sessionTotalsByBucketPipeline(
+                site.id,
+                span,
+                timezone,
+                interval,
+                wantsBots,
+                query.filters,
+              ),
+            )
+            .toArray()) {
+            into(bucketOf(row._id), row as Partial<Totals>);
+          }
+        }
+
+        return starts.map((start, index) => ({
+          start,
+          end: starts[index + 1] ?? range.to,
+          metrics: finishMetrics(buckets[index]!),
+        }));
       };
 
       const range: Range = { from: query.from, to: query.to };
@@ -479,6 +704,14 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async user(siteId: string, userId: string): Promise<UserProfile | null> {
       const found = await profile({ siteId, userId }, { siteId, userId });
       return found === null ? null : { siteId, visitorIds: found.visitorIds, ...found.body, userId };
+    },
+
+    async visitorIdForUser(siteId: string, userId: string): Promise<string | null> {
+      const newest = await visitors.findOne(
+        { siteId, userId },
+        { projection: { _id: 0, id: 1 }, sort: { lastSeenAt: -1 } },
+      );
+      return newest?.id ?? null;
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {
@@ -587,6 +820,26 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       }
     },
   };
+}
+
+// A site row as the contract describes it, and nothing the driver added. One
+// function because two reads answer with a site and both have to carry teamId:
+// a missing team is a site nobody can read.
+function siteOf(doc: Site): Site {
+  const site: Site = {
+    id: doc.id,
+    name: doc.name,
+    domains: doc.domains,
+    settings: doc.settings,
+  };
+  if (doc.teamId !== undefined) site.teamId = doc.teamId;
+  return site;
+}
+
+// A $dateTrunc group key comes back as a Date. Read as an instant, so the
+// caller can fold it into a bucket without knowing which it was.
+function bucketOf(id: unknown): number {
+  return id instanceof Date ? id.getTime() : Number(id);
 }
 
 function requiredUri(uri: string | undefined): string {

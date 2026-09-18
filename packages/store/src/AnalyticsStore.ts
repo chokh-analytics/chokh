@@ -54,6 +54,14 @@ export interface AnalyticsStore {
   // The same profile for somebody an identify has named.
   user(siteId: string, userId: string): Promise<UserProfile | null>;
 
+  // The visitor an identified person was last seen as, or null when nobody has
+  // named them here yet. The server side events route asks it: an application
+  // posting "this user paid" knows the userId and usually not the browser's
+  // visitor id, and attaching the receipt to the stay they are in the middle of
+  // is the whole point. It is a one row read on the userId index rather than
+  // user(), which builds a profile and a timeline nobody asked for.
+  visitorIdForUser(siteId: string, userId: string): Promise<string | null>;
+
   // Roll one date key of the site's calendar into rollups_daily. Safe to run
   // twice: the second run writes the same numbers.
   rollupDay(siteId: string, date: string): Promise<RollupSummary>;

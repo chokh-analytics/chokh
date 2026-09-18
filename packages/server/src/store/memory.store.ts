@@ -58,14 +58,29 @@ import {
   type Totals,
   type UserProfile,
   type VisitorProfile,
+  type AccountStore,
+  type ApiKeyRecord,
+  type AuditRecord,
+  type SitePatch,
+  type StoredApiKey,
+  type StoredTeam,
+  type StoredUser,
+  type TeamMember,
+  type UserPatch,
 } from './AnalyticsStore.js';
 
-export interface MemoryStore extends AnalyticsStore {
-  addSite(site: Site): void;
+export interface MemoryStore extends AnalyticsStore, AccountStore {
   stored(): StoredEvent[];
   sessionsOf(siteId: string, visitorId: string): StoredSession[];
   clear(): void;
 }
+
+// Why a site cannot have an empty domain list, said once because both writes
+// refuse it: the unique multikey index on sites.domains stores one null key for
+// an empty array, so the second domainless site collides with the first, and a
+// site with no domain could not pass the collector's origin check anyway.
+const NO_DOMAIN =
+  'A site needs at least one domain: the unique index on sites.domains cannot hold two empty lists';
 
 // The reference adapter: everything the contract asks for, held in arrays. It
 // is what the collector's tests read through, what an install with no
@@ -84,6 +99,12 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let sessions: StoredSession[] = [];
   let visitors: StoredVisitor[] = [];
   let rollups: RollupRecord[] = [];
+  // The control plane, held the same way. createMemoryStore's sites argument is
+  // still how a collector test seeds a site without going through createSite.
+  let users: StoredUser[] = [];
+  let teams: StoredTeam[] = [];
+  let apiKeys: StoredApiKey[] = [];
+  let auditLog: AuditRecord[] = [];
 
   function siteOrThrow(siteId: string): Site {
     const site = bySiteId.get(siteId);
@@ -312,8 +333,158 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   }
 
   return {
-    addSite(site: Site): void {
+    createSite(site: Site): Promise<void> {
+      if (site.domains.length === 0) {
+        throw new StoreQueryError('DOMAIN_REQUIRED', NO_DOMAIN);
+      }
+      if (bySiteId.has(site.id)) {
+        throw new StoreQueryError('SITE_EXISTS', `A site already answers to ${site.id}`);
+      }
+      const taken = site.domains.find((domain) =>
+        [...bySiteId.values()].some((other) => other.domains.includes(domain)),
+      );
+      if (taken !== undefined) {
+        throw new StoreQueryError('DOMAIN_TAKEN', `${taken} already belongs to another site`);
+      }
       bySiteId.set(site.id, site);
+      return Promise.resolve();
+    },
+
+    updateSite(siteId: string, patch: SitePatch): Promise<Site> {
+      const current = siteOrThrow(siteId);
+      const domains = patch.domains ?? current.domains;
+      if (domains.length === 0) {
+        throw new StoreQueryError('DOMAIN_REQUIRED', NO_DOMAIN);
+      }
+      const taken = domains.find((domain) =>
+        [...bySiteId.values()].some(
+          (other) => other.id !== siteId && other.domains.includes(domain),
+        ),
+      );
+      if (taken !== undefined) {
+        throw new StoreQueryError('DOMAIN_TAKEN', `${taken} already belongs to another site`);
+      }
+      const updated: Site = {
+        ...current,
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.teamId === undefined ? {} : { teamId: patch.teamId }),
+        domains,
+        // Field by field, so a patch naming one setting does not reset the rest.
+        settings: { ...current.settings, ...patch.settings },
+      };
+      bySiteId.set(siteId, updated);
+      return Promise.resolve(updated);
+    },
+
+    createUser(user: StoredUser): Promise<void> {
+      const email = user.email.toLowerCase();
+      if (users.some((row) => row.email === email)) {
+        throw new StoreQueryError('EMAIL_EXISTS', 'An account already uses that address');
+      }
+      users.push({ ...user, email });
+      return Promise.resolve();
+    },
+
+    updateUser(userId: string, patch: UserPatch): Promise<void> {
+      const at = users.findIndex((row) => row.id === userId);
+      const current = users[at];
+      if (current === undefined) {
+        throw new StoreQueryError('UNKNOWN_USER', `No account answers to ${userId}`);
+      }
+      users[at] = {
+        ...current,
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.passwordHash === undefined ? {} : { passwordHash: patch.passwordHash }),
+        ...(patch.lastLoginAt === undefined ? {} : { lastLoginAt: patch.lastLoginAt }),
+      };
+      return Promise.resolve();
+    },
+
+    userById(userId: string): Promise<StoredUser | null> {
+      return Promise.resolve(users.find((row) => row.id === userId) ?? null);
+    },
+
+    userByEmail(email: string): Promise<StoredUser | null> {
+      const wanted = email.toLowerCase();
+      return Promise.resolve(users.find((row) => row.email === wanted) ?? null);
+    },
+
+    userCount(): Promise<number> {
+      return Promise.resolve(users.length);
+    },
+
+    createTeam(team: StoredTeam): Promise<void> {
+      if (teams.some((row) => row.id === team.id)) {
+        throw new StoreQueryError('TEAM_EXISTS', `A team already answers to ${team.id}`);
+      }
+      teams.push({ ...team, members: team.members.map((member) => ({ ...member })) });
+      return Promise.resolve();
+    },
+
+    team(teamId: string): Promise<StoredTeam | null> {
+      return Promise.resolve(teams.find((row) => row.id === teamId) ?? null);
+    },
+
+    teamsForUser(userId: string): Promise<StoredTeam[]> {
+      return Promise.resolve(
+        teams.filter((row) => row.members.some((member) => member.userId === userId)),
+      );
+    },
+
+    setTeamMember(teamId: string, member: TeamMember): Promise<StoredTeam> {
+      const team = teams.find((row) => row.id === teamId);
+      if (team === undefined) {
+        throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
+      }
+      const at = team.members.findIndex((row) => row.userId === member.userId);
+      if (at === -1) {
+        team.members.push({ ...member });
+      } else {
+        team.members[at] = { ...member };
+      }
+      return Promise.resolve(team);
+    },
+
+    createApiKey(key: StoredApiKey): Promise<void> {
+      if (apiKeys.some((row) => row.keyHash === key.keyHash || row.id === key.id)) {
+        throw new StoreQueryError('KEY_EXISTS', 'That key already exists');
+      }
+      apiKeys.push({ ...key });
+      return Promise.resolve();
+    },
+
+    apiKeyByHash(keyHash: string): Promise<StoredApiKey | null> {
+      return Promise.resolve(apiKeys.find((row) => row.keyHash === keyHash) ?? null);
+    },
+
+    apiKeys(siteId: string): Promise<ApiKeyRecord[]> {
+      return Promise.resolve(
+        apiKeys
+          .filter((row) => row.siteId === siteId)
+          // A hash is still a secret, so a list of keys is not a list of them.
+          .map(({ keyHash: _keyHash, ...rest }) => rest),
+      );
+    },
+
+    deleteApiKey(siteId: string, keyId: string): Promise<boolean> {
+      const kept = apiKeys.filter((row) => !(row.siteId === siteId && row.id === keyId));
+      const deleted = kept.length !== apiKeys.length;
+      apiKeys = kept;
+      return Promise.resolve(deleted);
+    },
+
+    audit(row: AuditRecord): Promise<void> {
+      auditLog.push({ ...row });
+      return Promise.resolve();
+    },
+
+    auditTrail(siteId: string, from: number, to: number): Promise<AuditRecord[]> {
+      return Promise.resolve(
+        auditLog
+          .filter((row) => row.siteId === siteId && row.ts >= from && row.ts < to)
+          .sort((left, right) => left.ts - right.ts)
+          .map((row) => ({ ...row })),
+      );
     },
 
     site(siteId: string): Promise<Site | null> {
@@ -360,7 +531,9 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         upsertVisitor(folded.visitor);
         events = events.concat(folded.events);
 
-        const entries = folded.sessions
+        // Only the stays a browser was seen in. An event an application sent
+        // server side moves the stay and puts nobody online.
+        const entries = folded.live
           .map((session) => presenceEntryOf(session))
           .filter((entry): entry is PresenceEntry => entry !== null);
         if (entries.length > 0) {
@@ -387,6 +560,11 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       sessions = [];
       visitors = [];
       rollups = [];
+      users = [];
+      teams = [];
+      apiKeys = [];
+      auditLog = [];
+      bySiteId.clear();
       ownPresence.clear();
     },
 
@@ -474,6 +652,13 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         ...new Set([...rows.map((row) => row.id), ...mine.map((event) => event.visitorId)]),
       ].sort();
       return Promise.resolve({ siteId, visitorIds, ...profileFrom(mine, rows), userId });
+    },
+
+    visitorIdForUser(siteId: string, userId: string): Promise<string | null> {
+      const newest = visitors
+        .filter((row) => row.siteId === siteId && row.userId === userId)
+        .sort((left, right) => right.lastSeenAt - left.lastSeenAt)[0];
+      return Promise.resolve(newest?.id ?? null);
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {

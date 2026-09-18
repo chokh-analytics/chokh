@@ -1,7 +1,7 @@
 import { createMongoStore } from '@chokh/store-mongo';
 
 import { env } from '../config/env.js';
-import type { AnalyticsStore, Presence } from '../store/AnalyticsStore.js';
+import type { AccountStore, AnalyticsStore, Presence } from '../store/AnalyticsStore.js';
 import { createMemoryStore } from '../store/memory.store.js';
 
 // Which adapter a deployment runs on. A MONGODB_URI means MongoDB; without one
@@ -12,7 +12,10 @@ import { createMemoryStore } from '../store/memory.store.js';
 // them, so a process that boots can never quietly build an index on a live
 // collection.
 export async function openStore(presence: Presence): Promise<{
-  store: AnalyticsStore;
+  // Both contracts, because one deployment has one database: the reports come
+  // from AnalyticsStore and the accounts, teams, keys and audit log from
+  // AccountStore, and every adapter implements both.
+  store: AnalyticsStore & AccountStore;
   kind: string;
 }> {
   if (env.MONGODB_URI === undefined) {

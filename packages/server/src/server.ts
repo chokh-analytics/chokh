@@ -4,6 +4,7 @@ import { DATABASE_FILE, openReader, startGeoRefresh } from '@chokh/geo';
 
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { openBus, openOnce } from './plugins/bus.js';
 import { createSwappableGeoReader } from './plugins/geo.js';
 import { openPresence } from './plugins/presence.js';
 import { openStore } from './plugins/store.js';
@@ -12,8 +13,10 @@ import { startJobs } from './services/jobs.js';
 const geo = createSwappableGeoReader(await openReader(join(env.GEOIP_DIR, DATABASE_FILE)));
 const { presence, kind: presenceKind } = openPresence();
 const { store, kind } = await openStore(presence);
-const app = await buildApp({ geo: geo.reader, store });
-app.log.info({ store: kind, presence: presenceKind }, 'storage adapter opened');
+const { bus, kind: busKind } = openBus();
+const { once } = openOnce(() => Date.now());
+const app = await buildApp({ geo: geo.reader, store, bus, once });
+app.log.info({ store: kind, presence: presenceKind, bus: busKind }, 'storage adapter opened');
 
 // The three background jobs. The rollup and the retention purge run on one
 // hourly tick; the geo refresh checks daily and downloads when the database is
@@ -48,6 +51,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       .close()
       .then(() => store.close())
       .then(() => presence.close())
+      .then(() => bus.close())
+      .then(() => once.close())
       .then(() => process.exit(0));
   });
 }

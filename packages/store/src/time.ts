@@ -179,6 +179,31 @@ export function bucketsBetween(
   return starts;
 }
 
+// Which bucket an instant belongs to, given the bucket starts bucketsBetween
+// answered with. -1 when it is before the first bucket or after the last, which
+// is how a row outside the range is dropped rather than folded into an edge.
+//
+// This is what lets a series be read in one query instead of one per bucket: a
+// pipeline groups the rows by day (or by hour) once, and the caller folds each
+// day into the week or month bucket it falls in. Binary search, because ninety
+// days of a monthly series is a linear scan per row otherwise.
+export function bucketIndexAt(starts: readonly number[], ts: number, rangeEnd: number): number {
+  if (starts.length === 0 || ts < starts[0]! || ts >= rangeEnd) {
+    return -1;
+  }
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (starts[middle]! <= ts) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return low;
+}
+
 function nextBucket(start: number, interval: Interval, timezone: string): number {
   if (interval === 'hour') {
     return start + 3_600_000;

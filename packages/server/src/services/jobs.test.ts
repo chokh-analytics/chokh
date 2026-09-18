@@ -69,7 +69,7 @@ describe('the hourly pass', () => {
 
   beforeEach(async () => {
     store = createMemoryStore([], { now: () => fixture.NOW });
-    store.addSite(fixture.fixtureSite());
+    await store.createSite(fixture.fixtureSite());
     await store.ingest(fixture.fixtureEvents());
   });
 

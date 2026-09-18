@@ -46,6 +46,10 @@ export interface Site {
   id: string;
   name: string;
   domains: string[];
+  // The team that owns it, and therefore who may read it. Optional because a
+  // single tenant install never names one and the conformance fixture does not
+  // either; a site without one is read as the default team's.
+  teamId?: string;
   settings: SiteSettings;
 }
 
@@ -67,6 +71,13 @@ export function defaultSiteSettings(overrides: Partial<SiteSettings> = {}): Site
 }
 
 export type EventType = 'pageview' | 'event' | 'heartbeat' | 'leave' | 'identify' | 'vital';
+
+// Where an event came from. A browser unless it says otherwise; 'server' is an
+// event an application sent through POST /api/sites/:siteId/events with a key,
+// where the identity is trusted because a server presented it. A server event
+// never puts anybody in the presence set: a receipt written by a backend is not
+// a sign that somebody is at a keyboard.
+export type EventSource = 'server';
 
 export type Attributes = Record<string, string>;
 
@@ -93,6 +104,7 @@ export interface StoredEvent {
   viewport?: string;
   lang?: string;
   bot: boolean;
+  source?: EventSource;
   name?: string;
   props?: Attributes;
   traits?: Attributes;

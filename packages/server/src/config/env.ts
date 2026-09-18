@@ -1,4 +1,5 @@
 // Validated environment. Nothing else in the server reads process.env.
+import { randomBytes } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,6 +67,53 @@ export const envSchema = z.object({
   // whose visitors are known to arrive one address each.
   COLLECT_RATE_LIMIT_IP: z.coerce.number().int().positive().default(3000),
   COLLECT_RATE_LIMIT_SITE: z.coerce.number().int().positive().default(60000),
+
+  // What a dashboard session cookie is signed with. There is no session table:
+  // the cookie carries the user id and an expiry, and this is what makes it
+  // unforgeable. Required in production, because a generated one would be
+  // different in every process and after every restart, which on one container
+  // means everybody is signed out by a deploy and on two means half the requests
+  // are.
+  SESSION_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32, 'A session secret needs at least 32 characters').optional(),
+  ),
+  SESSION_TTL_HOURS: z.coerce.number().int().positive().max(720).default(12),
+
+  // The secret another application signs an SSO token with. Unset means this
+  // install has no SSO and POST /api/sso refuses everything, which is the right
+  // default: an SSO endpoint nobody configured is an open door.
+  SSO_SECRET: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().min(32, 'An SSO secret needs at least 32 characters').optional(),
+  ),
+  // How long an SSO token may live. Five minutes: long enough to survive a slow
+  // redirect, short enough that one read out of a proxy log is worth nothing.
+  SSO_MAX_AGE_SECONDS: z.coerce.number().int().positive().max(3600).default(300),
+
+  // Attempts a minute per address at signing in: login, registration and both
+  // SSO forms. Per address and not per account, because per account is how
+  // somebody locks a person out of their own dashboard.
+  AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+
+  // Whether the session cookie is Secure. Unset means "yes in production", which
+  // is what anybody serving this over TLS wants; a developer on plain http has to
+  // be able to sign in, which is the only reason this is settable at all.
+  COOKIE_SECURE: z
+    .preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['true', 'false']).optional(),
+    )
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
+}).superRefine((parsed, context) => {
+  if (parsed.NODE_ENV === 'production' && parsed.SESSION_SECRET === undefined) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SESSION_SECRET'],
+      message:
+        'SESSION_SECRET is required in production: a generated one changes on every restart and signs everybody out',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -82,6 +130,20 @@ function loadEnv(): Env {
 }
 
 export const env: Env = loadEnv();
+
+// The secret, or one made up for this process. Development only, by the refine
+// above: a generated secret means every restart invalidates every session, which
+// is fine on a laptop and is why the caller logs it.
+export function resolveSessionSecret(): { secret: string; generated: boolean } {
+  if (env.SESSION_SECRET !== undefined) {
+    return { secret: env.SESSION_SECRET, generated: false };
+  }
+  return { secret: randomBytes(32).toString('base64url'), generated: true };
+}
+
+export function cookieSecure(): boolean {
+  return env.COOKIE_SECURE ?? env.NODE_ENV === 'production';
+}
 
 export function resolveDashboardDir(): string {
   if (env.DASHBOARD_DIR !== undefined) {

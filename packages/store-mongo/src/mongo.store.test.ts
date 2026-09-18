@@ -1,5 +1,5 @@
 import { createMemoryPresence } from '@chokh/store';
-import { fixture, runStoreConformance } from '@chokh/store/conformance';
+import { fixture, runAccountConformance, runStoreConformance } from '@chokh/store/conformance';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
 
@@ -24,12 +24,37 @@ runStoreConformance('mongodb', async () => {
 
   return {
     store,
-    addSite: (site) => store.addSite(site),
+    addSite: (site) => store.createSite(site),
     reset: async () => {
       for (const name of ['events', 'sessions', 'visitors', 'rollups_daily', 'sites']) {
         await store.db.collection(name).deleteMany({});
       }
       presence.clear();
+    },
+    close: async () => {
+      await store.close();
+      await client.close();
+      await server.stop();
+    },
+  };
+});
+
+// The same for the control plane, against the same real mongod: the unique
+// indexes on sites.domains, users.email and api_keys.keyHash are half of what
+// these answers depend on, so they are proved where those indexes exist.
+runAccountConformance('mongodb', async () => {
+  const server = await MongoMemoryServer.create();
+  const client = new MongoClient(server.getUri('chokh_accounts'));
+  await client.connect();
+  const store = await createMongoStore({ client, now: () => fixture.NOW });
+  await apply(store.db);
+
+  return {
+    store,
+    reset: async () => {
+      for (const name of ['sites', 'users', 'teams', 'api_keys', 'audit_log']) {
+        await store.db.collection(name).deleteMany({});
+      }
     },
     close: async () => {
       await store.close();
