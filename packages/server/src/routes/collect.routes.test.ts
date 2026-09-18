@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
 import type { CollectBatch } from '../schemas/collect.schema.js';
-import type { Site } from '../store/AnalyticsStore.js';
+import { defaultSiteSettings, type Site } from '../store/AnalyticsStore.js';
 import { createMemoryStore, type MemoryStore } from '../store/memory.store.js';
 
 const CHROME =
@@ -22,12 +22,11 @@ function site(overrides: Partial<Site['settings']> = {}): Site {
     id: 'ps_web',
     name: 'Fixture',
     domains: ['example.test', 'www.example.test'],
-    settings: {
+    settings: defaultSiteSettings({
       ipMode: 'full',
       visitorIdMode: 'cookieless',
-      botFilter: true,
       ...overrides,
-    },
+    }),
   };
 }
 

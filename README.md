@@ -38,6 +38,7 @@ MongoDB and Redis beside them. Drop the script into any page you want counted:
 | `packages/tracker` | The browser script, no dependencies, at most 3 KB gzipped |
 | `packages/server` | Collector, stats API, realtime stream, dashboard hosting |
 | `packages/dashboard` | The dashboard UI, built static and served by the server |
+| `packages/store` | The `AnalyticsStore` contract and the conformance suite every adapter passes |
 | `packages/store-mongo` | The MongoDB storage adapter |
 | `packages/geo` | IP to location and user agent parsing, offline |
 | `packages/sdk-node` | Server-side `track` and `identify` |

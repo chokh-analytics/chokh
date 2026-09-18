@@ -63,6 +63,9 @@ If a ticket and this file disagree, stop and report. Do not pick one.
   dependencies
 - `packages/server`: Fastify 5, Zod, pino (through Fastify's logger)
 - `packages/dashboard`: Vite, React 19, built static and served by the server
+- `packages/store`: the `AnalyticsStore` contract and the one conformance suite;
+  `packages/server/src/store/AnalyticsStore.ts` re-exports it, so an adapter
+  package depends on the contract and never on the server
 - `packages/store-mongo`: the MongoDB adapter, indexes declared in the schema
   and applied by a `migrate` command, never `autoIndex`
 - `packages/geo`: MaxMind GeoLite2-City through `maxmind`, DB-IP Lite as the
@@ -137,10 +140,17 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `pnpm test` | Vitest in every package that has tests |
 | `pnpm size:tracker` | Assert the built tracker is at most 3 KB gzipped |
 | `pnpm --filter @chokh/tracker test:e2e` | The Playwright smoke against a fixture page |
+| `node packages/store-mongo/dist/migrate.js --apply` | Create the declared collections and indexes |
+| `node packages/store-mongo/dist/migrate.js --verify-only` | Report them, exit 1 unless `missing: 0` |
 | `docker compose up` | Server, MongoDB and Redis for local development |
 
 CI runs three jobs on every push: build, typecheck, lint, test and the tracker
 size gate; a browser job that loads the fixture page in Chromium and asserts the
 collect payloads; and a job that brings the stack up with
-`docker compose up --build -d` and asserts `GET /health` answers with
-`"success":true`, so the image and the compose file are never unproven.
+`docker compose up --build -d`, asserts `GET /health` answers with
+`"success":true` and runs both migrate commands against the real MongoDB, so the
+image, the compose file and the index migration are never unproven.
+
+The store conformance suite runs on `mongodb-memory-server`, a downloaded
+`mongod`, locally and in CI. No machine needs Docker to prove an adapter;
+`docker compose` stays the way a person runs the product.

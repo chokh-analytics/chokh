@@ -21,8 +21,8 @@ import { createMemoryStore } from './store/memory.store.js';
 const MINUTE_MS = 60_000;
 
 export interface AppOptions {
-  // Until AN-STO01 lands the MongoDB adapter, a fresh install runs on the
-  // in-memory one and keeps nothing across a restart.
+  // server.ts chooses the adapter from the environment. Without one, a test
+  // or a bare instance runs on memory and keeps nothing across a restart.
   store?: AnalyticsStore;
   // server.ts opens the database and swaps it in once the refresh job has one.
   geo?: GeoReader;

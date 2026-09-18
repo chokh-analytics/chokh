@@ -9,6 +9,7 @@ process and one image.
 | --- | --- |
 | `GET /health` | AN-REPO01 |
 | `POST /api/collect` | AN-COL01 |
+| Storage behind the `AnalyticsStore` adapter | AN-STO01 |
 | The stats API, the SSE stream, keys and SSO | AN-API01 |
 
 ## POST /api/collect
@@ -74,7 +75,8 @@ empty and events are still collected.
 | `GEOIP_LICENSE_KEY` | none | Chooses GeoLite2-City over the keyless fallback |
 | `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
 | `COLLECT_RATE_LIMIT_SITE` | `60000` | Batches a minute for one site |
-| `MONGODB_URI`, `REDIS_URL` | none | Read by AN-STO01 and AN-SES01 |
+| `MONGODB_URI` | none | Set it and the server runs on MongoDB, unset and it runs on memory |
+| `REDIS_URL` | none | Read by presence and the live feed (AN-SES01) |
 
 Behind Cloudflare, set `TRUST_PROXY` to Cloudflare's ranges and `REAL_IP_HEADER`
 to `CF-Connecting-IP`, or every visitor's address is Cloudflare's. If your proxy
@@ -87,6 +89,65 @@ batch on every heartbeat, three a minute. `COLLECT_RATE_LIMIT_IP` therefore
 defaults high enough to hold about a thousand open tabs on one address; a campus
 would otherwise lose every batch past the limit to a `429`. Lower it only for a
 site whose visitors are known to arrive one address each.
+
+## Storage
+
+The server talks to one interface, `AnalyticsStore`, and never to a database
+driver. Which adapter it opens is decided once at boot:
+
+- **`MONGODB_URI` set:** `@chokh/store-mongo`. The database name comes from the
+  connection string.
+- **`MONGODB_URI` unset:** the in-memory adapter. It answers every read, so the
+  tracker and the dashboard work on a laptop with nothing installed, and it
+  keeps nothing across a restart. It is not a deployment.
+
+Both adapters pass the same conformance suite in `@chokh/store`.
+
+### Create the indexes before you collect anything
+
+Chokh never builds an index while it is running, because a process that boots
+should not start an index build on a live collection. One command owns them:
+
+```
+node packages/store-mongo/dist/migrate.js --apply
+node packages/store-mongo/dist/migrate.js --verify-only
+```
+
+`--apply` creates anything missing. `--verify-only` changes nothing and exits
+`1` unless it can report `missing: 0`, so a deployment can gate on it. An index
+that Chokh did not declare is reported and never dropped.
+
+### Retention
+
+Each event carries an `expiresAt` stamped from the site's `retentionDays`, and
+one TTL index honours it, so one collection can hold sites with different
+retentions. `purge(siteId, before)` is the explicit path for a retention change
+or for erasing one person's history. Daily rollups are kept forever, so history
+survives the purge; only the per-visitor detail ages out.
+
+### What a number means
+
+- **Days are the site's own.** Every day boundary, every rollup key and every
+  day, week or month bucket is drawn in the site's `timezone`. A site in Dhaka
+  asking "how many came today" gets its own midnight, not UTC's. Weeks start on
+  Monday.
+- **Today comes from raw events, history from the daily rollups.** A past day
+  nobody rolled up contributes nothing; `rollupDay` is idempotent, so a
+  backfill is the cure.
+- **Visitors over several days is the sum of each day's uniques.** A daily
+  rollup cannot hold anything else, so somebody who came on Monday and again on
+  Tuesday counts twice in a Monday to Tuesday total. Within one day it is an
+  exact count.
+- **A filter reads raw events.** A rollup holds one dimension at a time and not
+  the cube, so any filter except a bot filter falls back to raw rows. Raw
+  retention is therefore how far back a filtered report can see.
+- **Bots are out unless you ask for them.** A `bot` filter is how a dashboard
+  asks for the crawler share.
+- **Hourly series are capped at 7 days**, because rollups are daily and an
+  hourly series has to read raw rows for the whole range.
+- **Visits, bounce rate and average duration are zero and null for now**, along
+  with the `entry`, `exit` and `channel` dimensions. They are facts about a
+  session, and AN-SES01 writes sessions.
 
 ## Things to know before you point a site at this
 

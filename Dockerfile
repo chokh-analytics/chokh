@@ -19,6 +19,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/tracker/package.json ./packages/tracker/
 COPY packages/server/package.json ./packages/server/
 COPY packages/dashboard/package.json ./packages/dashboard/
+COPY packages/store/package.json ./packages/store/
 COPY packages/store-mongo/package.json ./packages/store-mongo/
 COPY packages/geo/package.json ./packages/geo/
 COPY packages/sdk-node/package.json ./packages/sdk-node/
@@ -26,6 +27,8 @@ RUN pnpm install --frozen-lockfile --prod --filter @chokh/server...
 
 COPY --from=build /app/packages/server/dist ./packages/server/dist
 COPY --from=build /app/packages/geo/dist ./packages/geo/dist
+COPY --from=build /app/packages/store/dist ./packages/store/dist
+COPY --from=build /app/packages/store-mongo/dist ./packages/store-mongo/dist
 COPY --from=build /app/packages/dashboard/dist ./public
 
 # The geo refresh job writes here, so it belongs to the user the server runs as.

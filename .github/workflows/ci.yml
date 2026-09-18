@@ -22,6 +22,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The store conformance suite runs on a downloaded mongod, so no runner
+      # and no laptop needs Docker to prove an adapter. Cached because it is
+      # about 600 MB and it never changes between runs.
+      - name: Cache the mongod the conformance suite runs on
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/mongodb-memory-server
+          key: mongod-${{ runner.os }}-7.0.24
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm lint
@@ -84,6 +93,15 @@ jobs:
           body="$(curl -fs http://localhost:4100/health)"
           echo "${body}"
           echo "${body}" | grep -q '"success":true'
+
+      - name: Apply the index migration against the real MongoDB
+        run: docker compose exec -T server node packages/store-mongo/dist/migrate.js --apply
+
+      - name: Assert migrate --verify-only reports missing 0
+        run: |
+          report="$(docker compose exec -T server node packages/store-mongo/dist/migrate.js --verify-only)"
+          echo "${report}"
+          echo "${report}" | grep -q 'missing: 0'
 
       - name: Logs on failure
         if: failure()

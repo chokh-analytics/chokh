@@ -5,9 +5,12 @@ import { DATABASE_FILE, openReader, startGeoRefresh } from '@chokh/geo';
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
 import { createSwappableGeoReader } from './plugins/geo.js';
+import { openStore } from './plugins/store.js';
 
 const geo = createSwappableGeoReader(await openReader(join(env.GEOIP_DIR, DATABASE_FILE)));
-const app = await buildApp({ geo: geo.reader });
+const { store, kind } = await openStore();
+const app = await buildApp({ geo: geo.reader, store });
+app.log.info({ store: kind }, 'storage adapter opened');
 
 const stopGeoRefresh = startGeoRefresh({
   dir: env.GEOIP_DIR,
@@ -24,7 +27,10 @@ const stopGeoRefresh = startGeoRefresh({
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     stopGeoRefresh();
-    void app.close().then(() => process.exit(0));
+    void app
+      .close()
+      .then(() => store.close())
+      .then(() => process.exit(0));
   });
 }
 
