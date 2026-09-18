@@ -49,27 +49,35 @@ export const schema: readonly CollectionSchema[] = [
   },
   {
     name: SESSIONS,
-    purpose: 'A visitor stay. Declared and indexed here, written by AN-SES01.',
+    purpose: 'A visitor stay: one row per unbroken run of their events.',
     indexes: [
       { name: 'session_site_id', key: { siteId: 1, id: 1 }, unique: true },
+      // A visit belongs to the day it began on, so every read of the session
+      // side cuts by startedAt.
+      { name: 'session_site_started', key: { siteId: 1, startedAt: 1 } },
       { name: 'session_site_last_seen', key: { siteId: 1, lastSeenAt: 1 } },
-      { name: 'session_site_visitor', key: { siteId: 1, visitorId: 1 } },
+      // Newest first, because ingest asks this collection one question on every
+      // batch: which stay is this visitor's latest.
+      { name: 'session_site_visitor', key: { siteId: 1, visitorId: 1, startedAt: -1 } },
       { name: 'session_site_user', key: { siteId: 1, userId: 1 } },
+      // Per-site retention, the same way an event carries it.
+      { name: 'session_ttl', key: { expiresAt: 1 }, expireAfterSeconds: 0 },
     ],
   },
   {
     name: VISITORS,
-    purpose: 'The person behind the sessions. Declared here, written by AN-SES01.',
+    purpose: 'The person behind the sessions: their counts, devices and touches.',
     indexes: [
       { name: 'visitor_site_id', key: { siteId: 1, id: 1 }, unique: true },
       {
         name: 'visitor_site_user',
         key: { siteId: 1, userId: 1 },
-        unique: true,
-        // Sparse would let many rows without a userId coexist, but a partial
-        // index says it in a way the query planner can also use.
-        partialFilterExpression: { userId: { $exists: true } },
+        // Not unique: two browsers are two visitors, and the same person
+        // signing in on both is exactly what a user lookup has to join.
       },
+      // Rewritten on every visit, so a visitor who keeps coming back keeps
+      // their row, and one who stops loses it at the site's retention.
+      { name: 'visitor_ttl', key: { expiresAt: 1 }, expireAfterSeconds: 0 },
     ],
   },
   {

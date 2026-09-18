@@ -145,12 +145,15 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `docker compose up` | Server, MongoDB and Redis for local development |
 
 CI runs three jobs on every push: build, typecheck, lint, test and the tracker
-size gate; a browser job that loads the fixture page in Chromium and asserts the
-collect payloads; and a job that brings the stack up with
-`docker compose up --build -d`, asserts `GET /health` answers with
+size gate, with a `redis` service beside it so the Redis presence backend is
+proved against a real Redis; a browser job that loads the fixture page in
+Chromium and asserts the collect payloads; and a job that brings the stack up
+with `docker compose up --build -d`, asserts `GET /health` answers with
 `"success":true` and runs both migrate commands against the real MongoDB, so the
 image, the compose file and the index migration are never unproven.
 
 The store conformance suite runs on `mongodb-memory-server`, a downloaded
 `mongod`, locally and in CI. No machine needs Docker to prove an adapter;
-`docker compose` stays the way a person runs the product.
+`docker compose` stays the way a person runs the product. The presence suite is
+the one thing a laptop cannot finish: without `REDIS_URL` the Redis half skips
+and says so, and CI's service container runs it.

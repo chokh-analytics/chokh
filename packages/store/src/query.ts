@@ -1,7 +1,7 @@
 import type { GeoLocation } from '@chokh/geo';
 
 import { shiftYears, type Interval } from './time.js';
-import type { Attributes, EventType, StoredEvent } from './types.js';
+import type { Attributes, EventType, StoredEvent, StoredSession, Touch } from './types.js';
 
 // One query shape for every read. from is inclusive, to is exclusive, both in
 // epoch milliseconds; the day, week and month a range is cut into are the
@@ -70,16 +70,18 @@ export const DIMENSIONS: readonly Dimension[] = [
   'bot',
 ];
 
-// The dimensions a session carries. AN-STO01 declares and indexes the sessions
-// collection but does not write it: AN-SES01 owns the 30 minute gap rule and
-// the channel classifier. Until then these break down to nothing.
+// The dimensions only a session carries. Nothing on a raw event says which
+// page a stay came in on or what channel brought it, so visitors and pageviews
+// for these three are counted off the session rows too.
 export const SESSION_DIMENSIONS: readonly Dimension[] = ['entry', 'exit', 'channel'];
 
-// The dimensions a raw event carries, and therefore the ones a day is rolled
-// up by. Every adapter rolls the same list, or two adapters would file a year
-// of history under different keys.
+// The dimensions a day is rolled up by. Every adapter rolls the same list, or
+// two adapters would file a year of history under different keys.
 export const ROLLED_DIMENSIONS: readonly Dimension[] = [
   'page',
+  'entry',
+  'exit',
+  'channel',
   'referrer',
   'utm_source',
   'utm_medium',
@@ -130,9 +132,14 @@ export class StoreQueryError extends Error {
 //   daily rollup cannot hold anything else, and a person who came on Monday
 //   and again on Tuesday counts twice in a Monday to Tuesday total. Within one
 //   day it is an exact distinct count.
-// - visits, bounces, bounceRate and avgDurationMs come from sessions, which
-//   AN-SES01 writes. Until it lands they are 0 and null.
+// - visits, bounces and avgDurationMs are counted off sessions, and a session
+//   belongs to the day it began on. A stay that crosses midnight is one visit,
+//   on the day it started.
+// - a bounce is a session with at most one pageview.
 // - bounceRate is bounces over visits, null when there were no visits.
+// - the three session numbers attribute to every dimension a session row
+//   carries, which is all of them except page, screen, lang and event: a visit
+//   spans pages, so it cannot be one of them, and those read 0 and null.
 export interface Metrics {
   visitors: number;
   pageviews: number;
@@ -186,9 +193,9 @@ export interface CountRow {
   visitors: number;
 }
 
-// Online means an event within the last minute. "since" is the first event of
-// the visitor's current half hour, which is what a stay looks like before
-// AN-SES01 gives it a session row.
+// Online means a sign of life within the last minute, and "since" is the start
+// of the stay, so "online for 12 minutes" counts from the session. Both are
+// read off the presence set, never off raw events.
 export const ONLINE_WINDOW_MS = 60_000;
 export const REALTIME_WINDOW_MS = 30 * 60_000;
 
@@ -236,6 +243,9 @@ export interface VisitorProfile {
   homeGeo?: GeoLocation;
   devices: string[];
   ips: string[];
+  // What first brought them here, and what brought them back last.
+  firstTouch?: Touch;
+  lastTouch?: Touch;
   timeline: TimelineEntry[];
 }
 
@@ -255,6 +265,7 @@ export interface RollupSummary {
 export interface PurgeSummary {
   events: number;
   sessions: number;
+  visitors: number;
 }
 
 // Where a comparison reads from. previous_period is the range again, ending
@@ -323,12 +334,32 @@ export const EVENT_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>
   bot: 'bot',
 };
 
-export function dimensionValue(event: StoredEvent, dim: Dimension): string | undefined {
-  const path = EVENT_PATH_BY_DIMENSION[dim];
-  if (path === undefined) {
-    return undefined;
-  }
-  let cursor: unknown = event;
+// Where the same dimension lives on a session row. A session is where a visit,
+// a bounce and a duration come from, so every dimension a visit can be
+// attributed to has to be findable here. The four that are missing are the
+// four a stay spans rather than has: a visit is not one page, one screen size,
+// one language or one custom event.
+export const SESSION_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>>> = {
+  entry: 'entryPath',
+  exit: 'exitPath',
+  channel: 'channel',
+  referrer: 'referrer',
+  utm_source: 'utm.source',
+  utm_medium: 'utm.medium',
+  utm_campaign: 'utm.campaign',
+  utm_term: 'utm.term',
+  utm_content: 'utm.content',
+  country: 'geo.country',
+  region: 'geo.region',
+  city: 'geo.city',
+  browser: 'ua.browser',
+  os: 'ua.os',
+  device: 'ua.device',
+  bot: 'bot',
+};
+
+function readPath(row: object, path: string): string | undefined {
+  let cursor: unknown = row;
   for (const step of path.split('.')) {
     if (cursor === null || typeof cursor !== 'object') {
       return undefined;
@@ -341,14 +372,63 @@ export function dimensionValue(event: StoredEvent, dim: Dimension): string | und
   return String(cursor);
 }
 
-export function matchesFilter(event: StoredEvent, filter: Filter): boolean {
-  if (filter.dim === BOT_DIMENSION) {
-    return event.bot === botSelector([filter]);
-  }
-  const value = dimensionValue(event, filter.dim);
+export function dimensionValue(event: StoredEvent, dim: Dimension): string | undefined {
+  const path = EVENT_PATH_BY_DIMENSION[dim];
+  return path === undefined ? undefined : readPath(event, path);
+}
+
+export function sessionDimensionValue(
+  session: StoredSession,
+  dim: Dimension,
+): string | undefined {
+  const path = SESSION_PATH_BY_DIMENSION[dim];
+  return path === undefined ? undefined : readPath(session, path);
+}
+
+function matches(value: string | undefined, filter: Filter): boolean {
   if (filter.op === 'contains') {
     return value !== undefined && value.includes(filter.value);
   }
   const equal = value === filter.value;
   return filter.op === 'is' ? equal : !equal;
+}
+
+export function matchesFilter(event: StoredEvent, filter: Filter): boolean {
+  if (filter.dim === BOT_DIMENSION) {
+    return event.bot === botSelector([filter]);
+  }
+  return matches(dimensionValue(event, filter.dim), filter);
+}
+
+export function matchesSessionFilter(session: StoredSession, filter: Filter): boolean {
+  if (filter.dim === BOT_DIMENSION) {
+    return session.bot === botSelector([filter]);
+  }
+  return matches(sessionDimensionValue(session, filter.dim), filter);
+}
+
+// A filter has to be answerable by the rows it is put to. Every dimension an
+// event carries can narrow an event read, and the three only a session carries
+// cannot: the events of a stay do not know which page it came in on. Answering
+// that with an empty report would be a silent wrong number, so it is refused
+// instead, and AN-SEG01 owns the segment that resolves it properly.
+export function assertFilterable(filters: Filter[] | undefined): void {
+  for (const filter of filters ?? []) {
+    if (SESSION_DIMENSIONS.includes(filter.dim)) {
+      throw new StoreQueryError(
+        'UNSUPPORTED_FILTER',
+        `A raw event does not carry ${filter.dim}, so a report cannot be filtered by it yet`,
+      );
+    }
+  }
+}
+
+// Whether the session side can answer a filtered read at all. A filter naming
+// something a stay spans rather than has (a page, a screen, a language, an
+// event name) leaves the visit numbers unanswerable, so they read 0 and null
+// rather than pretending the filter did not apply.
+export function sessionsAnswerFilters(filters: Filter[] | undefined): boolean {
+  return (filters ?? []).every(
+    (filter) => SESSION_PATH_BY_DIMENSION[filter.dim] !== undefined,
+  );
 }

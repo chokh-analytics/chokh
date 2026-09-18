@@ -1,5 +1,7 @@
 import type { BreakdownRow, Metrics } from './query.js';
 import type { RollupDim } from './plan.js';
+import { isBounce } from './session.js';
+import type { StoredSession } from './types.js';
 
 // The arithmetic behind every number, in one place, so two adapters cannot
 // disagree about what a bounce rate is.
@@ -32,6 +34,16 @@ export function addTotals(into: Totals, from: Partial<Totals>): void {
   into.visits += from.visits ?? 0;
   into.bounces += from.bounces ?? 0;
   into.durationSum += from.durationSum ?? 0;
+}
+
+// What one stay adds. A visit belongs to the day it began on, so an adapter
+// picks its sessions by startedAt and then hands them here one at a time.
+export function addSession(into: Totals, session: StoredSession): void {
+  into.visits += 1;
+  if (isBounce(session)) {
+    into.bounces += 1;
+  }
+  into.durationSum += session.duration;
 }
 
 // A rate over nothing is not zero, it is unknown, so it is null.

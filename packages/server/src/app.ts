@@ -15,7 +15,7 @@ import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
 import { createDedupe } from './services/dedupe.js';
 import { createVisitorIdSource } from './services/visitor-id.js';
-import type { AnalyticsStore } from './store/AnalyticsStore.js';
+import type { AnalyticsStore, Presence } from './store/AnalyticsStore.js';
 import { createMemoryStore } from './store/memory.store.js';
 
 const MINUTE_MS = 60_000;
@@ -24,6 +24,9 @@ export interface AppOptions {
   // server.ts chooses the adapter from the environment. Without one, a test
   // or a bare instance runs on memory and keeps nothing across a restart.
   store?: AnalyticsStore;
+  // Where ingest writes who is here now. Only used when this builds the store
+  // itself; server.ts hands the presence to the adapter instead.
+  presence?: Presence;
   // server.ts opens the database and swaps it in once the refresh job has one.
   geo?: GeoReader;
 }
@@ -85,7 +88,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   await registerCollectRoutes(
     app,
     {
-      store: options.store ?? createMemoryStore(),
+      store:
+        options.store ??
+        createMemoryStore([], options.presence === undefined ? {} : { presence: options.presence }),
       geo: options.geo ?? emptyReader,
       visitorIds: createVisitorIdSource(),
       ipLimit: createWindowCounter(MINUTE_MS),

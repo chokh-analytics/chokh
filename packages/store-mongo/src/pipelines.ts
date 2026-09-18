@@ -1,6 +1,7 @@
 import {
   BOT_DIMENSION,
   EVENT_PATH_BY_DIMENSION,
+  SESSION_PATH_BY_DIMENSION,
   type Dimension,
   type Filter,
   type Range,
@@ -40,8 +41,9 @@ export function eventMatch(
     }
     const path = EVENT_PATH_BY_DIMENSION[filter.dim];
     if (path === undefined) {
-      // A session dimension: AN-SES01 writes it, and nothing raw carries it,
-      // so a filter on one can match nothing rather than everything.
+      // A dimension only a stay carries. assertFilterable refuses those before
+      // a read gets this far, because an empty report is a silent wrong
+      // number; matching nothing is the belt to that pair of braces.
       return { siteId, ts: { $lt: 0 } };
     }
     if (filter.op === 'is') {
@@ -55,8 +57,8 @@ export function eventMatch(
   return match;
 }
 
-export function dayExpression(timezone: string): Document {
-  return { $dateToString: { date: { $toDate: '$ts' }, format: '%Y-%m-%d', timezone } };
+export function dayExpression(timezone: string, field = '$ts'): Document {
+  return { $dateToString: { date: { $toDate: field }, format: '%Y-%m-%d', timezone } };
 }
 
 export function dimensionExpression(dim: Dimension): Document | string | null {
@@ -169,5 +171,151 @@ export function rollupBreakdownPipeline(
   return [
     { $match: { siteId, date: { $in: days }, dim } },
     { $group: { _id: '$key', ...SUM_TOTALS } },
+  ];
+}
+
+// The session side. A visit belongs to the day the stay began on, so every
+// pipeline below cuts by startedAt and never by lastSeenAt: a stay that crosses
+// midnight is one visit, on the day it started.
+
+export function sessionMatch(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document {
+  const match: Record<string, unknown> = {
+    siteId,
+    startedAt: { $gte: span.from, $lt: span.to },
+    bot: wantsBots,
+  };
+  for (const filter of filters ?? []) {
+    if (filter.dim === BOT_DIMENSION) {
+      continue;
+    }
+    const path = SESSION_PATH_BY_DIMENSION[filter.dim];
+    if (path === undefined) {
+      // A stay spans pages, screens, languages and events rather than having
+      // one of each, so it cannot answer a filter on those. The adapter checks
+      // for this before it asks, and this is the belt to that pair of braces.
+      return { siteId, startedAt: { $lt: 0 } };
+    }
+    if (filter.op === 'is') {
+      match[path] = filter.value;
+    } else if (filter.op === 'is_not') {
+      match[path] = { $ne: filter.value };
+    } else {
+      match[path] = { $regex: escapeRegex(filter.value) };
+    }
+  }
+  return match;
+}
+
+export function sessionDimensionExpression(dim: Dimension): Document | string | null {
+  if (dim === BOT_DIMENSION) {
+    return { $toString: '$bot' };
+  }
+  const path = SESSION_PATH_BY_DIMENSION[dim];
+  return path === undefined ? null : `$${path}`;
+}
+
+// One page and away, the same rule isBounce states for the other adapter.
+const IS_BOUNCE = { $cond: [{ $lte: ['$pageviews', 1] }, 1, 0] };
+
+const SUM_SESSIONS = {
+  visits: { $sum: 1 },
+  bounces: { $sum: IS_BOUNCE },
+  durationSum: { $sum: '$duration' },
+};
+
+// Visits, bounces and time, for a span. Visitors and pageviews are not here:
+// those come from events, which is the one place they are counted.
+export function sessionTotalsPipeline(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters) },
+    { $group: { _id: null, ...SUM_SESSIONS } },
+  ];
+}
+
+// The same, one row per value of a dimension the session row carries.
+export function sessionBreakdownPipeline(
+  siteId: string,
+  span: Range,
+  dim: Dimension,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters) },
+    {
+      $project: {
+        key: { $ifNull: [sessionDimensionExpression(dim), null] },
+        pageviews: 1,
+        duration: 1,
+      },
+    },
+    { $match: { key: { $ne: null } } },
+    { $group: { _id: '$key', ...SUM_SESSIONS } },
+  ];
+}
+
+// Entry, exit and channel: nothing on an event carries them, so visitors and
+// pageviews are counted off the stays as well. Visitors stay a per-day fact,
+// the way they are everywhere else.
+export function sessionSourcedBreakdownPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  dim: Dimension,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters) },
+    {
+      $project: {
+        day: dayExpression(timezone, '$startedAt'),
+        visitorId: 1,
+        key: { $ifNull: [sessionDimensionExpression(dim), null] },
+        pageviews: 1,
+        duration: 1,
+        bounce: IS_BOUNCE,
+      },
+    },
+    { $match: { key: { $ne: null } } },
+    {
+      $group: {
+        _id: { day: '$day', key: '$key', visitorId: '$visitorId' },
+        pageviews: { $sum: '$pageviews' },
+        visits: { $sum: 1 },
+        bounces: { $sum: '$bounce' },
+        durationSum: { $sum: '$duration' },
+      },
+    },
+    {
+      $group: {
+        _id: { day: '$_id.day', key: '$_id.key' },
+        visitors: { $sum: 1 },
+        pageviews: { $sum: '$pageviews' },
+        visits: { $sum: '$visits' },
+        bounces: { $sum: '$bounces' },
+        durationSum: { $sum: '$durationSum' },
+      },
+    },
+    {
+      $group: {
+        _id: '$_id.key',
+        visitors: { $sum: '$visitors' },
+        pageviews: { $sum: '$pageviews' },
+        visits: { $sum: '$visits' },
+        bounces: { $sum: '$bounces' },
+        durationSum: { $sum: '$durationSum' },
+      },
+    },
   ];
 }

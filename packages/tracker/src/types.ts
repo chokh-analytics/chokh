@@ -28,12 +28,17 @@ export interface Batch {
   viewport?: string;
   visitorId?: string;
   userId?: string;
+  // The site's proof that it, and not this page, said who the visitor is: the
+  // fourth argument of pa('identify'). Sent on every batch after it, because
+  // the userId is on every batch after it too.
+  sig?: string;
   events: TrackedEvent[];
 }
 
 export interface Context {
   visitorId?: string;
   userId?: string;
+  sig?: string;
 }
 
 export interface Config {

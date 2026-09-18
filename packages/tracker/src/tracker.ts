@@ -101,13 +101,21 @@ function boot(win: Window, doc: Document, config: Config): void {
     queue.push(event);
   }
 
-  function command(name: string, first: unknown, second: unknown): void {
+  function command(name: string, first: unknown, second: unknown, third: unknown): void {
     if (name === 'event' && typeof first === 'string') {
       track(first, asProps(second));
       return;
     }
     if (name === 'identify' && typeof first === 'string') {
       context.userId = first;
+      // A site that signs its identifies passes the signature its server
+      // issued as the fourth argument. Without one the collector falls back to
+      // the site's own setting, which accepts an unsigned identify by default.
+      if (typeof third === 'string' && third !== '') {
+        context.sig = third;
+      } else {
+        delete context.sig;
+      }
       const event: TrackedEvent = { type: 'identify', ts: Date.now(), path, userId: first };
       const traits = asProps(second);
       if (traits !== undefined) {
@@ -119,6 +127,7 @@ function boot(win: Window, doc: Document, config: Config): void {
     }
     if (name === 'reset') {
       delete context.userId;
+      delete context.sig;
       delete context.visitorId;
       if (config.persistentVisitor) {
         clearVisitorId(store, config.siteId);
@@ -152,7 +161,7 @@ function boot(win: Window, doc: Document, config: Config): void {
 
   const previous = win.pa;
   const pa: Pa = (name: string, ...args: unknown[]) => {
-    command(name, args[0], args[1]);
+    command(name, args[0], args[1], args[2]);
   };
   win.pa = pa;
 
@@ -183,7 +192,7 @@ function boot(win: Window, doc: Document, config: Config): void {
     for (let i = 0; i < queued.length; i++) {
       const args = queued[i];
       if (args !== undefined) {
-        command(String(args[0]), args[1], args[2]);
+        command(String(args[0]), args[1], args[2], args[3]);
       }
     }
   }

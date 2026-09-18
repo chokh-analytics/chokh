@@ -30,6 +30,11 @@ export const batchSchema = z.object({
   viewport: z.string().max(40).optional(),
   visitorId: z.string().max(100).optional(),
   userId: z.string().max(200).optional(),
+  // The proof that a site, and not the page, said who this visitor is: an HMAC
+  // of the userId under the site's identifySecret, issued on the server and
+  // passed to pa('identify') as its fourth argument. Optional, because a site
+  // that accepts an unsigned identify is the default.
+  sig: z.string().max(200).optional(),
   events: z.array(eventSchema).min(1).max(50),
 });
 

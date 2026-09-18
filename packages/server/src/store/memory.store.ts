@@ -2,23 +2,33 @@ import {
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_HOUR_RANGE_MS,
   ONLINE_WINDOW_MS,
-  REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
   SESSION_DIMENSIONS,
+  SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
+  addSession,
   addTotals,
+  assertFilterable,
   botSelector,
   bucketsBetween,
   comparisonRange,
+  createMemoryPresence,
   dayBounds,
   dayKey,
   dimensionValue,
   finishMetrics,
+  foldVisitor,
+  groupForFold,
   matchesFilter,
-  profileFromEvents,
+  matchesSessionFilter,
+  presenceEntryOf,
+  profileFrom,
   readPlan,
   rollupTotalSelector,
+  sessionDimensionValue,
+  sessionsAnswerFilters,
+  snapshotFrom,
   sortBreakdownRows,
   startOfDay,
   zeroTotals,
@@ -26,16 +36,15 @@ import {
   type AnalyticsStore,
   type BreakdownResult,
   type BreakdownRow,
-  type CountRow,
   type Dimension,
   type Interval,
   type Metrics,
-  type ProfileBody,
+  type Presence,
+  type PresenceEntry,
   type PurgeSummary,
   type Query,
   type Range,
   type RealtimeSnapshot,
-  type RealtimeVisitor,
   type RollupDim,
   type RollupRecord,
   type RollupSummary,
@@ -43,6 +52,7 @@ import {
   type StoreOptions,
   type StoredEvent,
   type StoredSession,
+  type StoredVisitor,
   type TimeseriesPoint,
   type TimeseriesResult,
   type Totals,
@@ -53,6 +63,7 @@ import {
 export interface MemoryStore extends AnalyticsStore {
   addSite(site: Site): void;
   stored(): StoredEvent[];
+  sessionsOf(siteId: string, visitorId: string): StoredSession[];
   clear(): void;
 }
 
@@ -64,8 +75,14 @@ export interface MemoryStore extends AnalyticsStore {
 export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}): MemoryStore {
   const bySiteId = new Map<string, Site>(sites.map((site) => [site.id, site]));
   const now = options.now ?? ((): number => Date.now());
+  // A presence of our own unless a deployment handed one in. Closing is the
+  // caller's business when they own it, the way the MongoDB adapter only
+  // closes the client it opened.
+  const ownPresence = createMemoryPresence();
+  const presence: Presence = options.presence ?? ownPresence;
   let events: StoredEvent[] = [];
   let sessions: StoredSession[] = [];
+  let visitors: StoredVisitor[] = [];
   let rollups: RollupRecord[] = [];
 
   function siteOrThrow(siteId: string): Site {
@@ -91,6 +108,30 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     });
   }
 
+  // The stays that began in a span. A visit belongs to the day it started on,
+  // so this is the one window a session is counted in.
+  function rawSessions(query: Query, span: Range): StoredSession[] {
+    if (!sessionsAnswerFilters(query.filters)) {
+      // The filter names something a stay spans rather than has. Rather than
+      // quietly dropping the filter, the visit numbers go unanswered.
+      return [];
+    }
+    const wantsBots = botSelector(query.filters);
+    return sessions.filter((session) => {
+      if (
+        session.siteId !== query.siteId ||
+        session.startedAt < span.from ||
+        session.startedAt >= span.to
+      ) {
+        return false;
+      }
+      if (session.bot !== wantsBots) {
+        return false;
+      }
+      return (query.filters ?? []).every((filter) => matchesSessionFilter(session, filter));
+    });
+  }
+
   // A day at a time, because a unique visitor is a per-day fact: two days of
   // the same person are two visitors, the way a daily rollup counts them.
   function rawTotals(query: Query, span: Range, timezone: string): Totals {
@@ -111,6 +152,9 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     for (const seen of perDay.values()) {
       totals.visitors += seen.size;
     }
+    for (const session of rawSessions(query, span)) {
+      addSession(totals, session);
+    }
     return totals;
   }
 
@@ -120,41 +164,60 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     dim: Dimension,
     timezone: string,
   ): Map<string, Totals> {
-    const pageviews = new Map<string, number>();
+    const out = new Map<string, Totals>();
+    const into = (key: string): Totals => {
+      const totals = out.get(key) ?? zeroTotals();
+      out.set(key, totals);
+      return totals;
+    };
     const perDay = new Map<string, Map<string, Set<string>>>();
-    for (const event of rawRows(query, span)) {
-      const value = dimensionValue(event, dim);
-      if (value === undefined) {
-        continue;
-      }
-      if (event.type === 'pageview') {
-        pageviews.set(value, (pageviews.get(value) ?? 0) + 1);
-      }
-      const day = dayKey(event.ts, timezone);
+    const countVisitor = (ts: number, key: string, visitorId: string): void => {
+      const day = dayKey(ts, timezone);
       let byKey = perDay.get(day);
       if (byKey === undefined) {
         byKey = new Map();
         perDay.set(day, byKey);
       }
-      let seen = byKey.get(value);
+      let seen = byKey.get(key);
       if (seen === undefined) {
         seen = new Set();
-        byKey.set(value, seen);
+        byKey.set(key, seen);
       }
-      seen.add(event.visitorId);
+      seen.add(visitorId);
+    };
+
+    // Visitors and pageviews come from events, except for the three dimensions
+    // only a stay carries: nothing on an event says which page it came in on.
+    const fromSessions = SESSION_DIMENSIONS.includes(dim);
+    if (!fromSessions) {
+      for (const event of rawRows(query, span)) {
+        const value = dimensionValue(event, dim);
+        if (value === undefined) continue;
+        countVisitor(event.ts, value, event.visitorId);
+        if (event.type === 'pageview') {
+          into(value).pageviews += 1;
+        }
+      }
     }
-    const out = new Map<string, Totals>();
+    // Visits, bounces and duration always come from sessions, for every
+    // dimension a session row carries.
+    if (SESSION_PATH_BY_DIMENSION[dim] !== undefined) {
+      for (const session of rawSessions(query, span)) {
+        const value = sessionDimensionValue(session, dim);
+        if (value === undefined) continue;
+        const totals = into(value);
+        if (fromSessions) {
+          countVisitor(session.startedAt, value, session.visitorId);
+          totals.pageviews += session.pageviews;
+        }
+        addSession(totals, session);
+      }
+    }
+
     for (const byKey of perDay.values()) {
       for (const [value, seen] of byKey) {
-        const totals = out.get(value) ?? zeroTotals();
-        totals.visitors += seen.size;
-        out.set(value, totals);
+        into(value).visitors += seen.size;
       }
-    }
-    for (const [value, count] of pageviews) {
-      const totals = out.get(value) ?? zeroTotals();
-      totals.pageviews = count;
-      out.set(value, totals);
     }
     return out;
   }
@@ -191,11 +254,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   }
 
   function breakdownFor(query: Query, dim: Dimension, site: Site): BreakdownRow[] {
-    if (SESSION_DIMENSIONS.includes(dim)) {
-      // Entry, exit and channel are facts about a session. AN-SES01 writes
-      // them; until then there is nothing to group.
-      return [];
-    }
     const timezone = site.settings.timezone;
     const plan = readPlan({
       from: query.from,
@@ -206,7 +264,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       dim,
     });
     const byKey = new Map<string, Totals>();
-    const collect = (key: string, totals: Totals): void => {
+    const collect = (key: string, totals: Partial<Totals>): void => {
       const existing = byKey.get(key) ?? zeroTotals();
       addTotals(existing, totals);
       byKey.set(key, existing);
@@ -224,12 +282,33 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     );
   }
 
-  function profileFrom(mine: StoredEvent[]): ProfileBody {
-    const ordered = [...mine].sort((left, right) => left.ts - right.ts);
-    const visitorIds = new Set(ordered.map((event) => event.visitorId));
-    return profileFromEvents(ordered, {
-      sessions: sessions.filter((session) => visitorIds.has(session.visitorId)).length,
-    });
+  function latestSession(siteId: string, visitorId: string): StoredSession | null {
+    let found: StoredSession | null = null;
+    for (const session of sessions) {
+      if (session.siteId !== siteId || session.visitorId !== visitorId) continue;
+      if (found === null || session.startedAt > found.startedAt) {
+        found = session;
+      }
+    }
+    return found;
+  }
+
+  function upsertSession(session: StoredSession): void {
+    const at = sessions.findIndex((row) => row.siteId === session.siteId && row.id === session.id);
+    if (at === -1) {
+      sessions.push(session);
+    } else {
+      sessions[at] = session;
+    }
+  }
+
+  function upsertVisitor(visitor: StoredVisitor): void {
+    const at = visitors.findIndex((row) => row.siteId === visitor.siteId && row.id === visitor.id);
+    if (at === -1) {
+      visitors.push(visitor);
+    } else {
+      visitors[at] = visitor;
+    }
   }
 
   return {
@@ -241,23 +320,79 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(bySiteId.get(siteId) ?? null);
     },
 
-    ingest(batch: StoredEvent[]): Promise<void> {
-      events = events.concat(batch);
-      return Promise.resolve();
+    sites(): Promise<Site[]> {
+      return Promise.resolve([...bySiteId.values()]);
+    },
+
+    async ingest(batch: StoredEvent[]): Promise<void> {
+      const live: { siteId: string; entries: PresenceEntry[] }[] = [];
+      for (const group of groupForFold(batch).values()) {
+        const first = group[0];
+        if (first === undefined) continue;
+        const { siteId, visitorId } = first;
+        const folded = foldVisitor({
+          siteId,
+          visitorId,
+          events: group,
+          open: latestSession(siteId, visitorId),
+          visitor: visitors.find((row) => row.siteId === siteId && row.id === visitorId) ?? null,
+        });
+
+        // The merge: everything this visitor did before they were named takes
+        // the name now, so a user lookup finds the anonymous history too.
+        if (folded.merge !== undefined) {
+          const userId = folded.merge;
+          for (const event of events) {
+            if (event.siteId === siteId && event.visitorId === visitorId) {
+              event.userId = userId;
+            }
+          }
+          for (const session of sessions) {
+            if (session.siteId === siteId && session.visitorId === visitorId) {
+              session.userId = userId;
+            }
+          }
+        }
+
+        for (const session of folded.sessions) {
+          upsertSession(session);
+        }
+        upsertVisitor(folded.visitor);
+        events = events.concat(folded.events);
+
+        const entries = folded.sessions
+          .map((session) => presenceEntryOf(session))
+          .filter((entry): entry is PresenceEntry => entry !== null);
+        if (entries.length > 0) {
+          live.push({ siteId, entries });
+        }
+      }
+      for (const { siteId, entries } of live) {
+        await presence.touch(siteId, entries);
+      }
     },
 
     stored(): StoredEvent[] {
       return events;
     },
 
+    sessionsOf(siteId: string, visitorId: string): StoredSession[] {
+      return sessions
+        .filter((session) => session.siteId === siteId && session.visitorId === visitorId)
+        .sort((left, right) => left.startedAt - right.startedAt);
+    },
+
     clear(): void {
       events = [];
       sessions = [];
+      visitors = [];
       rollups = [];
+      ownPresence.clear();
     },
 
     async aggregate(query: Query): Promise<AggregateResult> {
       const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
       const range: Range = { from: query.from, to: query.to };
       const result: AggregateResult = {
         range,
@@ -275,6 +410,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async timeseries(query: Query): Promise<TimeseriesResult> {
       const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
       const interval: Interval = query.interval ?? 'day';
       if (interval === 'hour' && query.to - query.from > MAX_HOUR_RANGE_MS) {
         throw new StoreQueryError(
@@ -301,6 +437,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async breakdown(query: Query): Promise<BreakdownResult> {
       const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
       if (query.dim === undefined) {
         throw new StoreQueryError('MISSING_DIMENSION', 'A breakdown needs a dim');
       }
@@ -311,85 +448,32 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     async realtime(siteId: string): Promise<RealtimeSnapshot> {
       siteOrThrow(siteId);
       const at = now();
-      const recent = events.filter(
-        (event) =>
-          event.siteId === siteId && !event.bot && event.ts > at - REALTIME_WINDOW_MS && event.ts <= at,
-      );
-      const byVisitor = new Map<string, StoredEvent[]>();
-      for (const event of recent) {
-        const list = byVisitor.get(event.visitorId);
-        if (list === undefined) {
-          byVisitor.set(event.visitorId, [event]);
-        } else {
-          list.push(event);
-        }
-      }
-
-      const visitors: RealtimeVisitor[] = [];
-      for (const [visitorId, list] of byVisitor) {
-        const ordered = [...list].sort((left, right) => left.ts - right.ts);
-        const last = ordered[ordered.length - 1];
-        if (last === undefined || last.ts <= at - ONLINE_WINDOW_MS) {
-          continue;
-        }
-        const withPath = [...ordered].reverse().find((event) => event.path !== undefined);
-        const visitor: RealtimeVisitor = {
-          visitorId,
-          since: ordered[0]?.ts ?? last.ts,
-          lastSeenAt: last.ts,
-        };
-        if (last.userId !== undefined) visitor.userId = last.userId;
-        if (withPath?.path !== undefined) visitor.path = withPath.path;
-        if (last.geo?.country !== undefined) visitor.country = last.geo.country;
-        if (last.geo?.city !== undefined) visitor.city = last.geo.city;
-        if (last.ua?.browser !== undefined) visitor.browser = last.ua.browser;
-        if (last.ua?.os !== undefined) visitor.os = last.ua.os;
-        if (last.ua?.device !== undefined) visitor.device = last.ua.device;
-        if (last.ip !== undefined) visitor.ip = last.ip;
-        visitors.push(visitor);
-      }
-      visitors.sort((left, right) => right.lastSeenAt - left.lastSeenAt);
-
-      const count = (pick: (visitor: RealtimeVisitor) => string | undefined): CountRow[] => {
-        const tally = new Map<string, number>();
-        for (const visitor of visitors) {
-          const key = pick(visitor);
-          if (key === undefined) continue;
-          tally.set(key, (tally.get(key) ?? 0) + 1);
-        }
-        return [...tally]
-          .map(([key, total]) => ({ key, visitors: total }))
-          .sort((left, right) => right.visitors - left.visitors || left.key.localeCompare(right.key));
-      };
-
-      const signedIn = visitors.filter((visitor) => visitor.userId !== undefined).length;
-      return {
-        online: visitors.length,
-        signedIn,
-        anonymous: visitors.length - signedIn,
-        byPage: count((visitor) => visitor.path),
-        byCountry: count((visitor) => visitor.country),
-        visitors,
-      };
+      return snapshotFrom(await presence.entries(siteId, at - ONLINE_WINDOW_MS), at);
     },
 
     visitor(siteId: string, visitorId: string): Promise<VisitorProfile | null> {
-      const mine = events.filter(
-        (event) => event.siteId === siteId && event.visitorId === visitorId,
-      );
-      if (mine.length === 0) {
+      const mine = events
+        .filter((event) => event.siteId === siteId && event.visitorId === visitorId)
+        .sort((left, right) => left.ts - right.ts);
+      const rows = visitors.filter((row) => row.siteId === siteId && row.id === visitorId);
+      if (mine.length === 0 && rows.length === 0) {
         return Promise.resolve(null);
       }
-      return Promise.resolve({ siteId, visitorId, ...profileFrom(mine) });
+      return Promise.resolve({ siteId, visitorId, ...profileFrom(mine, rows) });
     },
 
     user(siteId: string, userId: string): Promise<UserProfile | null> {
-      const mine = events.filter((event) => event.siteId === siteId && event.userId === userId);
-      if (mine.length === 0) {
+      const mine = events
+        .filter((event) => event.siteId === siteId && event.userId === userId)
+        .sort((left, right) => left.ts - right.ts);
+      const rows = visitors.filter((row) => row.siteId === siteId && row.userId === userId);
+      if (mine.length === 0 && rows.length === 0) {
         return Promise.resolve(null);
       }
-      const visitorIds = [...new Set(mine.map((event) => event.visitorId))];
-      return Promise.resolve({ siteId, visitorIds, ...profileFrom(mine), userId });
+      const visitorIds = [
+        ...new Set([...rows.map((row) => row.id), ...mine.map((event) => event.visitorId)]),
+      ].sort();
+      return Promise.resolve({ siteId, visitorIds, ...profileFrom(mine, rows), userId });
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {
@@ -398,44 +482,84 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       const mine = events.filter(
         (event) => event.siteId === siteId && event.ts >= bounds.start && event.ts < bounds.end,
       );
-      // A day with no raw rows leaves whatever was rolled up before alone. The
-      // retention purge takes the raw rows away long before the rollups go, and
-      // a rerun after it must not wipe the history it was meant to preserve.
-      if (mine.length === 0) {
+      const stays = sessions.filter(
+        (session) =>
+          session.siteId === siteId &&
+          session.startedAt >= bounds.start &&
+          session.startedAt < bounds.end,
+      );
+      // A day with no rows of its own leaves whatever was rolled up before
+      // alone. The retention purge takes the raw rows away long before the
+      // rollups go, and a rerun after it must not wipe the history it was meant
+      // to preserve.
+      if (mine.length === 0 && stays.length === 0) {
         return { siteId, date, rows: 0, visitors: 0, pageviews: 0 };
       }
 
       const rows: RollupRecord[] = [];
-      const push = (dim: RollupDim, key: string, picked: StoredEvent[]): Totals => {
+      const push = (
+        dim: RollupDim,
+        key: string,
+        pickedEvents: StoredEvent[],
+        pickedSessions: StoredSession[],
+        fromSessions = false,
+      ): Totals => {
         const totals = zeroTotals();
-        totals.visitors = new Set(picked.map((event) => event.visitorId)).size;
-        totals.pageviews = picked.filter((event) => event.type === 'pageview').length;
-        // visits, bounces and durationSum stay at zero: they are facts about a
-        // session, and AN-SES01 writes sessions and decides how one attributes
-        // to a page or a country.
+        if (fromSessions) {
+          totals.visitors = new Set(pickedSessions.map((session) => session.visitorId)).size;
+          totals.pageviews = pickedSessions.reduce((sum, session) => sum + session.pageviews, 0);
+        } else {
+          totals.visitors = new Set(pickedEvents.map((event) => event.visitorId)).size;
+          totals.pageviews = pickedEvents.filter((event) => event.type === 'pageview').length;
+        }
+        for (const session of pickedSessions) {
+          addSession(totals, session);
+        }
         rows.push({ siteId, date, dim, key, ...totals });
         return totals;
       };
 
       const humans = mine.filter((event) => !event.bot);
-      const totals = push(ROLLUP_TOTAL_DIM, '', humans);
+      const humanStays = stays.filter((session) => !session.bot);
+      const totals = push(ROLLUP_TOTAL_DIM, '', humans, humanStays);
       for (const flag of [false, true]) {
         const picked = mine.filter((event) => event.bot === flag);
-        if (picked.length > 0) {
-          push('bot', String(flag), picked);
+        const pickedStays = stays.filter((session) => session.bot === flag);
+        if (picked.length > 0 || pickedStays.length > 0) {
+          push('bot', String(flag), picked, pickedStays);
         }
       }
+
       for (const dim of ROLLED_DIMENSIONS) {
-        const byValue = new Map<string, StoredEvent[]>();
-        for (const event of humans) {
-          const value = dimensionValue(event, dim);
-          if (value === undefined) continue;
-          const list = byValue.get(value);
-          if (list === undefined) byValue.set(value, [event]);
-          else list.push(event);
+        const fromSessions = SESSION_DIMENSIONS.includes(dim);
+        const eventsByValue = new Map<string, StoredEvent[]>();
+        if (!fromSessions) {
+          for (const event of humans) {
+            const value = dimensionValue(event, dim);
+            if (value === undefined) continue;
+            const list = eventsByValue.get(value);
+            if (list === undefined) eventsByValue.set(value, [event]);
+            else list.push(event);
+          }
         }
-        for (const [value, picked] of byValue) {
-          push(dim, value, picked);
+        const sessionsByValue = new Map<string, StoredSession[]>();
+        if (SESSION_PATH_BY_DIMENSION[dim] !== undefined) {
+          for (const session of humanStays) {
+            const value = sessionDimensionValue(session, dim);
+            if (value === undefined) continue;
+            const list = sessionsByValue.get(value);
+            if (list === undefined) sessionsByValue.set(value, [session]);
+            else list.push(session);
+          }
+        }
+        for (const value of new Set([...eventsByValue.keys(), ...sessionsByValue.keys()])) {
+          push(
+            dim,
+            value,
+            eventsByValue.get(value) ?? [],
+            sessionsByValue.get(value) ?? [],
+            fromSessions,
+          );
         }
       }
 
@@ -456,17 +580,22 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       const keptSessions = sessions.filter(
         (session) => session.siteId !== siteId || session.lastSeenAt >= before,
       );
+      const keptVisitors = visitors.filter(
+        (visitor) => visitor.siteId !== siteId || visitor.lastSeenAt >= before,
+      );
       const summary: PurgeSummary = {
         events: events.length - keptEvents.length,
         sessions: sessions.length - keptSessions.length,
+        visitors: visitors.length - keptVisitors.length,
       };
       events = keptEvents;
       sessions = keptSessions;
+      visitors = keptVisitors;
       return Promise.resolve(summary);
     },
 
     close(): Promise<void> {
-      return Promise.resolve();
+      return options.presence === undefined ? presence.close() : Promise.resolve();
     },
   };
 }

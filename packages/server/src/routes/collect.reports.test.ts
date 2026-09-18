@@ -136,4 +136,32 @@ describe('a collected batch reaches a report', () => {
     expect(profile?.visitorIds).toEqual(['kq2b7w3m9pa']);
     expect(profile?.pageviews).toBe(1);
   });
+
+  it('turns the same batch into a visit, an entry page and a channel', async () => {
+    // The other half of the seam: the session side reads the referrer and the
+    // campaign off the row ingest wrote, so a rename there is as invisible to
+    // a per-package test as the UTM one was.
+    expect(await post(readmeBatch())).toBe(202);
+
+    const totals = await store.aggregate(today());
+    expect(totals.metrics.visits).toBe(1);
+    expect(totals.metrics.bounces).toBe(1);
+    expect(totals.metrics.bounceRate).toBe(1);
+
+    const entry = await store.breakdown({ ...today(), dim: 'entry' });
+    expect(entry.rows).toEqual([
+      { key: '/courses/cp-beginners', metrics: expect.objectContaining({ visits: 1 }) },
+    ]);
+
+    // The link carried utm_source=facebook with no medium, so the referrer
+    // decides: a Google search is organic.
+    const channel = await store.breakdown({ ...today(), dim: 'channel' });
+    expect(channel.rows).toEqual([
+      { key: 'organic', metrics: expect.objectContaining({ visits: 1, visitors: 1 }) },
+    ]);
+
+    const profile = await store.user(site.id, 'user_42');
+    expect(profile?.sessions).toBe(1);
+    expect(profile?.firstTouch?.channel).toBe('organic');
+  });
 });

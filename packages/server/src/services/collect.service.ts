@@ -7,6 +7,7 @@ import type { CollectBatch, CollectEvent } from '../schemas/collect.schema.js';
 import type { AnalyticsStore, Attributes, Site, StoredEvent } from '../store/AnalyticsStore.js';
 import { isBot } from './bots.js';
 import type { Dedupe } from './dedupe.js';
+import { confirmIdentity, type IdentityVerdict } from './identity.js';
 import type { VisitorIdSource } from './visitor-id.js';
 
 // An event carries the browser's clock, which can be wrong by anything. It is
@@ -42,7 +43,7 @@ export interface CollectInput {
 }
 
 export type CollectResult =
-  | { ok: true; accepted: number }
+  | { ok: true; accepted: number; identity: IdentityVerdict['kind'] }
   | { ok: false; status: number; code: string; message: string };
 
 // The Origin of a browser post, or the Referer when a browser sent only that.
@@ -72,6 +73,9 @@ function toStoredEvent(
   context: {
     receivedAt: number;
     visitorId: string;
+    // The identity the site was willing to confirm, and nothing the page
+    // merely claimed.
+    userId: string | undefined;
     bot: boolean;
     ip: string | undefined;
     geo: ReturnType<GeoReader['lookup']>;
@@ -95,8 +99,7 @@ function toStoredEvent(
   if (batch.screen !== undefined) stored.screen = batch.screen;
   if (batch.viewport !== undefined) stored.viewport = batch.viewport;
 
-  const userId = event.userId ?? batch.userId;
-  if (userId !== undefined) stored.userId = userId;
+  if (context.userId !== undefined) stored.userId = context.userId;
 
   if (event.path !== undefined) stored.path = event.path;
   if (event.title !== undefined) stored.title = event.title;
@@ -111,7 +114,9 @@ function toStoredEvent(
   if (utm !== undefined) stored.utm = utm;
   const props = copy(event.props);
   if (props !== undefined) stored.props = props;
-  const traits = copy(event.traits);
+  // Traits are a claim about a person, so they only travel with an identity
+  // the site confirmed.
+  const traits = context.userId === undefined ? undefined : copy(event.traits);
   if (traits !== undefined) stored.traits = traits;
 
   return stored;
@@ -158,19 +163,30 @@ export async function collect(deps: CollectDeps, input: CollectInput): Promise<C
   const ua = parseUserAgent(input.userAgent, input.hints);
   const ip = applyIpMode(input.ip, site.settings.ipMode);
 
+  // Who the site is willing to say this visitor is. An identify the site will
+  // not confirm carries nothing else, so it is dropped rather than stored as a
+  // nameless row; everything else in the batch is collected anonymously.
+  const identity = confirmIdentity(site, batch);
+  const userId = identity.kind === 'confirmed' ? identity.userId : undefined;
+
   const stored: StoredEvent[] = [];
   for (const event of batch.events) {
+    if (event.type === 'identify' && userId === undefined) {
+      continue;
+    }
     if (
       event.type === 'pageview' &&
       deps.dedupe.seen(`${site.id}:${visitorId}:${event.path ?? ''}`, receivedAt)
     ) {
       continue;
     }
-    stored.push(toStoredEvent(event, batch, site, { receivedAt, visitorId, bot, ip, geo, ua }));
+    stored.push(
+      toStoredEvent(event, batch, site, { receivedAt, visitorId, userId, bot, ip, geo, ua }),
+    );
   }
 
   if (stored.length > 0) {
     await deps.store.ingest(stored);
   }
-  return { ok: true, accepted: stored.length };
+  return { ok: true, accepted: stored.length, identity: identity.kind };
 }

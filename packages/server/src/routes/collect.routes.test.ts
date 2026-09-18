@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
+import { signUserId } from '../lib/identity-signature.js';
 import type { CollectBatch } from '../schemas/collect.schema.js';
 import { defaultSiteSettings, type Site } from '../store/AnalyticsStore.js';
 import { createMemoryStore, type MemoryStore } from '../store/memory.store.js';
@@ -206,6 +207,127 @@ describe('POST /api/collect', () => {
       userId: 'user_42',
       traits: { plan: 'pro' },
     });
+  });
+});
+
+// A placeholder, never a real key: no secret belongs in this repository.
+const SECRET = 'test-secret-not-a-real-key';
+
+function identifies(userId: string, sig?: string): CollectBatch {
+  const body = batch({
+    userId,
+    events: [{ type: 'identify', ts: Date.now(), path: '/', userId, traits: { plan: 'pro' } }],
+  });
+  return sig === undefined ? body : { ...body, sig };
+}
+
+describe('an identify the site will not confirm', () => {
+  it('is dropped, and nothing in the batch carries the name', async () => {
+    await app.close();
+    await start(site({ allowUnsignedIdentify: false, identifySecret: SECRET }));
+
+    const response = await post({
+      ...identifies('user_42'),
+      events: [
+        { type: 'identify', ts: Date.now(), path: '/', userId: 'user_42', traits: { plan: 'pro' } },
+        { type: 'pageview', ts: Date.now(), path: '/account' },
+      ],
+    });
+
+    // The batch is still collected, and collected anonymously: the pageview is
+    // real traffic whatever the page claimed about who sent it.
+    expect(response.statusCode).toBe(202);
+    const stored = store.stored();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.type).toBe('pageview');
+    expect(stored[0]?.userId).toBeUndefined();
+    expect(stored[0]?.traits).toBeUndefined();
+  });
+
+  it('never reaches the visitor row or a per-user lookup', async () => {
+    await app.close();
+    await start(site({ allowUnsignedIdentify: false, identifySecret: SECRET }));
+
+    await post(identifies('user_42'));
+
+    expect(await store.user('ps_web', 'user_42')).toBeNull();
+    const visitorId = store.stored()[0]?.visitorId;
+    expect(visitorId).toBeUndefined();
+  });
+
+  it('is taken when the site signed it', async () => {
+    await app.close();
+    await start(site({ allowUnsignedIdentify: false, identifySecret: SECRET }));
+
+    await post(identifies('user_42', signUserId(SECRET, 'ps_web', 'user_42')));
+
+    expect(store.stored()[0]).toMatchObject({ userId: 'user_42', traits: { plan: 'pro' } });
+    expect(await store.user('ps_web', 'user_42')).not.toBeNull();
+  });
+
+  it('is refused when the signature is for somebody else', async () => {
+    await app.close();
+    await start(site({ allowUnsignedIdentify: false, identifySecret: SECRET }));
+
+    await post(identifies('user_42', signUserId(SECRET, 'ps_web', 'user_99')));
+
+    expect(store.stored()).toHaveLength(0);
+    expect(await store.user('ps_web', 'user_42')).toBeNull();
+  });
+
+  it('is refused on a permissive site too when a wrong signature is sent', async () => {
+    await app.close();
+    await start(site({ identifySecret: SECRET }));
+
+    await post(identifies('user_42', 'forged'));
+
+    expect(store.stored()).toHaveLength(0);
+  });
+});
+
+describe('sessions, written as the batch is ingested', () => {
+  it('opens one stay and stamps it on every event of it', async () => {
+    // Backdated, because the collector bounds an event to the moment the
+    // batch arrived and a clock from the future would all land on one instant.
+    const at = Date.now() - 60_000;
+    await post(
+      batch({
+        visitorId: 'v_persistent',
+        events: [
+          { type: 'pageview', ts: at, path: '/home' },
+          { type: 'pageview', ts: at + 1000, path: '/pricing' },
+          { type: 'leave', ts: at + 2000, path: '/pricing', duration: 2000, scrollDepth: 50 },
+        ],
+      }),
+    );
+
+    const stored = store.stored();
+    const ids = new Set(stored.map((event) => event.sessionId));
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).toBeTruthy();
+
+    const visitorId = stored[0]?.visitorId ?? '';
+    const sessions = store.sessionsOf('ps_web', visitorId);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      entryPath: '/home',
+      exitPath: '/pricing',
+      pageviews: 2,
+      duration: 2000,
+      endedAt: at + 2000,
+      isNew: true,
+      // The referrer of the first event of the batch decided it.
+      channel: 'direct',
+    });
+  });
+
+  it('shows the visitor as online through realtime, off the presence set', async () => {
+    await post(batch({ visitorId: 'v_persistent' }));
+
+    const snapshot = await store.realtime('ps_web');
+    expect(snapshot.online).toBe(1);
+    expect(snapshot.visitors[0]?.path).toBe('/courses/cp-beginners');
+    expect(snapshot.byCountry).toEqual([]);
   });
 });
 

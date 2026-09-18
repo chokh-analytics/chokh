@@ -12,6 +12,26 @@ jobs:
   verify:
     name: build, typecheck, lint, test, tracker size
     runs-on: ubuntu-latest
+
+    # Presence is a Redis sorted set when a deployment has Redis and a map when
+    # it does not, and both back the same product, so both pass the same
+    # presence suite. A stand-in for Redis would only prove the stand-in agrees
+    # with itself, so the suite runs against a real one here; a laptop without
+    # REDIS_URL skips it and says so.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      REDIS_URL: redis://localhost:6379
+
     steps:
       - uses: actions/checkout@v4
 

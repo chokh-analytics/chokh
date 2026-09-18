@@ -80,6 +80,7 @@ export function createQueue(deps: QueueDeps): Queue {
     if (page.viewport !== undefined) batch.viewport = page.viewport;
     if (context.visitorId !== undefined) batch.visitorId = context.visitorId;
     if (context.userId !== undefined) batch.userId = context.userId;
+    if (context.sig !== undefined) batch.sig = context.sig;
     send(win, config.collectUrl, JSON.stringify(batch));
   }
 

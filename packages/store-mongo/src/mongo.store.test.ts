@@ -1,3 +1,4 @@
+import { createMemoryPresence } from '@chokh/store';
 import { fixture, runStoreConformance } from '@chokh/store/conformance';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
@@ -12,7 +13,11 @@ runStoreConformance('mongodb', async () => {
   const server = await MongoMemoryServer.create();
   const client = new MongoClient(server.getUri('chokh_conformance'));
   await client.connect();
-  const store = await createMongoStore({ client, now: () => fixture.NOW });
+  // Presence is not storage, so it is handed in rather than found in MongoDB.
+  // The suite runs it on the map, because which backend holds the live set is
+  // the one thing an adapter has no say in.
+  const presence = createMemoryPresence();
+  const store = await createMongoStore({ client, presence, now: () => fixture.NOW });
   // Indexes come from the migration, never from the adapter, so the suite runs
   // against the database an operator would actually have.
   await apply(store.db);
@@ -24,6 +29,7 @@ runStoreConformance('mongodb', async () => {
       for (const name of ['events', 'sessions', 'visitors', 'rollups_daily', 'sites']) {
         await store.db.collection(name).deleteMany({});
       }
+      presence.clear();
     },
     close: async () => {
       await store.close();

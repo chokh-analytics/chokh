@@ -10,6 +10,7 @@ process and one image.
 | `GET /health` | AN-REPO01 |
 | `POST /api/collect` | AN-COL01 |
 | Storage behind the `AnalyticsStore` adapter | AN-STO01 |
+| Sessions, visitors, presence, the rollup and retention jobs | AN-SES01 |
 | The stats API, the SSE stream, keys and SSO | AN-API01 |
 
 ## POST /api/collect
@@ -41,12 +42,100 @@ What happens to a batch, in order:
 7. **The site's IP mode**, applied before anything is stored.
 8. **Dedupe.** A pageview repeated for the same visitor and path within two
    seconds is one pageview.
-9. **The store.** Written through the `AnalyticsStore` interface. AN-STO01 lands
-   the MongoDB adapter; until then a fresh install runs on the in-memory one and
-   keeps nothing across a restart.
+9. **The identity.** A batch naming a `userId` is believed when its signature
+   checks out, or when it carries none and the site accepts an unsigned
+   identify. Anything else is refused: the identify events are dropped, the rest
+   of the batch is collected anonymously, and a line in the log says so.
+10. **The store.** Written through the `AnalyticsStore` interface, which is also
+    where the batch becomes sessions and visitors.
 
 An event carries the browser's clock, so `ts` is bounded to the moment the batch
 arrived and never backdated by more than a day.
+
+## Identity
+
+A page can call `pa('identify', 'u_someone')` with any id it likes. On a simple
+site that is the feature working, so `allowUnsignedIdentify` defaults to `true`.
+On a site where an identified person's profile shows their addresses and their
+pages to an administrator, a forged identify is one visitor reading another's
+history, so that site turns the setting off and signs instead: it keeps an
+`identifySecret` on the server, hands the page
+
+```
+base64url(hmac_sha256(identifySecret, siteId + "
+" + userId))
+```
+
+and the tracker passes it back as the fourth argument of `pa('identify')`. The
+secret never reaches a browser. A signature that is present and wrong is refused
+whatever the setting says: an absent one is a site that never signs, a wrong one
+is somebody trying.
+
+Nothing unconfirmed reaches a visitor row, merges an anonymous history or
+answers a per-user lookup. The store only ever sees identity the collector has
+already confirmed.
+
+## Sessions and visitors
+
+`ingest` is where a batch becomes a stay.
+
+- **A session is a visitor's events with no thirty minute gap**, measured from
+  the last sign of life, so a long visit that keeps sending is one session. Its
+  id is derived from the site, the visitor and the start instant, so a batch
+  that arrives twice lands on one row instead of two.
+- **What it records:** the entry and exit path, the pageview and event counts,
+  the duration from its first event to its last, the referrer, UTM, location,
+  device and address it came in with, and a channel. A leave beacon sets
+  `endedAt`.
+- **The channel** is `direct`, `organic`, `social`, `referral`, `email`, `paid`
+  or `ai`. `utm_medium` decides when the link was tagged, because the person who
+  built it knew; otherwise the referrer does, and an assistant (ChatGPT,
+  Perplexity, Gemini, Claude, Copilot) is its own channel rather than a search
+  engine or a referral. A referrer on your own hostname is not a referral.
+- **A visit is a session, counted on the day it began**, and a bounce is a
+  session with at most one pageview. A stay that crosses midnight is one visit,
+  on the day it started.
+- **The visitor row** keeps the counts, the devices, the addresses, where they
+  usually connect from and what first and last brought them, so a profile
+  survives the raw rows ageing out.
+- **The merge:** the first time a confirmed identity reaches a visitor, every
+  session and event of theirs takes the name, which is what makes the anonymous
+  history theirs. A visitor who already answers to somebody else keeps their old
+  stays under the old name: one person does not inherit another's history
+  because they shared a computer. `pa('reset')` on logout is the way a browser
+  says the person at the keyboard changed.
+
+## Who is here now
+
+Presence is a sorted set per site, scored by the last sign of life. Ingest
+writes one entry per live visitor and `realtime()` reads it back; raw events are
+never scanned for this.
+
+- **`REDIS_URL` set:** the set lives in Redis, so every process of an install
+  counts the same visitors.
+- **Unset:** a map in this process, which is a complete install on one
+  container and wrong behind a load balancer.
+
+Online means a sign of life within the last minute, and "online for" counts from
+the session start. Crawlers are not in the set. Presence is not storage: it is a
+minute's window over a half hour set, rebuilt by the next heartbeat, so losing
+Redis costs the online count for a minute and nothing else.
+
+## The jobs
+
+Three, all idempotent, all safe to run twice, none holding a lock, so two
+processes of one install need no leader between them.
+
+- **The rollup**, hourly. It rolls the site's yesterday, which its own timezone
+  decides, and never a day older than `retentionDays - 1`: a day whose raw rows
+  have begun to expire would roll up smaller than it was, and the rollup is the
+  only copy of that day that outlives the detail. The first pass after a start
+  reaches back a week, so a short outage heals itself.
+- **The retention purge**, on the same tick. Events, the sessions that ended and
+  the visitors last seen before the site's retention. The rollups are never
+  touched.
+- **The geo refresh**, daily, which downloads only when the installed database
+  is over a month old.
 
 ## The geo database
 
@@ -76,7 +165,7 @@ empty and events are still collected.
 | `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
 | `COLLECT_RATE_LIMIT_SITE` | `60000` | Batches a minute for one site |
 | `MONGODB_URI` | none | Set it and the server runs on MongoDB, unset and it runs on memory |
-| `REDIS_URL` | none | Read by presence and the live feed (AN-SES01) |
+| `REDIS_URL` | none | Set it and presence lives in Redis, unset and it lives in this process |
 
 Behind Cloudflare, set `TRUST_PROXY` to Cloudflare's ranges and `REAL_IP_HEADER`
 to `CF-Connecting-IP`, or every visitor's address is Cloudflare's. If your proxy
@@ -145,9 +234,16 @@ survives the purge; only the per-visitor detail ages out.
   asks for the crawler share.
 - **Hourly series are capped at 7 days**, because rollups are daily and an
   hourly series has to read raw rows for the whole range.
-- **Visits, bounce rate and average duration are zero and null for now**, along
-  with the `entry`, `exit` and `channel` dimensions. They are facts about a
-  session, and AN-SES01 writes sessions.
+- **Visitors and pageviews are counted off events; visits, bounces and the
+  average stay off sessions.** The three session numbers attribute to every
+  dimension a session row carries, which is all of them except `page`, `screen`,
+  `lang` and `event`: a visit spans pages rather than being one, so those read 0
+  and null. For the same reason, a filter naming one of them leaves the visit
+  numbers unanswered.
+- **`entry`, `exit` and `channel` are read off sessions**, because no event
+  carries them. A filter on one of those three is refused with
+  `UNSUPPORTED_FILTER` rather than quietly matching nothing; AN-SEG01 owns the
+  segment that resolves it.
 
 ## Things to know before you point a site at this
 

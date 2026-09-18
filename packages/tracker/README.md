@@ -38,13 +38,37 @@ every site.
 ```js
 pa('event', 'quiz_start', { quizId: 'q1' });
 pa('identify', 'user_42', { plan: 'pro' });
+pa('identify', 'user_42', { plan: 'pro' }, signatureFromYourServer);
 pa('reset');
 pa('consent', true);
 ```
 
 `identify` links this visitor to an account and flushes at once. `reset` forgets
-the account and, in persistent mode, the stored visitor id, so a logout starts a
-new visitor.
+the account, the signature and, in persistent mode, the stored visitor id, so a
+logout starts a new visitor.
+
+### Signing an identify
+
+Anything on the page can call `identify` with any id it likes, and the collector
+cannot tell a real login from somebody typing into the console. On a blog that
+does not matter, and the default site setting accepts an unsigned identify. On a
+site where an administrator can then read that person's addresses and pages, a
+forged identify is one visitor reading another's history, so that site turns
+`allowUnsignedIdentify` off and passes a signature as the fourth argument.
+
+Your server issues it from the site's `identifySecret`, which never reaches the
+browser:
+
+```
+signature = base64url(hmac_sha256(identifySecret, siteId + "
+" + userId))
+```
+
+Render it with the page the way you render the user's name. `sdk-node` will do
+this for you in AN-API01. The signature travels on every batch after the
+identify, because the `userId` does; an identify the site will not confirm is
+dropped, the rest of the batch is still collected, and nothing about that
+visitor is ever filed under the name.
 
 There is a fifth command, `pa('vital', name, { value, rating })`. It is internal:
 `v.js` uses it to report a Core Web Vital through this script rather than posting
@@ -109,6 +133,7 @@ header says.
   "viewport": "1280x720",
   "visitorId": "kq2b7w3m9pa",
   "userId": "user_42",
+  "sig": "optional, the site's proof of the userId above",
   "events": [
     {
       "type": "pageview",
@@ -124,5 +149,5 @@ header says.
 
 `type` is one of `pageview`, `event`, `heartbeat`, `leave`, `identify` or
 `vital`. The collector enriches each event with IP, geo, user agent and bot
-flags, and applies the site's IP mode, exclusions and retention. AN-COL01 builds
-it.
+flags, applies the site's IP mode, exclusions and retention, and cuts the
+visitor's events into sessions under a thirty minute gap rule.

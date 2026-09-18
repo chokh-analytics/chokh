@@ -59,6 +59,13 @@ export function createCollectController(
       return reply.code(result.status).send(fail(result.code, result.message));
     }
 
+    if (result.identity === 'refused') {
+      // The batch is still collected, anonymously. A site owner who turned
+      // unsigned identifies off needs to see that a page is still trying, so
+      // this is the one place it shows.
+      request.log.warn({ siteId: parsed.data.siteId }, 'identify refused, batch collected anonymously');
+    }
+
     // A beacon cannot read a response, so the ticket asks for 202 and no body.
     // Every failure still answers with the envelope.
     return reply.code(202).send();

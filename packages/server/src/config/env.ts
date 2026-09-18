@@ -21,9 +21,13 @@ export const envSchema = z.object({
   // Where the built dashboard lives. Unset means "the sibling package's dist",
   // which is what a workspace checkout wants; the image sets it explicitly.
   DASHBOARD_DIR: optional,
-  // Read by the storage adapter (AN-STO01) and by presence (AN-SES01). Declared
-  // here so the compose file and the deployment have one place to look.
+  // Where the rows go. Unset means the in-memory adapter, which keeps nothing
+  // across a restart and is never a deployment.
   MONGODB_URI: optional,
+  // Where "who is here now" is kept. Unset means a map in this process, which
+  // is a complete install on one container; set it and every process of an
+  // install counts the same visitors. Losing Redis costs a minute of the
+  // online count and nothing else, because presence is never storage.
   REDIS_URL: optional,
 
   // Who may tell the collector a visitor's real address, and in which header.

@@ -1,5 +1,7 @@
 import type { GeoLocation, UserAgentInfo } from '@chokh/geo';
 
+import type { Channel } from './channel.js';
+
 export type IpMode = 'full' | 'anonymized' | 'none';
 export type VisitorIdMode = 'cookieless' | 'persistent';
 
@@ -17,6 +19,22 @@ export interface SiteSettings {
   // changed once a year of them exists, so this is settled before the first
   // row is written. An IANA name, for example 'Asia/Dhaka'.
   timezone: string;
+  // Whether a browser may name the person behind a visitor without proof.
+  //
+  // A page can call pa('identify', 'u_someone') with any id it likes, and the
+  // collector has no way to tell a real login from a curious visitor typing
+  // into the console. On a blog that is harmless and the feature should just
+  // work, so the default is yes. On a site where an identified person's
+  // profile shows their addresses and their pages to an administrator, a
+  // forged identify is somebody reading another person's history, so that site
+  // sets this to no and signs its identifies: sdk-node holds identifySecret on
+  // the server, hands the page an HMAC of the userId, and the tracker passes it
+  // back as the fourth argument of pa('identify'). An identify that is not
+  // confirmed never reaches a visitor row, a merge or a per-user lookup.
+  allowUnsignedIdentify: boolean;
+  // The per-site key those signatures are made with. It never leaves the
+  // server: a browser that could read it could sign anything.
+  identifySecret?: string;
   // Declared by AN-STO01 so the shape is settled. The collector applies them
   // when AN-SEG01 gives a site owner somewhere to set them.
   excludeIps: string[];
@@ -40,6 +58,7 @@ export function defaultSiteSettings(overrides: Partial<SiteSettings> = {}): Site
     botFilter: true,
     retentionDays: 180,
     timezone: 'UTC',
+    allowUnsignedIdentify: true,
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
@@ -58,7 +77,8 @@ export interface StoredEvent {
   receivedAt: number;
   type: EventType;
   visitorId: string;
-  // Written by AN-SES01, which owns the 30 minute gap rule.
+  // The stay this event belongs to, stamped by ingest under the 30 minute gap
+  // rule in session.ts.
   sessionId?: string;
   userId?: string;
   path?: string;
@@ -82,9 +102,9 @@ export interface StoredEvent {
   rating?: string;
 }
 
-// A visitor's stay, written by AN-SES01. AN-STO01 declares and indexes the
-// collection and reads it; until sessions exist every number derived from one
-// reads zero, and nothing here is rewritten when they arrive.
+// A visitor's stay. Written by ingest through the fold in session.ts: one row
+// per unbroken run of a visitor's events, and the source fields are the ones
+// the stay came in with.
 export interface StoredSession {
   siteId: string;
   id: string;
@@ -92,6 +112,7 @@ export interface StoredSession {
   userId?: string;
   startedAt: number;
   lastSeenAt: number;
+  // Set by a leave beacon: the visitor closed the page rather than going quiet.
   endedAt?: number;
   entryPath?: string;
   exitPath?: string;
@@ -108,7 +129,25 @@ export interface StoredSession {
   isNew: boolean;
 }
 
-// The person behind the sessions, written by AN-SES01.
+// Where a stay came from, kept on the visitor so attribution can ask either
+// "what first brought them here" or "what brought them back".
+export interface Touch {
+  at: number;
+  channel: Channel;
+  referrer?: string;
+  utm?: Attributes;
+  entryPath?: string;
+}
+
+// How many sessions opened in one place. The tally behind homeGeo, capped, so
+// "where they usually connect from" is a count and not the latest guess.
+export interface PlaceTally {
+  key: string;
+  count: number;
+  geo: GeoLocation;
+}
+
+// The person behind the sessions.
 export interface StoredVisitor {
   siteId: string;
   id: string;
@@ -119,6 +158,9 @@ export interface StoredVisitor {
   sessions: number;
   pageviews: number;
   homeGeo?: GeoLocation;
+  places: PlaceTally[];
   devices: string[];
   ips: string[];
+  firstTouch?: Touch;
+  lastTouch?: Touch;
 }

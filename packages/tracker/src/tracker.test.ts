@@ -82,3 +82,61 @@ describe('a visit through a single page app', () => {
     expect(last?.duration).toBeLessThan(events[1]?.duration ?? 0);
   });
 });
+
+function batches(): Batch[] {
+  return fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)) as Batch);
+}
+
+function lastBatch(): Batch | undefined {
+  const all = batches();
+  return all[all.length - 1];
+}
+
+describe('identify, and the proof a site can put behind it', () => {
+  it('sends the user and the signature the site issued, on that batch and the next', () => {
+    window.pa?.('identify', 'user_42', { plan: 'pro' }, 'sig-issued-by-the-server');
+    settle();
+
+    const identified = lastBatch();
+    expect(identified?.userId).toBe('user_42');
+    expect(identified?.sig).toBe('sig-issued-by-the-server');
+    const event = identified?.events.find((one) => one.type === 'identify');
+    expect(event?.userId).toBe('user_42');
+    expect(event?.traits).toEqual({ plan: 'pro' });
+
+    // The userId rides on every batch after an identify, so the proof has to
+    // ride with it: the collector checks the batch, not one event in it.
+    window.pa?.('event', 'quiz_start');
+    settle();
+    expect(lastBatch()?.userId).toBe('user_42');
+    expect(lastBatch()?.sig).toBe('sig-issued-by-the-server');
+  });
+
+  it('forgets the user and the signature together on reset', () => {
+    window.pa?.('reset');
+    window.pa?.('event', 'browse');
+    settle();
+
+    expect(lastBatch()?.userId).toBeUndefined();
+    expect(lastBatch()?.sig).toBeUndefined();
+  });
+
+  it('sends no signature for a site that does not sign, which is the default', () => {
+    window.pa?.('identify', 'user_43');
+    settle();
+
+    expect(lastBatch()?.userId).toBe('user_43');
+    expect(lastBatch()?.sig).toBeUndefined();
+  });
+
+  it('drops a stale signature when the next identify comes without one', () => {
+    window.pa?.('identify', 'user_44', undefined, 'sig-for-44');
+    settle();
+    expect(lastBatch()?.sig).toBe('sig-for-44');
+
+    window.pa?.('identify', 'user_45');
+    settle();
+    expect(lastBatch()?.userId).toBe('user_45');
+    expect(lastBatch()?.sig).toBeUndefined();
+  });
+});
