@@ -85,12 +85,26 @@ export function createQueue(deps: QueueDeps): Queue {
 
   return {
     push(event: TrackedEvent): void {
+      if (blocked) {
+        // Nothing can leave until consent arrives. A heartbeat only says the
+        // visitor was here a moment ago, so a stale one is worth nothing, and
+        // the buffer keeps the newest MAX_BATCH events so a tab left open for
+        // hours does not grow without bound or flood the collector later.
+        if (event.type === 'heartbeat') {
+          return;
+        }
+        buffer.push(event);
+        if (buffer.length > MAX_BATCH) {
+          buffer.shift();
+        }
+        return;
+      }
       buffer.push(event);
       if (buffer.length >= MAX_BATCH) {
         flush();
         return;
       }
-      if (timer === undefined && !blocked) {
+      if (timer === undefined) {
         timer = win.setTimeout(flush, FLUSH_DELAY_MS);
       }
     },

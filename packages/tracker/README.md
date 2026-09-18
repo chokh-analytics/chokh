@@ -26,8 +26,9 @@ every site.
 - A pageview on load and on `pushState`, `replaceState` and `popstate`
 - A heartbeat every 20 seconds while the tab is visible, none while it is
   hidden, and one immediately when it comes back
-- A leave beacon on `pagehide` carrying time on page (visible time only) and the
-  deepest scroll quartile reached (25, 50, 75 or 100)
+- A leave beacon carrying time on page (visible time only) and the deepest scroll
+  quartile reached (25, 50, 75 or 100), on `pagehide` and again whenever a route
+  change closes a page, so every page in a single page app carries its own
 - A click on any element carrying `data-pa-event`, with every
   `data-pa-prop-<name>` attribute as a property
 - `outbound_link` and `file_download` clicks, each with the `url` property
@@ -44,6 +45,27 @@ pa('consent', true);
 `identify` links this visitor to an account and flushes at once. `reset` forgets
 the account and, in persistent mode, the stored visitor id, so a logout starts a
 new visitor.
+
+There is a fifth command, `pa('vital', name, { value, rating })`. It is internal:
+`v.js` uses it to report a Core Web Vital through this script rather than posting
+on its own, so vitals share the consent gate, the visitor id and the batch. A
+site never calls it.
+
+### Calling pa() before the script loads
+
+`a.js` is deferred, so a page that calls `pa()` during parsing needs somewhere to
+put the call. Add the usual stub before any such call, and the tracker replays
+whatever it finds in `pa.q` once it boots.
+
+```html
+<script>
+  window.pa =
+    window.pa ||
+    function () {
+      (window.pa.q = window.pa.q || []).push(arguments);
+    };
+</script>
+```
 
 ## Core Web Vitals
 
@@ -64,6 +86,11 @@ gzipped, which is 2923 B over. Hence the second file.
 Events are batched and sent with `navigator.sendBeacon`, falling back to a
 `fetch` with `keepalive`. A batch goes after one second, as soon as it holds 20
 events, on every heartbeat, when the tab is hidden, and on `pagehide`.
+
+While `data-consent` is set and consent has not been given, nothing is sent:
+heartbeats are dropped, because a beat nobody may read says nothing, and the
+buffer keeps only the newest 20 events, so a tab left open for hours neither
+grows without bound nor floods the collector the moment consent arrives.
 
 The body is JSON sent with a `text/plain` content type. A beacon cannot be
 preflighted, so a simple content type is the only way the primary transport

@@ -12,8 +12,8 @@ const baseConfig: Config = {
   requireConsent: false,
 };
 
-function event(type: TrackedEvent['type'], path = '/'): TrackedEvent {
-  return { type, ts: 1, path };
+function event(type: TrackedEvent['type'], name?: string): TrackedEvent {
+  return name === undefined ? { type, ts: 1, path: '/' } : { type, ts: 1, path: '/', name };
 }
 
 function fetchSpy() {
@@ -131,6 +131,32 @@ describe('consent', () => {
 
     queue.allow(true);
     expect(sent()).toHaveLength(0);
+  });
+
+  it('drops heartbeats while it is blocked, because a stale beat says nothing', () => {
+    const { queue } = queueWith({ requireConsent: true });
+
+    queue.push(event('pageview'));
+    for (let i = 0; i < 5; i++) {
+      queue.push(event('heartbeat'));
+    }
+
+    expect(queue.pending()).toBe(1);
+  });
+
+  it('caps the buffer at one batch while blocked, discarding the oldest', () => {
+    const { queue, sent } = queueWith({ requireConsent: true });
+
+    for (let i = 0; i < 25; i++) {
+      queue.push(event('event', 'e' + i));
+    }
+    expect(queue.pending()).toBe(20);
+
+    queue.allow(true);
+    const kept = sent()[0]?.events.map((e) => e.name);
+    expect(kept).toHaveLength(20);
+    expect(kept?.[0]).toBe('e5');
+    expect(kept?.[19]).toBe('e24');
   });
 });
 

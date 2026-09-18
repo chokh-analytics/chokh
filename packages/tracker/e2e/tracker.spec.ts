@@ -85,18 +85,29 @@ test('clicks, custom events and identify reach the collector', async ({ page, re
   expect(withUser?.userId).toBe('user_42');
 });
 
-test('a single page navigation collects a second pageview', async ({ page, request }) => {
+test('a single page navigation closes the page left, then opens the next', async ({
+  page,
+  request,
+}) => {
   await page.goto('/');
+  await page.waitForTimeout(150);
   await page.click('#navigate');
 
   await expect
     .poll(async () => (await events(request)).filter((e) => e.type === 'pageview').length)
     .toBe(2);
 
-  const paths = (await events(request))
-    .filter((event) => event.type === 'pageview')
-    .map((event) => event.path);
-  expect(paths).toEqual(['/', '/courses/cp-beginners']);
+  const collected = await events(request);
+  expect(collected.map((event) => event.type)).toEqual(['pageview', 'leave', 'pageview']);
+  expect(collected.map((event) => event.path)).toEqual([
+    '/',
+    '/',
+    '/courses/cp-beginners',
+  ]);
+
+  const leave = collected[1];
+  expect(leave?.duration).toBeGreaterThan(0);
+  expect(typeof leave?.scrollDepth).toBe('number');
 });
 
 test('leaving the page sends a leave beacon with time on page and scroll depth', async ({

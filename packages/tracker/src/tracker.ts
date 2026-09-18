@@ -81,6 +81,18 @@ function boot(win: Window, doc: Document, config: Config): void {
     engagement.reset();
   }
 
+  // Closes the page being left, so every page in a single page app carries its
+  // own time on page and scroll depth, not just the last one visited.
+  function leave(): void {
+    queue.push({
+      type: 'leave',
+      ts: Date.now(),
+      path,
+      duration: engagement.duration(),
+      scrollDepth: engagement.scrollDepth(),
+    });
+  }
+
   function track(name: string, props?: Props): void {
     const event: TrackedEvent = { type: 'event', ts: Date.now(), path, name };
     if (props !== undefined) {
@@ -146,6 +158,7 @@ function boot(win: Window, doc: Document, config: Config): void {
 
   watchNavigation(win, config.hashRouting, () => {
     if (pagePath(loc, config.hashRouting) !== path) {
+      leave();
       pageview();
     }
   });
@@ -158,13 +171,7 @@ function boot(win: Window, doc: Document, config: Config): void {
   });
 
   win.addEventListener('pagehide', () => {
-    queue.push({
-      type: 'leave',
-      ts: Date.now(),
-      path,
-      duration: engagement.duration(),
-      scrollDepth: engagement.scrollDepth(),
-    });
+    leave();
     queue.flush();
   });
 
