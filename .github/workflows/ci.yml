@@ -43,26 +43,26 @@ jobs:
       - name: Start the stack
         run: docker compose up --build -d
 
-      - name: Wait for the server to answer
+      - name: Wait for the image HEALTHCHECK to report healthy
         run: |
+          container="$(docker compose ps -q server)"
+          status=unknown
           for attempt in $(seq 1 60); do
-            if curl -fs http://localhost:4100/health > /dev/null; then
-              echo "server answered on attempt ${attempt}"
+            status="$(docker inspect --format '{{.State.Health.Status}}' "${container}")"
+            if [ "${status}" = "healthy" ]; then
+              echo "server healthy on attempt ${attempt}"
               exit 0
             fi
             sleep 2
           done
-          echo "server did not answer within 120 seconds"
+          echo "server never reported healthy within 120 seconds, last status: ${status}"
           exit 1
 
-      - name: Assert the health envelope
+      - name: Assert GET /health answers with the success envelope
         run: |
-          body=$(curl -fs http://localhost:4100/health)
+          body="$(curl -fs http://localhost:4100/health)"
           echo "${body}"
           echo "${body}" | grep -q '"success":true'
-
-      - name: Container health reported by the image HEALTHCHECK
-        run: docker inspect --format '{{.Name}} {{.State.Health.Status}}' "$(docker compose ps -q server)"
 
       - name: Logs on failure
         if: failure()
