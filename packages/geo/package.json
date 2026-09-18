@@ -6,7 +6,7 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "types": "src/index.ts",
   "files": [
     "dist"
   ],
@@ -25,5 +25,8 @@
     "maxmind": "^5.0.7",
     "tar": "^7.5.22",
     "ua-parser-js": "^1.0.41"
+  },
+  "publishConfig": {
+    "types": "dist/index.d.ts"
   }
 }

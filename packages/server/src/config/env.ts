@@ -4,7 +4,14 @@ import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod';
 
-const envSchema = z.object({
+// A compose file or a shell hands over an empty string for a variable nobody
+// set, which means unset and not "a value of zero length".
+const optional = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(4100),
@@ -13,11 +20,11 @@ const envSchema = z.object({
     .default('info'),
   // Where the built dashboard lives. Unset means "the sibling package's dist",
   // which is what a workspace checkout wants; the image sets it explicitly.
-  DASHBOARD_DIR: z.string().min(1).optional(),
+  DASHBOARD_DIR: optional,
   // Read by the storage adapter (AN-STO01) and by presence (AN-SES01). Declared
   // here so the compose file and the deployment have one place to look.
-  MONGODB_URI: z.string().min(1).optional(),
-  REDIS_URL: z.string().min(1).optional(),
+  MONGODB_URI: optional,
+  REDIS_URL: optional,
 
   // Who may tell the collector a visitor's real address, and in which header.
   // Without TRUST_PROXY nothing is believed and the socket's peer is the
@@ -35,14 +42,15 @@ const envSchema = z.object({
     ),
   REAL_IP_HEADER: z
     .string()
+    .transform((value) => (value === '' ? 'X-Forwarded-For' : value))
     .default('X-Forwarded-For')
     .transform((value) => value.toLowerCase())
     .pipe(z.enum(['x-forwarded-for', 'cf-connecting-ip'])),
 
   // Where the geo database lives, and the MaxMind key that chooses
   // GeoLite2-City over the keyless DB-IP Lite fallback.
-  GEOIP_DIR: z.string().min(1).default('./data/geo'),
-  GEOIP_LICENSE_KEY: z.string().min(1).optional(),
+  GEOIP_DIR: z.preprocess((value) => (value === '' ? undefined : value), z.string().min(1).default('./data/geo')),
+  GEOIP_LICENSE_KEY: optional,
 
   // Batches a minute, per address and per site.
   COLLECT_RATE_LIMIT_IP: z.coerce.number().int().positive().default(600),
