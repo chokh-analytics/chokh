@@ -1,0 +1,120 @@
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+
+.head th {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.right {
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A path is the one column with no business wrapping: the shape of the start
+ * of it is how somebody recognises the page. */
+.path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 44ch;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+/* Not measured is not zero, and must not read like a number. */
+.absent {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.depth {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  justify-content: flex-end;
+}
+
+.depthBars {
+  display: inline-grid;
+  grid-template-columns: repeat(4, 10px);
+  gap: 2px;
+}
+
+.quarterOn,
+.quarterOff {
+  height: 10px;
+  border-radius: 2px;
+}
+
+.quarterOn {
+  background: var(--accent);
+}
+
+.quarterOff {
+  background: var(--line);
+}
+
+.note {
+  padding: var(--s2) var(--s3) 0;
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.convention {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.bigNumber {
+  margin: 0;
+  font-size: var(--t-kpi);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.snippet {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+}

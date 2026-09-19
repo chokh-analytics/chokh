@@ -1,0 +1,29 @@
+.page {
+  display: grid;
+  gap: var(--s5);
+  min-width: 0;
+}
+
+.stack {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+/*
+ * Two across, stacked below the same breakpoint the Overview cards use. An
+ * explicit count rather than auto-fit, for the reason written there: auto-fit
+ * picks the number itself and picks three at 1440, which leaves an orphan.
+ */
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4);
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

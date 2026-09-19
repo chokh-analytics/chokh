@@ -1,0 +1,98 @@
+.wrap {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.map {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.country {
+  stroke: var(--paper);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+  transition: fill var(--fast) ease-out;
+}
+
+/*
+ * Five bands of one hue, not a rainbow.
+ *
+ * A sequential scale in the product's own accent says "more of the same thing";
+ * a multi-hue scale says the categories differ in kind, which they do not. The
+ * lightest band still has to be distinguishable from an unvisited country,
+ * which is why the empty fill is grey rather than the palest teal.
+ */
+.empty {
+  fill: var(--soft);
+  stroke: var(--line);
+}
+
+.band0 {
+  fill: color-mix(in oklab, var(--accent) 18%, var(--paper));
+}
+
+.band1 {
+  fill: color-mix(in oklab, var(--accent) 36%, var(--paper));
+}
+
+.band2 {
+  fill: color-mix(in oklab, var(--accent) 56%, var(--paper));
+}
+
+.band3 {
+  fill: color-mix(in oklab, var(--accent) 78%, var(--paper));
+}
+
+.band4 {
+  fill: var(--accent);
+}
+
+.hover {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.ramp {
+  display: inline-grid;
+  grid-template-columns: repeat(5, 18px);
+  gap: 2px;
+}
+
+.ramp > span {
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legendLow,
+.legendHigh {
+  font-variant-numeric: tabular-nums;
+}
+
+.caption {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  min-height: 1.4em;
+}

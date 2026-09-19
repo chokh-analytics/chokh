@@ -9,12 +9,14 @@
 // Antarctica is dropped. It is six kilobytes of coastline and it has never had
 // a visitor.
 import { geoPath, geoNaturalEarth1 } from 'd3-geo';
+import isoCountries from 'i18n-iso-countries';
 import { feature } from 'topojson-client';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const { numericToAlpha2 } = isoCountries;
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(here, '../src/map/world.generated.ts');
@@ -44,8 +46,25 @@ const path = geoPath(projection);
 // difference is invisible.
 const round = (d) => d.replace(/-?\d+\.\d+/g, (n) => String(Math.round(Number(n) * 10) / 10));
 
+// Keyed by the two letter code, because that is what a visitor's country is
+// called everywhere else in this product: the geo database answers alpha-2, the
+// store files alpha-2, and a choropleth that joined on a numeric code would
+// need a second table to translate between the map and the numbers on it.
+// Anything the table cannot place is still drawn and simply never painted,
+// which is a country in the empty colour rather than a crash.
+const unplaced = [];
 const shapes = drawn
-  .map((country) => ({ id: String(country.id), d: round(path(country) ?? '') }))
+  .map((country, index) => {
+    const alpha2 = country.id === undefined ? undefined : numericToAlpha2(String(country.id));
+    if (alpha2 === undefined) {
+      // Three of the 110m features have no code at all: places whose status is
+      // disputed. They are drawn, they are never painted, and they get a key
+      // nothing can collide with rather than sharing one between them.
+      unplaced.push(country.properties?.name ?? String(country.id));
+      return { id: `x${index}`, d: round(path(country) ?? '') };
+    }
+    return { id: alpha2, d: round(path(country) ?? '') };
+  })
   .filter((shape) => shape.d !== '');
 
 const [translateX, translateY] = projection.translate();
@@ -70,8 +89,8 @@ export const WORLD: Projection = {
   translate: [${Math.round(translateX * 1e6) / 1e6}, ${Math.round(translateY * 1e6) / 1e6}],
 };
 
-// One entry per country, keyed by its numeric code. Nothing reads the key yet:
-// it is here so a choropleth can join on it without regenerating the file.
+// One entry per country, keyed by the same two letter code the store files a
+// visitor's country under, so the Geo choropleth joins on it directly.
 export const SHAPES: readonly { id: string; d: string }[] = [
 ${shapes.map((shape) => `  { id: '${shape.id}', d: '${shape.d}' },`).join('\n')}
 ];
@@ -81,3 +100,6 @@ writeFileSync(out, file);
 console.warn(
   `world.generated.ts: ${shapes.length} countries, ${Math.round(file.length / 1024)} KB`,
 );
+if (unplaced.length > 0) {
+  console.warn(`  drawn but never painted, no two letter code: ${unplaced.join(', ')}`);
+}

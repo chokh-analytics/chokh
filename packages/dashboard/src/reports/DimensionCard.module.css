@@ -1,0 +1,13 @@
+/* Ten rows at the height ten rows will be, so nothing moves when they land. */
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+.more {
+  display: flex;
+  justify-content: center;
+  padding: var(--s2) 0 var(--s1);
+  border-top: 1px solid var(--line);
+}

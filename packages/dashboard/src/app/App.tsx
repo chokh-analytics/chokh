@@ -6,8 +6,12 @@ import { createClient, type Client } from '../lib/client.js';
 import { createQueryClient, useMe } from '../lib/queries.js';
 import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
+import { Devices } from '../pages/Devices.js';
+import { Geo } from '../pages/Geo.js';
 import { Overview } from '../pages/Overview.js';
+import { Pages } from '../pages/Pages.js';
 import { Realtime } from '../pages/Realtime.js';
+import { Sources } from '../pages/Sources.js';
 import { SignIn } from '../pages/SignIn.js';
 import { Splash } from '../ui/Splash.js';
 import { Shell } from './Shell.js';
@@ -37,16 +41,18 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
       <Route path="/:siteId/realtime">
         <Realtime />
       </Route>
-      <Route path="/:siteId/pages" component={() => <Placeholder title={messages.nav.pages} />} />
-      <Route
-        path="/:siteId/sources"
-        component={() => <Placeholder title={messages.nav.sources} />}
-      />
-      <Route path="/:siteId/geo" component={() => <Placeholder title={messages.nav.geo} />} />
-      <Route
-        path="/:siteId/devices"
-        component={() => <Placeholder title={messages.nav.devices} />}
-      />
+      <Route path="/:siteId/pages">
+        <Pages />
+      </Route>
+      <Route path="/:siteId/sources">
+        <Sources />
+      </Route>
+      <Route path="/:siteId/geo">
+        <Geo />
+      </Route>
+      <Route path="/:siteId/devices">
+        <Devices />
+      </Route>
       <Route path="/:siteId/people" component={() => <Placeholder title={messages.nav.people} />} />
       {/* Anything else under a site is a link somebody mistyped, and the
           navigation is still there to get them out of it. */}

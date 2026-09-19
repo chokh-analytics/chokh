@@ -35,9 +35,17 @@ export function useViewQuery(): ViewQueryHandle {
 
   const go = useCallback(
     (next: ViewQuery, replace: boolean) => {
-      navigate(`${location}${toSearch(next)}`, { replace });
+      const target = `${location}${toSearch(next)}`;
+      // A choice that changes nothing is not a step. Pressing the metric tile
+      // that is already selected, or re-applying the range that is already on,
+      // used to push the same URL again: back then went to the same page, and
+      // a person pressing back four times sat on the same screen four times.
+      if (target === `${location}${search === '' ? '' : `?${search}`}`) {
+        return;
+      }
+      navigate(target, { replace });
     },
-    [location, navigate],
+    [location, navigate, search],
   );
 
   return {
