@@ -164,6 +164,22 @@ export function createMeController(deps: ApiDeps) {
     const sites = await visibleSites(deps.store, principal);
     const user =
       principal.kind === 'session' ? await deps.store.userById(principal.id) : null;
+    // The teams this person belongs to, and their role in each.
+    //
+    // Without it a dashboard has no way to name a team when it creates a site,
+    // so it can only post the default one, and somebody the SSO exchange put in
+    // a team of their own is refused with "Only an owner of default may create
+    // a site in it" on the one screen a fresh install gives them. Sites carry a
+    // teamId, but somebody with no sites yet is exactly the person who needs
+    // this, so it cannot be derived from them.
+    const teams =
+      user === null
+        ? []
+        : (await deps.store.teamsForUser(user.id)).map((team) => ({
+            id: team.id,
+            name: team.name,
+            role: team.members.find((member) => member.userId === user.id)?.role ?? 'viewer',
+          }));
     return reply.send(
       ok({
         // A key is a caller too, and telling it what it is saves an integration
@@ -171,6 +187,7 @@ export function createMeController(deps: ApiDeps) {
         actor: { kind: principal.kind, id: principal.id },
         user: user === null ? null : publicUser(user),
         sites,
+        teams,
       }),
     );
   };

@@ -1,4 +1,10 @@
-import { useId, type InputHTMLAttributes, type JSX, type ReactNode } from 'react';
+import {
+  useId,
+  type InputHTMLAttributes,
+  type JSX,
+  type ReactNode,
+  type SelectHTMLAttributes,
+} from 'react';
 
 import styles from './Field.module.css';
 
@@ -40,6 +46,53 @@ export function Field({ label, help, problem, className, ...rest }: FieldProps):
       {problem !== undefined && (
         <p className={styles.problem} id={problemId} role="alert">
           {problem}
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  label: string;
+  help?: ReactNode;
+  options: { value: string; label: string }[];
+}
+
+// The same three parts as a Field, around a select.
+//
+// A native select rather than a listbox of divs, because it is the one control
+// that already works on a phone, with a keyboard, with a screen reader and with
+// four hundred options in it, and a timezone list is four hundred options.
+export function SelectField({
+  label,
+  help,
+  options,
+  className,
+  ...rest
+}: SelectFieldProps): JSX.Element {
+  const id = useId();
+  const helpId = `${id}-help`;
+
+  return (
+    <div className={[styles.field, className ?? ''].filter(Boolean).join(' ')}>
+      <label className={styles.label} htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        className={styles.input}
+        aria-describedby={help === undefined ? undefined : helpId}
+        {...rest}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {help !== undefined && (
+        <p className={styles.help} id={helpId}>
+          {help}
         </p>
       )}
     </div>

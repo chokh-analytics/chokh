@@ -147,7 +147,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `POST /api/auth/register` | nothing, then `admin` | Open only while there is no account |
 | `POST /api/auth/login` | nothing | Sets the session cookie |
 | `POST /api/auth/logout` | a session | Clears it |
-| `GET /api/me` | a session or a key | Who you are, and your sites with your scopes |
+| `GET /api/me` | a session or a key | Who you are, your teams, and your sites with your scopes |
 | `POST /api/sso`, `GET /api/sso` | nothing | A five minute token becomes a session |
 | `GET /api/sites` | a session | The sites you may read |
 | `POST /api/sites` | owner of the team | At least one domain. Returns `identifySecret` once |
@@ -206,7 +206,8 @@ knowing about.
 
 Two things the response says out loud. `rawOnly: true`, because no rollup holds
 a leave beacon and this report therefore sees exactly as far back as the site
-keeps its raw events. And `leaves`, because it is the sample size: a page with
+keeps its raw events, with `meta.retentionDays` beside it saying how far that
+is. And `leaves`, because it is the sample size: a page with
 one leave has an average of one, and a report that hides that is inviting
 somebody to act on it. An average over no measurement is `null`, never zero, so
 a page somebody closed at once and a page nobody has closed do not read the

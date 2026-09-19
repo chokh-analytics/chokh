@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent, type JSX } from 'react';
 
-import { api, type CreatedSite } from '../lib/api.js';
+import { api, type CreatedSite, type MyTeam } from '../lib/api.js';
 import { ChokhError, type Client } from '../lib/client.js';
 import { messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
-import { Field } from '../ui/Field.js';
+import { Field, SelectField } from '../ui/Field.js';
 import { Wordmark } from '../ui/Wordmark.js';
 import styles from './FirstRun.module.css';
 
@@ -28,6 +28,33 @@ function browserTimezone(): string {
   } catch {
     return 'UTC';
   }
+}
+
+// Every zone this browser knows, which is the same list the server validates
+// against: a free text field here accepts "Dhaka" or "GMT+6" and the site is
+// then refused, or worse, created with a zone that means something else.
+// supportedValuesOf is in every browser this product supports; the fallback is
+// for one that is not and for jsdom.
+function timezoneOptions(current: string): { value: string; label: string }[] {
+  let zones: string[] = [];
+  try {
+    zones = Intl.supportedValuesOf('timeZone');
+  } catch {
+    zones = [];
+  }
+  const all = zones.includes(current) ? zones : [current, ...zones];
+  return all.map((zone) => ({ value: zone, label: zone.replace(/_/g, ' ') }));
+}
+
+// Which team a new site belongs to.
+//
+// Only an owner of the named team may create a site in it, and the server's
+// default is the team called default. Somebody the SSO exchange provisioned
+// owns a team of their own and not that one, so posting nothing refused them
+// with "Only an owner of default may create a site in it" on the one screen a
+// fresh install gives them. Their own team is what gets posted.
+export function teamToCreateIn(teams: MyTeam[]): MyTeam | null {
+  return teams.find((team) => team.role === 'owner') ?? null;
 }
 
 function snippetFor(siteId: string): string {
@@ -117,18 +144,22 @@ function Waiting({
 
 export interface FirstRunProps {
   client: Client;
+  // The teams this person belongs to, from GET /api/me.
+  teams: MyTeam[];
   // Called once there is a site to look at, so the shell can ask again who this
   // person is and which sites they can now read.
   onReady: () => void;
 }
 
-export function FirstRun({ client, onReady }: FirstRunProps): JSX.Element {
+export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element {
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [timezone, setTimezone] = useState(browserTimezone);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedSite | null>(null);
+  const team = teamToCreateIn(teams);
+  const zones = timezoneOptions(timezone);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -141,6 +172,7 @@ export function FirstRun({ client, onReady }: FirstRunProps): JSX.Element {
         // nowhere else, so a pasted https:// is trimmed rather than refused:
         // it is the form anybody copies out of an address bar.
         domains: [domain.trim().replace(PROTOCOL, '').replace(/\/.*$/, '')],
+        ...(team === null ? {} : { teamId: team.id }),
         settings: { timezone },
       });
       setCreated(answer.data);
@@ -212,10 +244,11 @@ export function FirstRun({ client, onReady }: FirstRunProps): JSX.Element {
             value={domain}
             onChange={(event) => setDomain(event.target.value)}
           />
-          <Field
+          <SelectField
             label={messages.sites.timezone}
             help={messages.sites.timezoneHelp}
             required
+            options={zones}
             value={timezone}
             onChange={(event) => setTimezone(event.target.value)}
           />

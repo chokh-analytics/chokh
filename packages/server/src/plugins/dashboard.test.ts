@@ -58,3 +58,41 @@ describe('serving the built dashboard', () => {
     expect(response.headers['cache-control']).toBe('no-cache');
   });
 });
+
+// The word "assets" anywhere in the path used to be enough, and the path here
+// is an absolute filesystem path: a DASHBOARD_DIR of /srv/assets/chokh, or a
+// checkout under a folder somebody called assets, marked index.html immutable
+// for a year. Every returning visitor then holds a build that no longer exists
+// and there is no way to tell them.
+describe('a root whose own path contains the word', () => {
+  let tricky: string;
+  let trickyApp: FastifyInstance;
+
+  beforeAll(async () => {
+    const base = mkdtempSync(join(tmpdir(), 'chokh-assets-'));
+    tricky = join(base, 'assets', 'dashboard');
+    mkdirSync(join(tricky, 'assets'), { recursive: true });
+    writeFileSync(join(tricky, 'index.html'), '<!doctype html><title>Chokh</title>');
+    writeFileSync(join(tricky, 'assets', 'index-abc123.js'), 'console.warn(1)');
+
+    trickyApp = Fastify();
+    await registerDashboard(trickyApp, tricky);
+    await trickyApp.ready();
+  });
+
+  afterAll(async () => {
+    await trickyApp.close();
+    rmSync(tricky, { recursive: true, force: true });
+  });
+
+  it('still refuses to let a browser keep index.html', async () => {
+    const response = await trickyApp.inject({ method: 'GET', url: '/index.html' });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('still keeps the hashed assets under it', async () => {
+    const response = await trickyApp.inject({ method: 'GET', url: '/assets/index-abc123.js' });
+    expect(response.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  });
+});

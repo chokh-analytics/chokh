@@ -97,7 +97,12 @@ describe('who sees what', () => {
   it('offers the first site to an account that can read none', async () => {
     serve({
       '/api/me': () =>
-        envelope({ actor: { kind: 'session', id: 'u_1' }, user: { id: 'u_1', email: 'a@b.c' }, sites: [] }),
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'a@b.c' },
+          sites: [],
+          teams: [{ id: 't_theirs', name: 'Theirs', role: 'owner' }],
+        }),
     });
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Add a site' })).toBeDefined();
@@ -111,6 +116,7 @@ describe('who sees what', () => {
           actor: { kind: 'session', id: 'u_1' },
           user: { id: 'u_1', email: 'owner@chokh.test', name: 'Abu Jafar' },
           sites: [SITE],
+          teams: [],
         }),
     });
     render(<App />);
@@ -130,6 +136,7 @@ describe('who sees what', () => {
           actor: { kind: 'session', id: 'u_1' },
           user: { id: 'u_1', email: 'owner@chokh.test' },
           sites: [SITE],
+          teams: [],
         }),
     });
     render(<App />);
@@ -145,6 +152,7 @@ describe('who sees what', () => {
           actor: { kind: 'session', id: 'u_1' },
           user: { id: 'u_1', email: 'owner@chokh.test' },
           sites: [SITE],
+          teams: [],
         }),
     });
     render(<App />);
@@ -165,6 +173,7 @@ describe('who sees what', () => {
           actor: { kind: 'session', id: 'u_1' },
           user: { id: 'u_1', email: 'owner@chokh.test' },
           sites: [SITE],
+          teams: [],
         }),
     });
     render(<App />);
@@ -182,6 +191,7 @@ describe('who sees what', () => {
           actor: { kind: 'session', id: 'u_1' },
           user: { id: 'u_1', email: 'owner@chokh.test' },
           sites: [SITE],
+          teams: [],
         }),
     });
     render(<App />);
@@ -196,6 +206,7 @@ describe('a session that ends', () => {
     actor: { kind: 'session', id: 'u_1' },
     user: { id: 'u_1', email: 'owner@chokh.test' },
     sites: [SITE],
+    teams: [],
   };
 
   // The interceptor used to call setQueryData(['me'], undefined), which
@@ -297,6 +308,7 @@ describe('what the controls claim to be', () => {
     actor: { kind: 'session', id: 'u_1' },
     user: { id: 'u_1', email: 'owner@chokh.test' },
     sites: [SITE],
+    teams: [],
   };
 
   // aria-haspopup="menu" promises a menu widget with arrow key navigation, and
@@ -327,5 +339,78 @@ describe('what the controls claim to be', () => {
     await screen.findByRole('heading', { name: 'Overview' });
     expect(screen.getByRole('group', { name: 'Date range' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Interval' })).toBeNull();
+  });
+});
+
+// The one screen a fresh install gives somebody, and the two ways it refused
+// them.
+describe('adding the first site', () => {
+  function firstRun(teams: unknown[]): void {
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [],
+          teams,
+        }),
+      '/api/sites': () =>
+        envelope({
+          site: { ...SITE, id: 's_new' },
+          identifySecret: 'shown-once',
+          once: 'identifySecret',
+        }),
+    });
+  }
+
+  // Posting nothing meant the server's default, which is the team called
+  // default, and an owner the SSO exchange provisioned owns a team of their own
+  // instead: "Only an owner of default may create a site in it", on the only
+  // screen they had.
+  it('creates the site in a team this person actually owns', async () => {
+    firstRun([{ id: 't_theirs', name: 'Theirs', role: 'owner' }]);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Progsity');
+    await userEvent.type(screen.getByLabelText('Domain'), 'progsity.io');
+    await userEvent.click(screen.getByRole('button', { name: 'Add the site' }));
+
+    await waitFor(() => {
+      const posted = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.find(([url]) => String(url) === '/api/sites');
+      expect(posted).toBeDefined();
+      expect(JSON.parse(String(posted?.[1]?.body))).toMatchObject({ teamId: 't_theirs' });
+    });
+  });
+
+  it('names no team when this person owns none, and lets the server decide', async () => {
+    firstRun([{ id: 't_someone_elses', name: 'Theirs', role: 'viewer' }]);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Progsity');
+    await userEvent.type(screen.getByLabelText('Domain'), 'progsity.io');
+    await userEvent.click(screen.getByRole('button', { name: 'Add the site' }));
+
+    await waitFor(() => {
+      const posted = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.find(([url]) => String(url) === '/api/sites');
+      expect(JSON.parse(String(posted?.[1]?.body))).not.toHaveProperty('teamId');
+    });
+  });
+
+  // A free text zone accepts "Dhaka" or "GMT+6", and the site is then refused
+  // or, worse, created with a zone that means something else for ever.
+  it('offers the zones rather than asking somebody to spell one', async () => {
+    firstRun([{ id: 't_theirs', name: 'Theirs', role: 'owner' }]);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+
+    const zone = screen.getByLabelText('Timezone');
+    expect(zone.tagName).toBe('SELECT');
+    expect(zone.querySelectorAll('option').length).toBeGreaterThan(100);
   });
 });

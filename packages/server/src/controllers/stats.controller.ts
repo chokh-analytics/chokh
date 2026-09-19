@@ -151,7 +151,17 @@ export function createEngagementController(deps: ApiDeps) {
     if (!result.ok) {
       return reply.code(result.status).send(fail(result.code, result.message));
     }
-    return reply.send(ok(result.data, meta(parsed.site, parsed.input)));
+    // rawOnly says this report cannot see past the raw events. How far back
+    // that is belongs beside it: a dashboard that has to tell somebody "this
+    // sees back 180 days" should not have to ask a second route for the number,
+    // and a reader looking at a 400 day range with 30 days of leave beacons in
+    // it deserves to be told which it is.
+    return reply.send(
+      ok(result.data, {
+        ...meta(parsed.site, parsed.input),
+        retentionDays: parsed.site.settings.retentionDays,
+      }),
+    );
   };
 }
 

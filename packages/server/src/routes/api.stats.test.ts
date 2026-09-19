@@ -369,6 +369,17 @@ describe('the reports', () => {
       expect(envelope(response.body).meta).toMatchObject({ siteId: SITE_ID, from: TODAY_START });
     });
 
+    // rawOnly says this report cannot see past the raw events, and a true with
+    // no number beside it leaves a dashboard to ask a second route how far back
+    // that is before it can say so on screen.
+    it('says how far back raw events go, beside the flag that says it matters', async () => {
+      const response = await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=page`);
+      const body = envelope<{ rawOnly: boolean }>(response.body);
+      expect(body.data?.rawOnly).toBe(true);
+      expect(body.meta?.retentionDays).toBeTypeOf('number');
+      expect(body.meta?.retentionDays).toBeGreaterThan(0);
+    });
+
     it('answers no rows for a range whose pages nobody has left yet', async () => {
       const response = await get(
         `/api/sites/${SITE_ID}/stats/engagement?from=${YESTERDAY_START}&to=${TODAY_START}&dim=page`,

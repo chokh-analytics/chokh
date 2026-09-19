@@ -157,7 +157,13 @@ function Authenticated({
   const value = { client, me: me.data.data, now, sites: me.data.data.sites };
 
   if (value.sites.length === 0) {
-    return <FirstRun client={client} onReady={() => void me.refetch()} />;
+    return (
+      <FirstRun
+        client={client}
+        teams={value.me.teams}
+        onReady={() => void me.refetch()}
+      />
+    );
   }
 
   const home = `/${value.sites[0]?.id ?? ''}`;

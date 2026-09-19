@@ -2,11 +2,15 @@
 // image is a complete install. When the dashboard has not been built the server
 // still starts and the API still answers.
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 
 import { resolveDashboardDir } from '../config/env.js';
+
+// Where Vite puts every file whose name carries a hash of its contents.
+const HASHED_DIR = 'assets';
 
 export async function registerDashboard(
   app: FastifyInstance,
@@ -41,11 +45,14 @@ export async function registerDashboard(
       // reloads by hand. Nothing in development ever redeploys, so this is a
       // failure that only exists in production and only after a second deploy.
       //
-      // The test is the directory name rather than a path separator, because
-      // this is a filesystem path and the separator is not the same on every
-      // machine this image is built on. Vite puts every hashed file in assets
-      // and nothing else in the build has that word in it.
-      const hashed = path.includes('assets');
+      // Against the assets directory of this root, and not against the word
+      // anywhere in the path. This is an absolute filesystem path, so a
+      // DASHBOARD_DIR of /srv/assets/chokh, or a checkout under a folder
+      // somebody called assets, marked index.html immutable for a year: every
+      // returning visitor stuck on a build that no longer exists, and no way
+      // to tell them. join builds the prefix with this platform's separator,
+      // which is the same one the path arrives with.
+      const hashed = path.startsWith(join(root, HASHED_DIR));
       response.setHeader(
         'cache-control',
         hashed ? 'public, max-age=31536000, immutable' : 'no-cache',

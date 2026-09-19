@@ -45,10 +45,20 @@ export interface PublicUser {
   name?: string;
 }
 
+// A team this person belongs to, and what they are in it. Sites carry a teamId,
+// but somebody with no sites yet is exactly the person who has to name one, so
+// it cannot be derived from them.
+export interface MyTeam {
+  id: string;
+  name: string;
+  role: 'owner' | 'editor' | 'viewer';
+}
+
 export interface Me {
   actor: { kind: 'session' | 'key'; id: string };
   user: PublicUser | null;
   sites: PublicSite[];
+  teams: MyTeam[];
 }
 
 export interface CreatedSite {
@@ -80,7 +90,16 @@ export const api = {
 
   createSite: (
     client: Client,
-    input: { name: string; domains: string[]; settings?: { timezone?: string } },
+    input: {
+      name: string;
+      domains: string[];
+      // Only an owner of the named team may create a site in it, and the
+      // server's default is the team called default. Somebody the SSO exchange
+      // put in a team of their own owns that one and not this, so the team is
+      // named rather than assumed.
+      teamId?: string;
+      settings?: { timezone?: string };
+    },
   ): Promise<Answer<CreatedSite>> => client.post<CreatedSite>('/api/sites', input),
 
   aggregate: (client: Client, siteId: string, params: StatsParams): Promise<Answer<AggregateResult>> =>

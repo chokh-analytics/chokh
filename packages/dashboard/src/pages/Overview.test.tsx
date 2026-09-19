@@ -148,7 +148,7 @@ async function totalsLanded(): Promise<void> {
 
 function show(): JSX.Element {
   const client = createClient({ fetch: globalThis.fetch });
-  const value: AppContextValue = { client, me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE] }, site: SITE, now: NOW };
+  const value: AppContextValue = { client, me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] }, site: SITE, now: NOW };
   return (
     <QueryClientProvider client={createQueryClient()}>
       <AppContext.Provider value={value}>

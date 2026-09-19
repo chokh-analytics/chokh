@@ -202,6 +202,38 @@ describe('GET /api/me', () => {
     await harness.close();
   });
 
+  // Sites carry a teamId, but somebody with no sites yet is exactly the person
+  // who needs to name one: without this, a dashboard creating a first site can
+  // only post the default team, and an owner the SSO exchange put in a team of
+  // their own is refused on the one screen a fresh install gives them.
+  it('names the teams the caller belongs to and their role in each', async () => {
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie: harness.owner.cookie },
+    });
+    const body = envelope<{ teams: { id: string; name: string; role: string }[] }>(response.body);
+    expect(body.data?.teams).toContainEqual(
+      expect.objectContaining({ id: 't_test', role: 'owner' }),
+    );
+    // Every one of them carries the role, because the form that names a team
+    // can only offer the ones this person may create a site in.
+    for (const team of body.data?.teams ?? []) {
+      expect(team.role).toBeTypeOf('string');
+      expect(team.name).toBeTypeOf('string');
+    }
+  });
+
+  it('names no team for a caller who is a key rather than a person', async () => {
+    const key = await harness.key(['read:stats']);
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { authorization: key },
+    });
+    expect(envelope<{ teams: unknown[] }>(response.body).data?.teams).toEqual([]);
+  });
+
   it('says who the caller is and what they may do to each site', async () => {
     const response = await harness.app.inject({
       method: 'GET',
