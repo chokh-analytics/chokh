@@ -5,7 +5,7 @@ import type { RealtimeSnapshot, RealtimeVisitor } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { api, identityAllowed } from '../lib/api.js';
 import { useEventStream, type StreamOptions } from '../lib/sse.js';
-import { formatCount } from '../lib/format.js';
+import { countryName, formatCount } from '../lib/format.js';
 import { REALTIME_POLL_MS, useRealtime, useTimeseries } from '../lib/queries.js';
 import type { DateRange } from '../lib/range.js';
 import { DEFAULT_METRIC, type ViewQuery } from '../lib/query.js';
@@ -126,11 +126,16 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
       */}
       <p className={styles.status}>
         <LiveDot on={stream.state === 'live' && !failed} />
-        {stream.state === 'live'
+        {/*
+          Two states on screen and not three. While the stream is connecting,
+          or reconnecting, or never going to connect at all, the poll behind it
+          is what is filling this page, so saying "connecting" would name the
+          thing that is not working instead of the thing that is. "Live" is
+          claimed only while frames are actually arriving.
+        */}
+        {stream.state === 'live' && !failed
           ? messages.realtime.live
-          : stream.state === 'connecting'
-            ? messages.realtime.connecting
-            : format(messages.realtime.polling, { seconds: REALTIME_POLL_MS / 1000 })}
+          : format(messages.realtime.polling, { seconds: REALTIME_POLL_MS / 1000 })}
       </p>
 
       {failed ? (
@@ -138,7 +143,7 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
       ) : (
         <>
           <div className={styles.headline}>
-            <KpiRow>
+            <KpiRow alone>
               <KpiTile
                 label={messages.metrics.onlineNow}
                 value={String(snapshot?.online ?? 0)}
@@ -198,7 +203,7 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
                   <EmptyState message={messages.states.empty} />
                 ) : (
                   <Breakdown
-                    rows={countRows(snapshot.byCountry, (key) => key)}
+                    rows={countRows(snapshot.byCountry, (key) => countryName(key) ?? key)}
                     dimensionLabel={messages.dimensions.country}
                     valueLabel={messages.metrics.visitors}
                     caption={messages.realtime.fromCountries}

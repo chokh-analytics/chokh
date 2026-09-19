@@ -115,8 +115,24 @@ export function KpiTile({
   );
 }
 
-export function KpiRow({ children }: { children: ReactNode }): JSX.Element {
-  return <div className={styles.row}>{children}</div>;
+// Six across on the Overview, one on Realtime.
+//
+// The six column grid is the Overview's row and it is hard wired on purpose:
+// every number stays on screen. A row holding one tile is a different object
+// though, and left in that grid it draws a full width frame with a sixth of it
+// filled, which puts the help dot a hand's width from the label it belongs to.
+export function KpiRow({
+  children,
+  alone = false,
+}: {
+  children: ReactNode;
+  alone?: boolean;
+}): JSX.Element {
+  return (
+    <div className={[styles.row, alone ? styles.alone : ''].filter(Boolean).join(' ')}>
+      {children}
+    </div>
+  );
 }
 
 // The green dot, and the only thing on any page that moves by itself. Idle
@@ -126,14 +142,17 @@ export function LiveDot({ on }: { on: boolean }): JSX.Element {
   return <span className={[styles.dot, on ? '' : styles.dotIdle].filter(Boolean).join(' ')} />;
 }
 
+// The line under a live number: a dot that says it is moving and the split
+// underneath it. The count itself is not repeated here, because it is already
+// the largest thing in the tile and printing it twice reads as two different
+// numbers that happen to agree.
 export function LiveValue({ count, note }: { count: number; note: string }): JSX.Element {
   return (
     <>
       <span className={styles.live}>
         <LiveDot on={count > 0} />
-        {count}
+        <span className={styles.delta}>{note}</span>
       </span>
-      <span className={styles.delta}>{note}</span>
       {/*
         The one number on this page that changes while nobody touches anything.
         Polite, so it waits for a gap rather than interrupting, and off screen,

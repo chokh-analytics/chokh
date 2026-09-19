@@ -65,9 +65,23 @@ export function Breakdown({
       */}
       <thead className={showHead ? styles.head : 'sr-only'}>
         <tr>
-          <th scope="col">{dimensionLabel}</th>
-          {secondaryLabel !== undefined && <th scope="col">{secondaryLabel}</th>}
-          <th scope="col">{valueLabel}</th>
+          {/*
+            Two headers in the first cell, because the first cell holds two
+            things: the row's name on the left and its number on the right,
+            with the bar drawn behind both. Three <th> over two <td> is what
+            put "Pageviews" over the visitor count and "Visitors" over nothing.
+          */}
+          <th scope="col">
+            <span className={styles.headPair}>
+              <span>{dimensionLabel}</span>
+              <span>{valueLabel}</span>
+            </span>
+          </th>
+          {secondaryLabel !== undefined && (
+            <th scope="col" className={styles.headSecondary}>
+              {secondaryLabel}
+            </th>
+          )}
         </tr>
       </thead>
       <tbody>

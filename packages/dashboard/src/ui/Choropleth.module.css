@@ -20,6 +20,11 @@
 /*
  * Five bands of one hue, not a rainbow.
  *
+ * Each band sets a fill and a background, because the same five classes paint
+ * the countries and the legend's swatches, and an SVG path takes fill while a
+ * span takes background. One ramp, two properties, rather than two ramps that
+ * can drift apart.
+ *
  * A sequential scale in the product's own accent says "more of the same thing";
  * a multi-hue scale says the categories differ in kind, which they do not. The
  * lightest band still has to be distinguishable from an unvisited country,
@@ -32,22 +37,27 @@
 
 .band0 {
   fill: color-mix(in oklab, var(--accent) 18%, var(--paper));
+  background: color-mix(in oklab, var(--accent) 18%, var(--paper));
 }
 
 .band1 {
   fill: color-mix(in oklab, var(--accent) 36%, var(--paper));
+  background: color-mix(in oklab, var(--accent) 36%, var(--paper));
 }
 
 .band2 {
   fill: color-mix(in oklab, var(--accent) 56%, var(--paper));
+  background: color-mix(in oklab, var(--accent) 56%, var(--paper));
 }
 
 .band3 {
   fill: color-mix(in oklab, var(--accent) 78%, var(--paper));
+  background: color-mix(in oklab, var(--accent) 78%, var(--paper));
 }
 
 .band4 {
   fill: var(--accent);
+  background: var(--accent);
 }
 
 .hover {

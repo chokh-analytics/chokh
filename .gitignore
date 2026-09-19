@@ -27,3 +27,9 @@ data/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Taken by scripts/shots.mjs and scripts/a11y.mjs on demand. The four the
+# README carries are copied into docs/images and committed; the rest are
+# fourteen megabytes of history for a picture anybody can regenerate.
+packages/dashboard/screenshots/
+packages/dashboard/lighthouse/

@@ -531,6 +531,44 @@ describe('when a report asks again', () => {
 // The list somebody opens to answer "which of my sites has people on it right
 // now". A column of names in the order the API happened to return them cannot
 // answer it, and neither can a list that only says the names.
+// A profile link is four segments deep, and the wildcard that carries every
+// other report has to carry that one too. It did not: a named wildcard matched
+// one segment, so /s/people/v/<id> matched nothing, the fallback redirected to
+// the site root, and a link somebody was sent opened the Overview with no
+// error anywhere. The same silence as the site root case at the bottom of this
+// file, one route further in.
+describe('a link that is several segments deep', () => {
+  it('opens the profile rather than redirecting to the site root', async () => {
+    at('/s_test/people/v/v_abc123');
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [SITE],
+          teams: [],
+        }),
+      '/api/sites/s_test/visitors/v_abc123': () =>
+        envelope({
+          siteId: 's_test',
+          visitorId: 'v_abc123',
+          firstSeenAt: 0,
+          lastSeenAt: 0,
+          pageviews: 3,
+          events: 0,
+          sessions: 1,
+          devices: [],
+          ips: [],
+          timeline: [],
+        }),
+    });
+    render(<App />);
+
+    expect(await screen.findByRole('region', { name: 'Profile' })).toBeDefined();
+    expect(window.location.pathname).toBe('/s_test/people/v/v_abc123');
+  });
+});
+
 describe('the site switcher', () => {
   const OTHERS = [
     { ...SITE, id: 's_zulu', name: 'Zulu', domains: ['zulu.test'] },

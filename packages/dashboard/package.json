@@ -11,7 +11,10 @@
     "typecheck": "tsc -p tsconfig.json",
     "preview": "vite preview",
     "test": "vitest run",
-    "size": "node scripts/size.mjs"
+    "size": "node scripts/size.mjs",
+    "test:e2e": "playwright test",
+    "shots": "node scripts/shots.mjs",
+    "a11y": "node scripts/a11y.mjs"
   },
   "dependencies": {
     "@chokh/store": "workspace:*",
@@ -23,6 +26,7 @@
   "devDependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -34,6 +38,7 @@
     "d3-geo": "^3.1.1",
     "i18n-iso-countries": "^7.14.0",
     "jsdom": "^26.1.0",
+    "lighthouse": "12.2.2",
     "topojson-client": "^3.1.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",

@@ -28,10 +28,38 @@ describe('Breakdown', () => {
   // A card says its column names in its own header, so drawing them again above
   // the rows is chrome. Leaving them out of the markup is a different thing: a
   // screen reader then reads a column of numbers with nothing to call them.
+  // A card draws no head, because its own header already says both column
+  // names. The head is in the markup all the same: without it a screen reader
+  // reads a column of numbers with nothing to call them, on every card of the
+  // Overview.
   it('names its columns to a screen reader even where it draws no head', () => {
     render(<Breakdown rows={rows()} dimensionLabel="Page" valueLabel="Visitors" caption="Top pages" />);
-    expect(screen.getByRole('columnheader', { name: 'Page' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Visitors' })).toBeInTheDocument();
+    // One header over one cell, because the cell holds the row's name and its
+    // number with the bar drawn behind both. Three headers over two cells is
+    // what put "Pageviews" over the visitor count on a full report.
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers).toHaveLength(1);
+    expect(headers[0]).toHaveTextContent('Page');
+    expect(headers[0]).toHaveTextContent('Visitors');
+  });
+
+  it('gives a second column its own header when there is one', () => {
+    render(
+      <Breakdown
+        rows={rows()}
+        dimensionLabel="Page"
+        valueLabel="Visitors"
+        secondaryLabel="Pageviews"
+        showHead
+        caption="Top pages"
+      />,
+    );
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers).toHaveLength(2);
+    expect(headers[1]).toHaveTextContent('Pageviews');
+    // As many headers as there are cells in a row, which is what makes the
+    // columns line up on screen and read correctly aloud.
+    expect(screen.getAllByRole('row')[1]?.querySelectorAll('td')).toHaveLength(2);
   });
 
   it('scales each bar against the biggest row on the card', () => {

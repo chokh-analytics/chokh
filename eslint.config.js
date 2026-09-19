@@ -40,4 +40,16 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // The scripts that drive a browser are node programs that carry snippets
+    // evaluated inside the page, so localStorage and document are real there
+    // and the node globals around them are real here.
+    files: ['packages/dashboard/scripts/**/*.mjs', 'packages/dashboard/e2e/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
+    },
+  },
 );

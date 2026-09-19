@@ -111,7 +111,15 @@
   border-bottom: 1px solid var(--line);
 }
 
-.head th:not(:first-child) {
+/* The first cell's two names sit at the two ends of it, over the row's name
+ * and over its number. */
+.headPair {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.headSecondary {
   text-align: right;
 }
 

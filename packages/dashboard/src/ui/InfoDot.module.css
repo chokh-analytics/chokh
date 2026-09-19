@@ -4,10 +4,23 @@
   align-items: center;
 }
 
+/*
+ * A twelve pixel mark with a twenty four pixel target around it.
+ *
+ * The glyph stays small because it sits beside a heading and a bigger one
+ * would compete with it, but a twelve pixel button is below the size anybody
+ * can hit on a touch screen, and on the Overview it sits over the tile's own
+ * button, so a near miss selects the metric instead of explaining it. The
+ * padding buys the target and the negative margin gives back the layout, so
+ * nothing moves.
+ */
 .dot {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  padding: 0;
+  padding: 6px;
+  margin: -6px;
   background: none;
   color: var(--muted);
   line-height: 0;

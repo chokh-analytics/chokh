@@ -187,16 +187,20 @@ function Authenticated({
         <Redirect to={safeNext(new URLSearchParams(search).get('next')) ?? home} replace />
       </Route>
       {/*
-        Two patterns and not one. A wildcard segment does not match its own
-        absence, so /:siteId/:rest* misses the site root, which is the most
-        visited path in the product: the fallback below would then redirect it
-        to itself for ever and the page would render nothing at all. Named
-        twice, because that failure is silent.
+        Two patterns and not one, and the second is an unnamed wildcard.
+        
+        A wildcard segment does not match its own absence, so a single pattern
+        misses the site root, which is the most visited path in the product:
+        the fallback below then redirects it to itself for ever and the page
+        renders nothing at all. And a named wildcard, /:siteId/:rest*, matches
+        exactly one segment, so a profile link four deep matched nothing and
+        opened the Overview instead. Both failures are silent, which is why
+        both are named here and both have a test.
       */}
       <Route path="/:siteId">
         <SiteFrame value={value} onSignedOut={signedOut} />
       </Route>
-      <Route path="/:siteId/:rest*">
+      <Route path="/:siteId/*">
         <SiteFrame value={value} onSignedOut={signedOut} />
       </Route>
       <Route>

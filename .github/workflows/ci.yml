@@ -90,6 +90,46 @@ jobs:
 
       - run: pnpm --filter @chokh/tracker test:e2e
 
+  dashboard-e2e:
+    name: dashboard smoke and accessibility in a real browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The suite runs against dist, not the dev server: what is proved is what
+      # a person is served. A bundle that splits wrongly, a font that does not
+      # load or a route a static server cannot answer are all invisible in
+      # development.
+      - run: pnpm --filter @chokh/store run build
+
+      - run: pnpm --filter @chokh/dashboard run build
+
+      - run: pnpm --filter @chokh/dashboard exec playwright install --with-deps chromium
+
+      - run: pnpm --filter @chokh/dashboard run test:e2e
+
+      # Accessibility is audited rather than asserted, on both reports in both
+      # palettes, and the run fails unless every one of them scores 1 having
+      # audited a page that actually had the dashboard in it.
+      - run: pnpm --filter @chokh/dashboard run a11y
+
+      - name: The audit, whatever it said
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-accessibility
+          path: packages/dashboard/lighthouse/accessibility.json
+          if-no-files-found: warn
+
   compose:
     name: docker compose serves GET /health
     runs-on: ubuntu-latest
