@@ -137,6 +137,17 @@ describe('the rules a stylesheet keeps', () => {
     expect(wide).toMatch(/repeat\(4, minmax\(0, 1fr\)\)/);
   });
 
+  it('gives the phone range bar two rows and not three', () => {
+    const rules = css('../app/RangeBar.module.css');
+    const phone = rules.slice(rules.indexOf('@media (max-width: 720px)'));
+    // The full width note was what pushed itself onto a row of its own.
+    expect(rules).not.toMatch(/@media \(max-width: 640px\)[^}]*\}[^}]*width: 100%/s);
+    expect(phone).toMatch(/\.spacer\s*\{\s*display: none;/);
+    expect(phone).toMatch(/\.zone\s*\{[^}]*margin-left: auto/s);
+    // The preamble goes with it: the row already says which window is on screen.
+    expect(phone).toMatch(/\.zoneLong\s*\{\s*display: none;/);
+  });
+
   it('gives the phone header two rows and not three', () => {
     const rules = css('../app/Shell.module.css');
     const phone = rules.slice(rules.indexOf('@media (max-width: 720px)'));

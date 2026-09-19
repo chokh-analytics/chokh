@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
+import { createQueryClient } from '../lib/queries.js';
 import { NOW_TICK_MS, roundedNow, useNow } from './useNow.js';
 
 // The four things that can be true the moment GET /api/me answers, and the one
@@ -279,9 +280,20 @@ describe('a session that ends', () => {
 describe('the clock', () => {
   it('rounds to the tick, so a key changes once a minute and not every render', () => {
     const at = Date.UTC(2026, 8, 18, 4, 30, 41, 512);
-    expect(roundedNow(at)).toBe(Date.UTC(2026, 8, 18, 4, 30, 0, 0));
+    expect(roundedNow(at)).toBe(Date.UTC(2026, 8, 18, 4, 31, 0, 0));
     expect(roundedNow(at + 1_000)).toBe(roundedNow(at));
-    expect(roundedNow(at + 60_000)).toBe(Date.UTC(2026, 8, 18, 4, 31, 0, 0));
+    expect(roundedNow(at + 60_000)).toBe(Date.UTC(2026, 8, 18, 4, 32, 0, 0));
+  });
+
+  // Flooring puts every report's window up to fifty nine seconds in the past,
+  // so a pageview that has just landed is outside it: the live tile says one
+  // person is online and the Visitors tile says nobody came, for a minute, on
+  // the screen a new install is watching.
+  it('never ends a window in the past', () => {
+    for (const offset of [0, 1, 17_000, 41_512, 59_999]) {
+      const at = Date.UTC(2026, 8, 18, 4, 30, 0) + offset;
+      expect(roundedNow(at)).toBeGreaterThanOrEqual(at);
+    }
   });
 
   it('advances the window a report asks about', () => {
@@ -412,5 +424,106 @@ describe('adding the first site', () => {
     const zone = screen.getByLabelText('Timezone');
     expect(zone.tagName).toBe('SELECT');
     expect(zone.querySelectorAll('option').length).toBeGreaterThan(100);
+  });
+});
+
+// The one chance anybody has to keep the secret that signs an identify.
+describe('the secret a site is created with', () => {
+  it('prints it, with a way to copy it', async () => {
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [],
+          teams: [{ id: 't_theirs', name: 'Theirs', role: 'owner' }],
+        }),
+      '/api/sites': () =>
+        envelope({
+          site: { ...SITE, id: 's_new' },
+          // The shape the server actually answers with. Read as a flat field it
+          // is undefined, and the card promising to show it once showed nothing.
+          once: { identifySecret: 'sec_abc123_shown_once' },
+        }),
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+    await userEvent.type(screen.getByLabelText('Name'), 'Progsity');
+    await userEvent.type(screen.getByLabelText('Domain'), 'progsity.io');
+    await userEvent.click(screen.getByRole('button', { name: 'Add the site' }));
+
+    expect(await screen.findByText('sec_abc123_shown_once')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy the secret' })).toBeInTheDocument();
+  });
+
+  // One owned team is posted silently because there is no choice to offer.
+  // Several is a choice, and a site cannot be moved afterwards.
+  it('asks which team when somebody owns more than one', async () => {
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [],
+          teams: [
+            { id: 't_one', name: 'One', role: 'owner' },
+            { id: 't_two', name: 'Two', role: 'owner' },
+            { id: 't_theirs', name: 'Theirs', role: 'viewer' },
+          ],
+        }),
+      '/api/sites': () =>
+        envelope({ site: { ...SITE, id: 's_new' }, once: { identifySecret: 's' } }),
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+
+    const picker = screen.getByLabelText('Team');
+    expect(picker.tagName).toBe('SELECT');
+    // Only the ones they own: a site created into somebody else's team is a
+    // site they did not ask for and cannot delete.
+    expect([...picker.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'One',
+      'Two',
+    ]);
+
+    await userEvent.selectOptions(picker, 't_two');
+    await userEvent.type(screen.getByLabelText('Name'), 'Progsity');
+    await userEvent.type(screen.getByLabelText('Domain'), 'progsity.io');
+    await userEvent.click(screen.getByRole('button', { name: 'Add the site' }));
+
+    await waitFor(() => {
+      const posted = vi
+        .mocked(globalThis.fetch)
+        .mock.calls.find(([url]) => String(url) === '/api/sites');
+      expect(JSON.parse(String(posted?.[1]?.body))).toMatchObject({ teamId: 't_two' });
+    });
+  });
+
+  it('offers no team picker to somebody who owns one', async () => {
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [],
+          teams: [{ id: 't_one', name: 'One', role: 'owner' }],
+        }),
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Add a site' });
+    expect(screen.queryByLabelText('Team')).toBeNull();
+  });
+});
+
+// A report that has gone stale while somebody was on another page asks again
+// when they come back to it, which is the one moment a page has to.
+describe('when a report asks again', () => {
+  it('refetches on mount rather than showing what it had', async () => {
+    const client = createQueryClient();
+    expect(client.getDefaultOptions().queries?.refetchOnMount).toBe(true);
+    expect(client.getDefaultOptions().queries?.refetchOnWindowFocus).toBe(true);
+    // And never behind a hidden tab: a dashboard left open overnight is not a
+    // load test.
+    expect(client.getDefaultOptions().queries?.refetchIntervalInBackground).toBe(false);
   });
 });

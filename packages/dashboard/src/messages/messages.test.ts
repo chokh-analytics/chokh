@@ -97,3 +97,28 @@ describe('format', () => {
     expect(format(messages.nav.overview)).toBe('Overview');
   });
 });
+
+// The strings that were written into components and were moved here. A test per
+// string, because the way this rule breaks is that somebody adds one more and
+// nothing says otherwise until a translator finds it.
+describe('strings that used to be in components', () => {
+  it('names the metric a help dot explains', () => {
+    expect(format(messages.a11y.metricHelp, { metric: 'Visitors' })).toBe('What Visitors means');
+  });
+
+  it('joins the two ends of a range without a call site writing "to"', () => {
+    expect(format(messages.a11y.rangeFromTo, { from: '13 Sept', to: '19 Sept' })).toBe(
+      '13 Sept to 19 Sept',
+    );
+  });
+
+  it('labels a comparison in a hover card as one string', () => {
+    expect(format(messages.overview.chartPrevious, { label: 'Previous period', value: '250' })).toBe(
+      'Previous period: 250',
+    );
+  });
+
+  it('says how many people are online as one string', () => {
+    expect(format(messages.a11y.liveCount, { count: 37 })).toBe('37 online now,');
+  });
+});

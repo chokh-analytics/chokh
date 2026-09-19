@@ -591,7 +591,15 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         previous: null,
       };
       if (query.compare !== undefined) {
-        const previousRange = comparisonRange(range, query.compare, site.settings.timezone);
+        // The same window the chart's dashed line uses, so the tile's
+        // percentage and the line under it are answering one question. The
+        // dashboard sends the interval on every read for exactly this reason.
+        const previousRange = comparisonRange(
+          range,
+          query.compare,
+          site.settings.timezone,
+          query.interval,
+        );
         result.previousRange = previousRange;
         result.previous = await metricsFor(query, previousRange, site);
       }
@@ -682,7 +690,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       const range: Range = { from: query.from, to: query.to };
       const result: TimeseriesResult = { interval, points: await series(range), previous: null };
       if (query.compare !== undefined) {
-        result.previous = await series(comparisonRange(range, query.compare, timezone));
+        result.previous = await series(comparisonRange(range, query.compare, timezone, interval));
       }
       return result;
     },

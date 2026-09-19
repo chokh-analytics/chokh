@@ -63,10 +63,13 @@ export interface Me {
 
 export interface CreatedSite {
   site: PublicSite;
-  // Returned exactly here and once more by the rotate route, and by no GET
-  // anywhere. The page that shows it says so.
-  identifySecret: string;
-  once: string;
+  // Under once, and not beside site, because that is the shape the server
+  // answers with and the name is the point: everything in here leaves the
+  // server exactly once. Declared flat here once, which is why the page that
+  // promised to show the secret rendered nothing at all.
+  once: {
+    identifySecret: string;
+  };
 }
 
 function statsQuery(params: StatsParams): Params {

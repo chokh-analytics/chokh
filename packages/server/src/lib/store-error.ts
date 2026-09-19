@@ -15,7 +15,11 @@ export interface Refusal {
 
 export type Outcome<T> = { ok: true; data: T } | ({ ok: false } & Refusal);
 
-const STATUS_BY_CODE: Readonly<Record<string, number>> = {
+// Exported so a test can assert membership and not just the status. Every code
+// here answers 400 by the fallback as well, so a test that only checks the
+// number passes with the entry deleted: UNSUPPORTED_DIMENSION was missing from
+// this table for a release and looked right the whole time.
+export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   // The caller named something that is not there.
   UNKNOWN_SITE: 404,
   UNKNOWN_USER: 404,
@@ -30,6 +34,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,
   UNSUPPORTED_FILTER: 400,
+  UNSUPPORTED_DIMENSION: 400,
   MISSING_DIMENSION: 400,
 };
 

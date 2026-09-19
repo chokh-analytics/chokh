@@ -107,6 +107,19 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * "not available" is a sentence, not a number, and set at 30px in a tile a
+ * sixth of the page wide it came out as "not avai...". At body size it fits,
+ * and it stops looking like a figure, which is the other half of the point.
+ */
+.absent {
+  font-family: var(--font-sans);
+  font-size: var(--t-body);
+  color: var(--muted);
+  line-height: 1.9;
+  white-space: nowrap;
+}
+
 .delta {
   font-size: var(--t-label);
   color: var(--muted);
@@ -163,4 +176,14 @@
   .dot {
     animation: none;
   }
+}
+
+/* A live read that failed, and its way back. */
+.retry {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: var(--t-label);
+  color: var(--accent-ink);
+  text-decoration: underline;
 }

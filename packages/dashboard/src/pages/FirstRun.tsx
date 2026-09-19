@@ -46,15 +46,19 @@ function timezoneOptions(current: string): { value: string; label: string }[] {
   return all.map((zone) => ({ value: zone, label: zone.replace(/_/g, ' ') }));
 }
 
-// Which team a new site belongs to.
+// Which teams a new site could belong to.
 //
 // Only an owner of the named team may create a site in it, and the server's
 // default is the team called default. Somebody the SSO exchange provisioned
 // owns a team of their own and not that one, so posting nothing refused them
 // with "Only an owner of default may create a site in it" on the one screen a
-// fresh install gives them. Their own team is what gets posted.
-export function teamToCreateIn(teams: MyTeam[]): MyTeam | null {
-  return teams.find((team) => team.role === 'owner') ?? null;
+// fresh install gives them.
+//
+// One owned team is posted silently, because there is no choice to offer.
+// Several is a choice, and making it quietly puts somebody's site in the wrong
+// team with no way back: a site cannot be moved.
+export function ownedTeams(teams: MyTeam[]): MyTeam[] {
+  return teams.filter((team) => team.role === 'owner');
 }
 
 function snippetFor(siteId: string): string {
@@ -158,7 +162,8 @@ export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedSite | null>(null);
-  const team = teamToCreateIn(teams);
+  const owned = ownedTeams(teams);
+  const [teamId, setTeamId] = useState(() => owned[0]?.id ?? '');
   const zones = timezoneOptions(timezone);
 
   async function submit(event: FormEvent): Promise<void> {
@@ -172,7 +177,7 @@ export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element
         // nowhere else, so a pasted https:// is trimmed rather than refused:
         // it is the form anybody copies out of an address bar.
         domains: [domain.trim().replace(PROTOCOL, '').replace(/\/.*$/, '')],
-        ...(team === null ? {} : { teamId: team.id }),
+        ...(teamId === '' ? {} : { teamId }),
         settings: { timezone },
       });
       setCreated(answer.data);
@@ -207,7 +212,11 @@ export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element
           <div className={styles.secret}>
             <p className={styles.secretTitle}>{messages.sites.secretTitle}</p>
             <p className={styles.secretLede}>{messages.sites.secretLede}</p>
-            <p className={styles.secretValue}>{created.identifySecret}</p>
+            <p className={styles.secretValue}>{created.once.identifySecret}</p>
+            <CopyButton
+              text={created.once.identifySecret}
+              label={messages.sites.copySecret}
+            />
           </div>
 
           <Waiting client={client} site={created} onArrived={onReady} />
@@ -244,6 +253,16 @@ export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element
             value={domain}
             onChange={(event) => setDomain(event.target.value)}
           />
+          {owned.length > 1 && (
+            <SelectField
+              label={messages.sites.team}
+              help={messages.sites.teamHelp}
+              required
+              options={owned.map((team) => ({ value: team.id, label: team.name }))}
+              value={teamId}
+              onChange={(event) => setTeamId(event.target.value)}
+            />
+          )}
           <SelectField
             label={messages.sites.timezone}
             help={messages.sites.timezoneHelp}

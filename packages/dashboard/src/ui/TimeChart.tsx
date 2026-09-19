@@ -3,6 +3,7 @@ import type { Interval } from '@chokh/store/time';
 
 import { formatClock, formatCount, formatDate } from '../lib/format.js';
 import { format, messages } from '../messages/en.js';
+import { Skeleton } from './State.js';
 import styles from './TimeChart.module.css';
 
 // One series, drawn by hand.
@@ -90,6 +91,16 @@ export interface TimeChartProps {
   // showing one number and four is exactly enough for three of them to drift.
   formatValue?: (value: number) => string;
   formatExactValue?: (value: number) => string;
+  // Drawn as itself with a block where the plot goes, rather than as a bare
+  // rectangle somewhere else. The head, the gap and the legend are the same
+  // elements in both states, so the panel is the same height before and after
+  // the numbers land and nothing on the page moves.
+  loading?: boolean;
+  // Whether a comparison is coming. While loading there is no previous series
+  // to look at, so without this the legend row is either always reserved, which
+  // makes the panel shrink when a comparison turns out not to be wanted, or
+  // never reserved, which makes it grow when one is.
+  comparing?: boolean;
   // Drawn open rather than closed: the last bucket of a live range is a
   // fraction of a bucket, so the final point is marked as "now" rather than
   // being allowed to look like a fall.
@@ -184,6 +195,8 @@ export function TimeChart({
   previousLabel = messages.range.previousLabel,
   formatValue = formatCount,
   formatExactValue,
+  loading = false,
+  comparing = false,
   live = false,
 }: TimeChartProps): JSX.Element {
   const exact = formatExactValue ?? formatValue;
@@ -202,8 +215,9 @@ export function TimeChart({
     [points],
   );
 
-  const hasData = points.some((point) => point.value > 0);
+  const hasData = !loading && points.some((point) => point.value > 0);
   const ticks = tickIndexes(points.length, width);
+  const hasComparison = !loading && previous !== null && previous !== undefined && previous.length > 1;
   const hovered = hover === null ? null : points[hover];
   const hoveredPrevious = hover === null ? null : previous?.[hover];
 
@@ -211,7 +225,7 @@ export function TimeChart({
     <div className={styles.chart}>
       <div className={styles.head}>
         <span className={styles.title}>{title}</span>
-        {peak !== null && peak.value > 0 && (
+        {!loading && peak !== null && peak.value > 0 && (
           <span className={styles.peak}>
             {format(messages.overview.chartPeak, {
               value: formatValue(peak.value),
@@ -222,6 +236,9 @@ export function TimeChart({
       </div>
 
       <div className={styles.box} ref={box}>
+        {loading ? (
+          <Skeleton height={CHART_HEIGHT} />
+        ) : (
         <svg
           className={styles.plot}
           width={width}
@@ -259,7 +276,13 @@ export function TimeChart({
                   y2={y}
                 />
                 <text className={styles.tick} x={PAD.left + plot.width + 6} y={y + 3.5}>
-                  {formatValue(max * fraction)}
+                  {/*
+                    Nothing but the baseline when there is nothing to scale. An
+                    empty series rounds up to a maximum of one, so all three
+                    labels read 1, 1, 0: two of them invented by the rounding
+                    and none of them measured.
+                  */}
+                  {hasData || fraction === 0 ? formatValue(max * fraction) : ''}
                 </text>
               </g>
             );
@@ -315,8 +338,9 @@ export function TimeChart({
             </text>
           ))}
         </svg>
+        )}
 
-        {!hasData && <p className={styles.empty}>{messages.states.emptyChart}</p>}
+        {!loading && !hasData && <p className={styles.empty}>{messages.states.emptyChart}</p>}
 
         {hovered !== undefined && hovered !== null && hasData && (
           <div
@@ -344,8 +368,8 @@ export function TimeChart({
 
       {/* A legend only when there are two series. With one, the title above has
           already said what the line is. */}
-      {previous !== null && previous !== undefined && previous.length > 1 && (
-        <div className={styles.legend}>
+      {(hasComparison || (loading && comparing)) && (
+        <div className={styles.legend} aria-hidden={loading ? true : undefined}>
           <span className={styles.legendItem}>
             <span className={styles.swatch} />
             {metricLabel}

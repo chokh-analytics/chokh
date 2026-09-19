@@ -19,6 +19,10 @@ export interface KpiTileProps {
   selected?: boolean;
   onSelect?: () => void;
   live?: ReactNode;
+  // A tile whose read failed, and the way to ask again. The cards on this page
+  // all have one; the live tile had "not available" and nothing to press, so
+  // the only way back was a reload of the whole dashboard.
+  onRetry?: () => void;
 }
 
 function DeltaLine({ delta }: { delta: Delta }): JSX.Element {
@@ -48,19 +52,26 @@ export function KpiTile({
   selected = false,
   onSelect,
   live,
+  onRetry,
 }: KpiTileProps): JSX.Element {
   const body = (
     <>
       <span className={styles.label}>{label}</span>
       {loading ? (
         <Skeleton height={32} width="70%" style={{ marginBlock: 2 }} />
+      ) : value === null ? (
+        <span className={styles.absent}>{messages.states.notAvailable}</span>
       ) : (
         <span className={styles.value} title={title}>
-          {value ?? messages.states.notAvailable}
+          {value}
         </span>
       )}
       {loading ? (
         <Skeleton height={13} width="45%" style={{ marginBlock: 2 }} />
+      ) : onRetry !== undefined ? (
+        <button type="button" className={styles.retry} onClick={onRetry}>
+          {messages.states.retry}
+        </button>
       ) : (
         (live ?? (delta !== undefined ? <DeltaLine delta={delta} /> : <span />))
       )}

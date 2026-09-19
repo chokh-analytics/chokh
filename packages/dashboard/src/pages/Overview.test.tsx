@@ -95,7 +95,13 @@ function serve(routes: Routes = {}): void {
                   { start: TODAY_START, end: NOW, metrics: metrics() },
                   { start: TODAY_START + 86_400_000, end: NOW, metrics: metrics() },
                 ],
-                previous: null,
+                // A comparison is on by default, so the server answers with
+                // one: a fixture that asks for compare and returns null is a
+                // shape the store never produces.
+                previous: [
+                  { start: TODAY_START - 86_400_000, end: NOW, metrics: metrics({ visitors: 250 }) },
+                  { start: TODAY_START, end: NOW, metrics: metrics({ visitors: 260 }) },
+                ],
               })))(),
         );
       }
@@ -278,15 +284,139 @@ describe('Overview, what a row does', () => {
 // the chart's own constant. A skeleton 190 tall in front of a drawing 220 tall
 // is a layout shift on every load, and it is the kind nobody reports because it
 // happens before anybody is reading.
+// The chart panel is a head, a plot and a legend. A skeleton the height of the
+// plot alone is short by the other two, so the whole page below it jumps when
+// the numbers land, and it jumps before anybody is reading, which is why nobody
+// reports it.
 describe('Overview, while it loads', () => {
-  it('holds open exactly the height the chart will be', async () => {
+  // jsdom lays nothing out, so a rendered height is the sum of what each row
+  // declares. Counting the rows and adding the blocks is the same comparison a
+  // browser would make, done with the numbers the DOM actually carries.
+  function panelShape(container: HTMLElement): { rows: string[]; blocks: string[] } {
+    const panel = container.querySelector('[class*="chart_"]') as HTMLElement | null;
+    if (panel === null) {
+      throw new Error('no chart panel');
+    }
+    return {
+      rows: [...panel.children].map((child) => child.className.replace(/_[a-z0-9]+$/i, '')),
+      blocks: [...panel.querySelectorAll('[class*="skeleton"], svg')].map(
+        (node) =>
+          (node as HTMLElement).style.height ||
+          `${(node as SVGElement).getAttribute('height') ?? ''}px`,
+      ),
+    };
+  }
+
+  it('is the same panel before and after the numbers land', async () => {
     serve();
     const { container } = render(show());
-    // The chart's own, not the tiles': every skeleton on this page is the
-    // height of what it stands in for, and this is the one that was wrong.
-    const skeleton = container.querySelector('[class*="chartPanel"] [class*="skeleton"]');
-    expect(skeleton).not.toBeNull();
-    expect((skeleton as HTMLElement).style.height).toBe(`${CHART_HEIGHT}px`);
+    const loading = panelShape(container);
+
+    // The plot's place is held at exactly the height the drawing will be.
+    expect(loading.blocks).toEqual([`${CHART_HEIGHT}px`]);
+
     await totalsLanded();
+    await waitFor(() => expect(panelShape(container).blocks).toEqual([`${CHART_HEIGHT}px`]));
+
+    // And every other row of the panel is the same row in both states, so
+    // nothing above or below it moves.
+    expect(panelShape(container).rows).toEqual(loading.rows);
+  });
+});
+
+// A site nobody has visited is not a site with a quiet week. It showed a row of
+// zeros, three tiles reading "not available" and a chart axis of 1, 1, 0: four
+// measurements of a site that has not been measured.
+describe('Overview, on a site with nothing in it', () => {
+  function empty(): void {
+    const zero = metrics({
+      visitors: 0,
+      pageviews: 0,
+      visits: 0,
+      bounces: 0,
+      bounceRate: null,
+      avgDurationMs: null,
+    });
+    serve({
+      aggregate: () => ok({ metrics: zero, previous: null }),
+      timeseries: () =>
+        ok({
+          interval: 'day',
+          points: [
+            { start: TODAY_START, end: NOW, metrics: zero },
+            { start: TODAY_START + 86_400_000, end: NOW, metrics: zero },
+          ],
+          previous: null,
+        }),
+      breakdown: () => ok({ dim: 'page', rows: [] }),
+      realtime: () => ok({ online: 0, signedIn: 0, anonymous: 0, recent: [] }),
+    });
+  }
+
+  it('gives them the line of script rather than a page of zeros', async () => {
+    empty();
+    render(show());
+    expect(await screen.findByRole('heading', { name: /Waiting for the first pageview/ })).toBeInTheDocument();
+    expect(screen.getByText(/script defer/)).toBeInTheDocument();
+    expect(screen.queryByText('Views per visit')).toBeNull();
+  });
+
+  it('says it is watching, and says so out loud', async () => {
+    empty();
+    render(show());
+    await screen.findByRole('heading', { name: /Waiting for the first pageview/ });
+    expect(screen.getByRole('status')).toHaveTextContent('Watching for it now.');
+  });
+});
+
+// Three labels for a chart with nothing in it, two of them invented by the
+// rounding: an empty series has a maximum of one, so the axis read 1, 1, 0.
+describe('Overview, when a range is empty but the site is not', () => {
+  it('puts no number on an axis it could not measure', async () => {
+    const zero = metrics({ visitors: 0, pageviews: 0, bounceRate: null, avgDurationMs: null });
+    serve({
+      aggregate: () => ok({ metrics: zero, previous: null }),
+      timeseries: () =>
+        ok({
+          interval: 'day',
+          points: [{ start: TODAY_START, end: NOW, metrics: zero }],
+          previous: null,
+        }),
+      // The site has been visited before, just not in this range.
+      breakdown: () => ok({ dim: 'page', rows: [] }),
+    });
+    // The wider read that decides which empty state this is.
+    render(show());
+    await screen.findByText('No data in this range.');
+    const axis = [...document.querySelectorAll('svg text')].map((node) => node.textContent);
+    expect(axis.filter((label) => label === '1')).toHaveLength(0);
+    expect(axis).toContain('0');
+  });
+});
+
+// A live read that failed showed "not available" and nothing to press: the only
+// way back was a reload of the whole dashboard.
+describe('Overview, when the live read fails', () => {
+  it('offers the same retry the cards have', async () => {
+    serve({ realtime: () => broken() });
+    render(show());
+    await totalsLanded();
+    await waitFor(
+      () => expect(tile('Online now')).toHaveTextContent('Try again'),
+      AFTER_RETRY,
+    );
+  });
+
+  // Thirty pixels of "not avai..." is a truncated number. At body size it is a
+  // sentence, which is what it is.
+  it('sets an absent number in body size so it never truncates', async () => {
+    serve({
+      aggregate: () =>
+        ok({ metrics: metrics({ avgDurationMs: null }), previous: null }),
+    });
+    const { container } = render(show());
+    await totalsLanded();
+    const absent = container.querySelector('[class*="absent"]');
+    expect(absent).toHaveTextContent('not available');
   });
 });

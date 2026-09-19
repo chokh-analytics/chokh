@@ -17,7 +17,13 @@ import {
   viewsPerVisit,
   GOOD_WHEN,
 } from '../lib/format.js';
-import { useAggregate, useBreakdown, useRealtime, useTimeseries } from '../lib/queries.js';
+import {
+  useAggregate,
+  useBreakdown,
+  useHasAnyData,
+  useRealtime,
+  useTimeseries,
+} from '../lib/queries.js';
 import { defaultInterval, isLive } from '../lib/range.js';
 import { METRICS, type MetricName } from '../lib/query.js';
 import { format, messages } from '../messages/en.js';
@@ -25,6 +31,7 @@ import { Breakdown, Code, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Card } from '../ui/Card.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
+import { Waiting } from './Waiting.js';
 import { CHART_HEIGHT, TimeChart, type ChartPoint } from '../ui/TimeChart.js';
 import styles from './Overview.module.css';
 
@@ -232,9 +239,33 @@ export function Overview(): JSX.Element {
   const clear = (): void => set({ ...query, filters: [] });
   const hasFilters = query.filters.length > 0;
 
+  // A range with nothing in it is two different screens, and which one depends
+  // on a question this page cannot answer from the numbers in front of it: has
+  // this site ever been visited? Asked once, and only when the answer matters.
+  const rangeIsEmpty =
+    metrics !== undefined && metrics.pageviews === 0 && metrics.visitors === 0 && !hasFilters;
+  const ever = useHasAnyData(client, site, now, rangeIsEmpty);
+  const neverVisited =
+    rangeIsEmpty && ever.data !== undefined && ever.data.data.metrics.pageviews === 0;
+
   const ratio = metrics === undefined ? null : viewsPerVisit(metrics.pageviews, metrics.visits);
   const previousRatio =
     previous === null ? null : viewsPerVisit(previous.pageviews, previous.visits);
+
+  if (neverVisited) {
+    return (
+      <div className={styles.page}>
+        <h1 className="sr-only">{messages.overview.title}</h1>
+        <Waiting
+          client={client}
+          siteId={site.id}
+          domain={site.domains[0] ?? site.name}
+          origin={typeof location === 'undefined' ? '' : location.origin}
+          onArrived={() => void totals.refetch()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
@@ -264,10 +295,9 @@ export function Overview(): JSX.Element {
               value={live.isError ? null : String(live.data?.data.online ?? 0)}
               help={messages.metricHelp.onlineNow}
               loading={live.isPending}
+              {...(live.isError ? { onRetry: () => void live.refetch() } : {})}
               live={
-                live.isError ? (
-                  <span className={styles.tileError}>{messages.states.error}</span>
-                ) : (
+                live.isError ? null : (
                   <LiveValue
                     count={live.data?.data.online ?? 0}
                     note={format(messages.metrics.signedInSplit, {
@@ -317,15 +347,7 @@ export function Overview(): JSX.Element {
             />
           </KpiRow>
 
-          {series.isPending ? (
-            // Exactly the height the chart will be, taken from the chart's own
-            // constant rather than guessed: a skeleton 190 tall in front of a
-            // drawing 220 tall is a layout shift on every load, and it is the
-            // kind nobody reports because it happens before anybody is reading.
-            <div className={styles.chartPanel}>
-              <Skeleton height={CHART_HEIGHT} />
-            </div>
-          ) : series.isError ? (
+          {series.isError ? (
             // A failed series is not an empty range. Drawn as "No data in this
             // range" it is a statement about the site rather than about the
             // request, and it is the statement somebody acts on.
@@ -333,6 +355,11 @@ export function Overview(): JSX.Element {
               <ErrorState error={series.error} onRetry={() => series.refetch()} />
             </div>
           ) : (
+            // The chart draws its own loading state, so the head, the gap and
+            // the legend are the same elements before and after the numbers
+            // land and the panel is the same height in both. A rectangle of
+            // the plot's height somewhere else is a shift of everything the
+            // chrome around it is worth.
             <TimeChart
               title={METRIC_LABELS[query.metric]}
               metricLabel={METRIC_LABELS[query.metric]}
@@ -342,6 +369,8 @@ export function Overview(): JSX.Element {
               timezone={timezone}
               formatValue={METRIC_FORMAT[query.metric]}
               formatExactValue={METRIC_EXACT[query.metric]}
+              loading={series.isPending}
+              comparing={query.compare !== null}
               live={isLive(query.range, now)}
             />
           )}

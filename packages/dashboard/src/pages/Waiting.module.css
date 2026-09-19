@@ -1,0 +1,92 @@
+/*
+ * A site that has never been visited, on its own Overview.
+ *
+ * The same panel the first run screen shows, in the place a report would be:
+ * the line of script, and a dot that turns green the moment the first pageview
+ * lands. What was there instead was a row of zeros and a chart axis of 1, 1, 0,
+ * every one of which is a measurement of a site nobody has measured.
+ */
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s5);
+  display: grid;
+  gap: var(--s4);
+  justify-items: start;
+}
+
+.title {
+  font-size: var(--t-h1);
+  font-weight: 600;
+}
+
+.lede {
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+.snippet {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  width: 100%;
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  line-height: 1.6;
+  padding: var(--s3);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+  width: 100%;
+}
+
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.received {
+  color: var(--live);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.dotLive {
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--live-soft);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dotLive {
+    animation: none;
+  }
+}

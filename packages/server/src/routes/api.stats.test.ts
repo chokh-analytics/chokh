@@ -387,6 +387,10 @@ describe('the reports', () => {
       expect(envelope<{ rows: unknown[] }>(response.body).data?.rows).toEqual([]);
     });
 
+    // 400 by the table and not by the fallback. Every refusal the store can
+    // raise is named in STATUS_BY_CODE; one that is not reaches the same status
+    // by accident, and the next code that should have been a 404 or a 409 gets
+    // a 400 for the same reason and nobody notices.
     it('refuses a dimension a leave beacon does not carry, and a read with none', async () => {
       expectFailure(
         await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=entry`),

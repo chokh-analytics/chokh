@@ -66,6 +66,10 @@
   white-space: nowrap;
 }
 
+.zoneShort {
+  display: none;
+}
+
 /*
  * A filter chip. Accent while it is doing its job, amber when the server
  * refused it, and always carrying its own way out.
@@ -146,8 +150,43 @@
   gap: var(--s3);
 }
 
-@media (max-width: 640px) {
-  .zone {
+/*
+ * Two rows on a phone, never three.
+ *
+ * At 390 this took three: the presets, then the arrows and the compare control,
+ * then the timezone note alone on a line of its own. The note is a footnote
+ * about the other controls rather than a control, so it sits at the end of the
+ * second row as a short muted suffix, and the flexible spacer that pushed it
+ * onto a line of its own goes.
+ */
+@media (max-width: 720px) {
+  .bar {
+    gap: var(--s2) var(--s3);
+  }
+
+  .group {
     width: 100%;
+    justify-content: space-between;
+  }
+
+  .spacer {
+    display: none;
+  }
+
+  .zone {
+    margin-left: auto;
+    font-size: var(--t-micro);
+  }
+
+  .zoneLong {
+    display: none;
+  }
+
+  .zoneShort {
+    display: inline;
+  }
+
+  .chips {
+    order: 4;
   }
 }

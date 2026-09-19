@@ -9,14 +9,22 @@ import { useEffect, useState } from 'react';
 // ever. The KPIs freeze while Online now, which polls on its own, keeps moving:
 // the worst shape of this bug, because the page looks alive.
 //
-// The value is rounded down to the tick, so the query key changes once per tick
+// The value is rounded to the tick, so the query key changes once per tick
 // rather than on every render. At the default that is one new key a minute and
 // one refetch of a live range, which is what the thirty second staleTime in
 // queries.ts was already asking for.
 export const NOW_TICK_MS = 60_000;
 
+// Up to the next tick, never down.
+//
+// Flooring looks like the obvious choice and it puts every report's `to` up to
+// fifty nine seconds in the past, so a pageview that has just landed is outside
+// the window: the live tile says one person is online and the Visitors tile
+// says nobody came, for a minute, on the one screen a new install is watching.
+// Rounding up costs a window that reaches a few seconds into the future, which
+// no row can be in.
 export function roundedNow(at: number, everyMs = NOW_TICK_MS): number {
-  return Math.floor(at / everyMs) * everyMs;
+  return Math.ceil(at / everyMs) * everyMs;
 }
 
 export function useNow(everyMs = NOW_TICK_MS): number {

@@ -6,7 +6,7 @@ import type { GeoLocation } from '@chokh/geo/types';
 // importing a type it cannot resolve is a build that fails for a reason nobody
 // can read, so the two consumers get two doors and one set of types.
 
-import { shiftYears, type Interval } from './time.js';
+import { addDays, dayBounds, dayKey, shiftYears, type Interval } from './time.js';
 import type { Attributes, EventType, StoredEvent, StoredSession, Touch } from './types.js';
 
 // One query shape for every read. from is inclusive, to is exclusive, both in
@@ -115,6 +115,8 @@ export const BOT_DIMENSION: Dimension = 'bot';
 // range and not only for today. Raw rows are the expensive ones, so an hourly
 // range is capped: a week of hours is 168 points, which is already more than a
 // chart can show, and anything longer belongs on the day interval.
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export const MAX_HOUR_RANGE_DAYS = 7;
 export const MAX_HOUR_RANGE_MS = MAX_HOUR_RANGE_DAYS * 24 * 60 * 60 * 1000;
 
@@ -331,15 +333,44 @@ export interface PurgeSummary {
   visitors: number;
 }
 
-// Where a comparison reads from. previous_period is the range again, ending
-// where this one starts; previous_year is the same wall clock a year earlier,
-// which is not the same number of milliseconds and is the point.
-export function comparisonRange(range: Range, compare: Compare, timezone: string): Range {
-  if (compare === 'previous_period') {
+// Where a comparison reads from.
+//
+// previous_year is the same wall clock a year earlier, which is not the same
+// number of milliseconds and is the point.
+//
+// previous_period is the range again, ending where this one starts, and that is
+// exactly right for an hourly window and exactly wrong for a daily one. A seven
+// day range runs from a midnight to now, so subtracting its length lands the
+// previous window in the middle of a day: its first bucket is the few hours
+// after that instant rather than a whole day, the dashed line starts at a
+// sliver against a real number, and every bucket after it is offset by the same
+// fraction of a day. Read at a day or coarser, the previous window is therefore
+// the same count of whole days, day aligned, so bucket one compares with bucket
+// one.
+//
+// This is decided here rather than in the two adapters, because a comparison
+// that means one thing in memory and another in MongoDB is the bug the read
+// plan already taught this codebase once.
+export function comparisonRange(
+  range: Range,
+  compare: Compare,
+  timezone: string,
+  interval?: Interval,
+): Range {
+  if (compare === 'previous_year') {
+    return { from: shiftYears(range.from, -1, timezone), to: shiftYears(range.to, -1, timezone) };
+  }
+  if (interval === undefined || interval === 'minute' || interval === 'hour') {
     const length = range.to - range.from;
     return { from: range.from - length, to: range.from };
   }
-  return { from: shiftYears(range.from, -1, timezone), to: shiftYears(range.to, -1, timezone) };
+  // The calendar days this range touches, counted in the site's own zone: the
+  // day from began in, through the day the last instant before to falls in.
+  const firstKey = dayKey(range.from, timezone);
+  const lastKey = dayKey(range.to - 1, timezone);
+  const start = dayBounds(firstKey, timezone).start;
+  const days = Math.max(1, Math.round((dayBounds(lastKey, timezone).start - start) / DAY_MS) + 1);
+  return { from: dayBounds(addDays(firstKey, -days), timezone).start, to: start };
 }
 
 // A daily rollup holds one dimension at a time, never the cube, so a read

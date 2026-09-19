@@ -115,3 +115,25 @@ export function useRealtime(client: Client, siteId: string, everyMs = REALTIME_P
     refetchInterval: everyMs,
   });
 }
+
+// Has this site ever been visited at all?
+//
+// Asked only when the range on screen is empty, because that is the one moment
+// the answer changes what is drawn: an empty week on a busy site is "nothing in
+// this range", and an empty week on a site nobody has installed the script on
+// is a different screen entirely. The window is the site's whole retention, the
+// read is cached for the session, and nothing asks it on a site with numbers.
+export function useHasAnyData(
+  client: Client,
+  site: { id: string; settings: { retentionDays: number } },
+  now: number,
+  when: boolean,
+) {
+  const from = now - site.settings.retentionDays * 24 * 60 * 60 * 1000;
+  return useQuery({
+    queryKey: ['any-data', site.id],
+    queryFn: () => api.aggregate(client, site.id, { from, to: now }),
+    enabled: when,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}

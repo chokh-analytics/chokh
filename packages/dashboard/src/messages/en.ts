@@ -228,6 +228,8 @@ export const messages = {
     domain: 'Domain',
     domainPlaceholder: 'example.com',
     domainHelp: 'Without the protocol. A key is bound to this domain and works nowhere else.',
+    team: 'Team',
+    teamHelp: 'Who owns this site. It cannot be moved to another team later.',
     timezone: 'Timezone',
     timezoneHelp:
       'Every day boundary, every rollup and every chart bucket is drawn in this zone. It cannot be changed once there is history.',
@@ -236,6 +238,7 @@ export const messages = {
     snippetTitle: 'Put this in your pages',
     snippetLede: 'One line, before the closing body tag, on every page you want measured.',
     copySnippet: 'Copy',
+    copySecret: 'Copy the secret',
     snippetCopied: 'Copied.',
     secretTitle: 'Your identify secret',
     secretLede:

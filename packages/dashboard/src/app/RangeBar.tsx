@@ -205,7 +205,18 @@ export function RangeBar(): JSX.Element {
       </Popover>
 
       <span className={styles.spacer} />
-      <span className={styles.zone}>{format(messages.range.timezoneNote, { timezone })}</span>
+      {/*
+        The full sentence where there is room for it, the zone alone where there
+        is not. On a phone this is the tail of the row that already says which
+        window is on screen, so "Times in" is a preamble to something already
+        said, and it was what pushed this onto a third row of its own.
+      */}
+      <span className={styles.zone} title={format(messages.range.timezoneNote, { timezone })}>
+        <span className={styles.zoneLong}>
+          {format(messages.range.timezoneNote, { timezone })}
+        </span>
+        <span className={styles.zoneShort}>{timezone}</span>
+      </span>
 
       {query.filters.length > 0 && (
         <div className={styles.chips}>

@@ -314,6 +314,47 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(dayKey(result.points[0]?.start ?? 0, F.TIMEZONE)).toBe('2026-09-01');
       });
 
+      // A seven day window runs from a midnight to now, so subtracting its
+      // length puts the previous window's first bucket in the middle of a day:
+      // a sliver against a whole day, and every bucket after it offset by the
+      // same fraction. Read by day, the previous window is whole days.
+      it('compares a day series against whole days, aligned to the calendar', async () => {
+        const result = await store.timeseries({
+          siteId: F.SITE_ID,
+          // Two calendar days and a piece of a third, the shape every preset has.
+          from: F.YESTERDAY_START,
+          to: F.NOW,
+          interval: 'day',
+          compare: 'previous_period',
+        });
+        expect(result.points).toHaveLength(2);
+        expect(result.previous).toHaveLength(2);
+        // Both ends of the previous window sit on a Dhaka midnight, and it ends
+        // exactly where this one begins.
+        expect(result.previous?.[0]?.start).toBe(F.DAY_BEFORE_START - 24 * 60 * 60 * 1000);
+        expect(result.previous?.[1]?.start).toBe(F.DAY_BEFORE_START);
+        // Which means bucket two of the comparison is the day before yesterday,
+        // a day the fixture has numbers for: a length-subtracted window would
+        // have split it and answered with part of one.
+        expect(result.previous?.[1]?.metrics.pageviews).toBe(F.EXPECTED.dayBefore.pageviews);
+      });
+
+      // An hourly window has no such problem: subtracting its length lands on
+      // an hour, so the exact length is kept and the buckets still line up.
+      it('compares an hour series against the same length, to the millisecond', async () => {
+        const from = F.NOW - 2 * 60 * 60 * 1000;
+        const result = await store.timeseries({
+          siteId: F.SITE_ID,
+          from,
+          to: F.NOW,
+          interval: 'hour',
+          compare: 'previous_period',
+        });
+        expect(result.previous?.[0]?.start).toBe(
+          Date.UTC(2026, 8, 18, 0, 0, 0),
+        );
+      });
+
       it('carries a comparison series when asked', async () => {
         const result = await store.timeseries({
           ...yesterday,
