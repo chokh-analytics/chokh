@@ -380,6 +380,13 @@ export const messages = {
     groupGo: 'Go to',
     groupRange: 'Range',
     groupView: 'View',
+    note: 'Nothing fires while you are typing, and nothing takes a key the browser already uses.',
+    earlier: 'The window before this one',
+    later: 'The window after this one',
+    compare: 'Turn the comparison on or off',
+    clearFilters: 'Clear the filters',
+    theme: 'Light or dark',
+    help: 'This card',
   },
 } as const;
 

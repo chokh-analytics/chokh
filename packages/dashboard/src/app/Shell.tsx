@@ -16,6 +16,7 @@ import { Popover } from '../ui/Popover.js';
 import popover from '../ui/Popover.module.css';
 import { Wordmark } from '../ui/Wordmark.js';
 import { AppContext, type AppContextValue } from './context.js';
+import { OPEN_SHORTCUTS, Shortcuts } from './shortcuts.js';
 import styles from './Shell.module.css';
 
 // The frame every report is drawn in: the mark, the site being read, seven
@@ -225,6 +226,17 @@ function AccountMenu({ value, onSignedOut }: { value: AppContextValue; onSignedO
             className={popover.item}
             onClick={() => {
               close();
+              window.dispatchEvent(new Event(OPEN_SHORTCUTS));
+            }}
+          >
+            <span>{messages.shortcuts.title}</span>
+            <span className={popover.itemNote}>?</span>
+          </button>
+          <button
+            type="button"
+            className={popover.item}
+            onClick={() => {
+              close();
               void api.signOut(value.client).finally(onSignedOut);
             }}
           >
@@ -270,6 +282,11 @@ export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element
         <main className={styles.main} id="report">
           {children}
         </main>
+        {/*
+          Inside the provider and inside the router, because the keys act on
+          the site being read and on the URL that holds the range.
+        */}
+        <Shortcuts />
       </div>
     </AppContext.Provider>
   );

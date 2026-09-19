@@ -1,0 +1,142 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--s4);
+  background: rgb(23 34 43 / 40%);
+  /* A fade, not a slide. The sheet is a layer that appears over the page, and
+   * anything that travels reads as a thing arriving from somewhere. */
+  animation: fade var(--fast) ease-out;
+}
+
+.sheet {
+  width: min(680px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-pop);
+  animation: rise var(--slow) ease-out;
+}
+
+.sheet:focus {
+  outline: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--t-h2);
+  color: var(--ink);
+}
+
+.close {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--t-label);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--ink);
+}
+
+.groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s4) var(--s5);
+  padding: var(--s4);
+}
+
+@media (max-width: 680px) {
+  .groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.groupTitle {
+  margin: 0 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.rows {
+  margin: 0;
+  display: grid;
+  gap: var(--s1);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: baseline;
+}
+
+.keys {
+  display: flex;
+  gap: 3px;
+}
+
+.key {
+  display: inline-block;
+  min-width: 1.6em;
+  text-align: center;
+  padding: 1px 5px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--r1);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+}
+
+.label {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.note {
+  margin: 0;
+  padding: 0 var(--s4) var(--s4);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/*
+ * Eight pixels and a fade, which is the product's whole motion budget: enough
+ * to say a layer arrived, not enough to make anybody wait for it. Both are off
+ * under prefers-reduced-motion by the rule in base.css.
+ */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
