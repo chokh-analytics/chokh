@@ -194,7 +194,10 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
             <div className={styles.stack}>
               <Card title={messages.realtime.onPages} metric={messages.metrics.visitors}>
                 {snapshot === null || snapshot.byPage.length === 0 ? (
-                  <EmptyState message={messages.states.empty} />
+                  // Not "nothing in this range": this page has no range, and a
+                  // report that borrows another one's empty state says
+                  // something untrue about why it is empty.
+                  <EmptyState message={messages.realtime.nobodyOnPage} />
                 ) : (
                   <Breakdown
                     rows={countRows(snapshot.byPage, (key) => key)}
@@ -206,7 +209,7 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
               </Card>
               <Card title={messages.realtime.fromCountries} metric={messages.metrics.visitors}>
                 {snapshot === null || snapshot.byCountry.length === 0 ? (
-                  <EmptyState message={messages.states.empty} />
+                  <EmptyState message={messages.realtime.nobodyFromCountry} />
                 ) : (
                   <Breakdown
                     rows={countRows(snapshot.byCountry, (key) => countryName(key) ?? key)}

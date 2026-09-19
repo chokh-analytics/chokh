@@ -159,6 +159,24 @@ describe('DimensionCard', () => {
     expect(screen.getByRole('button', { name: /Show up to 100/ })).toBeInTheDocument();
   });
 
+  // Five rows that do nothing when clicked, on a page where every other row
+  // narrows the report, is a broken page unless the page says otherwise.
+  it('says why a card of rows cannot be clicked, and says nothing where they can', async () => {
+    serve();
+    render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />));
+
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    expect(within(card()).queryByText(/cannot be filtered/)).toBeNull();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Entry' }));
+    await waitFor(() => expect(window.location.search).toBe('?pages=entry'));
+    expect(
+      within(card()).getByText(
+        'A stay spans pages, so it cannot be filtered to one entry page, exit page or channel yet.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   // A raw event carries no entry page, so the store refuses that filter. A row
   // that cannot be filtered is not a button.
   it('makes a row pressable only when the store can filter by it', async () => {

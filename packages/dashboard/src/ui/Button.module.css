@@ -33,19 +33,9 @@
   background: var(--accent);
   border-color: var(--accent);
   /* Not var(--paper): this text sits on the accent in both themes, and the
-   * accent is dark in one and light in the other. */
-  color: #ffffff;
-}
-
-:global(:root[data-theme='dark']) .primary,
-:global(:root:not([data-theme='light'])) .primary {
-  color: #08201e;
-}
-
-@media (prefers-color-scheme: light) {
-  :global(:root:not([data-theme='dark'])) .primary {
-    color: #ffffff;
-  }
+   * accent is dark in one and light in the other, so its own token flips the
+   * other way with the palette. */
+  color: var(--on-accent);
 }
 
 .primary:hover:not(:disabled) {

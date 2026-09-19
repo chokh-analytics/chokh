@@ -161,6 +161,27 @@ describe('where the labels land on a clock', () => {
     });
   });
 
+  // Two neighbours drawn to the same round hour put two 03:00 labels on top of
+  // each other, on a Today opened between 08:00 and 10:59. React warned about
+  // the duplicate key and five passing tests carried the warning.
+  it('never draws the same bucket twice, at any width or hour', () => {
+    for (const hour of [0, 3, 8, 9, 10, 15, 23]) {
+      for (const count of [3, 4, 7, 12, 24, 30, 48]) {
+        for (const width of [390, 700, 1180, 1440]) {
+          const starts = Array.from({ length: count }, (_point, index) =>
+            Date.UTC(2026, 8, 18, hour, 0, 0) + index * 3_600_000,
+          );
+          const ticks = tickIndexes(count, width, (index) =>
+            clockRoundness(starts[index] ?? 0, 'hour', 'UTC'),
+          );
+          expect(new Set(ticks).size, `${hour}:00, ${count} buckets at ${width}`).toBe(
+            ticks.length,
+          );
+        }
+      }
+    }
+  });
+
   it('scores midnight and midday above the hours between them', () => {
     const at = (hour: number): number => clockRoundness(Date.UTC(2026, 8, 18, hour), 'hour', 'UTC');
     expect(at(0)).toBeGreaterThan(at(6));

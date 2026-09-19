@@ -1,0 +1,45 @@
+/*
+ * What is armed, bottom left, while a sequence waits for its second key.
+ *
+ * Small and out of the way: it is feedback for a press somebody has already
+ * made, not a thing to read. Without it a sequence waits a second and a half
+ * in silence and the keyboard looks like it swallowed the key.
+ */
+.armed {
+  position: fixed;
+  left: var(--gutter);
+  bottom: var(--s4);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--t-label);
+  color: var(--muted);
+  animation: appear var(--fast) ease-out;
+}
+
+.armedKey {
+  display: inline-block;
+  min-width: 1.6em;
+  text-align: center;
+  padding: 1px 5px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: var(--r1);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}

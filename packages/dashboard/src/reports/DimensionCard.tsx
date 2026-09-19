@@ -145,6 +145,15 @@ export function DimensionCard({
           showHead
           caption={`${title}: ${current.label}`}
         />
+        {/*
+          Why these rows do nothing when clicked. Every other report in this
+          product narrows on a click, so five rows that do not are a broken
+          page unless the page says otherwise: the store refuses a filter
+          naming an entry page, an exit page or a channel, because a raw event
+          does not carry one. The sentence existed in messages from the start
+          and no component ever rendered it.
+        */}
+        {!isFilterable(dim) && <p className={styles.note}>{messages.filters.notFilterable}</p>}
         {hasMore && (
           <div className={styles.more}>
             <Button variant="quiet" onClick={() => setLimit(MORE_ROWS)}>

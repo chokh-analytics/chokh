@@ -22,6 +22,10 @@
   --accent: #0e7c73;
   --accent-ink: #0a5c55;
   --accent-soft: #ddf0ec;
+  /* What is written on the accent itself. Not --paper: the accent is dark in
+   * one palette and light in the other, so the text on it flips the other
+   * way. */
+  --on-accent: #ffffff;
 
   /* Status, and only status. Green never means "the second series". */
   --live: #1b7a36;
@@ -65,6 +69,14 @@
    * border instead, because a page of shadowed cards is a page of floating
    * rectangles. */
   --shadow-pop: 0 8px 24px rgb(23 34 43 / 12%), 0 1px 2px rgb(23 34 43 / 8%);
+  /* What a layer dims the page behind it with. A token because the dark
+   * palette needs its own: the light one is this product's ink at 40%, and
+   * written raw in a component it stayed ink-coloured in dark mode, which is a
+   * pale wash over a dark page rather than a dimming of it. */
+  --scrim: rgb(23 34 43 / 40%);
+  /* The one small shadow, under a control that sits on the page rather than
+   * over it. */
+  --shadow-sm: 0 1px 2px rgb(23 34 43 / 6%);
 
   --page-max: 1280px;
   --gutter: 24px;
@@ -91,6 +103,7 @@
     --accent: #3bc9b8;
     --accent-ink: #7fe0d3;
     --accent-soft: #12312f;
+  --on-accent: #08201e;
 
     --live: #5bcf7a;
     --live-soft: #15301d;
@@ -101,6 +114,8 @@
 
     --chart-fill: 0.14;
     --shadow-pop: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 2px rgb(0 0 0 / 30%);
+  --scrim: rgb(5 8 9 / 62%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
 
     color-scheme: dark;
   }

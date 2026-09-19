@@ -198,7 +198,17 @@ export function tickIndexes(
   // 12:00 and 23:00 reads as an error rather than as a tick. Each interior
   // tick moves to the roundest hour within half a step of where it was, which
   // buys 18:00 without letting a label drift into its neighbour.
+  //
+  // Every even position is reserved before anything moves, and a tick may only
+  // move onto a free index. Two neighbours drawn to the same round hour put two
+  // 03:00 labels on top of each other, on a Today opened between 08:00 and
+  // 10:59: React warned about the duplicate key and five passing tests carried
+  // the warning. Reserving first means a tick that cannot improve keeps its own
+  // position, so a label is never dropped either: a missing one is a gap
+  // somebody reads as missing data.
   const reach = Math.max(1, Math.floor(step / 2));
+  const taken = new Set<number>(even);
+
   return even.map((index, position) => {
     if (position === 0 || position === wanted - 1) {
       return index;
@@ -207,7 +217,7 @@ export function tickIndexes(
     let bestScore = roundnessOf(index);
     for (let offset = 1; offset <= reach; offset += 1) {
       for (const candidate of [index - offset, index + offset]) {
-        if (candidate <= 0 || candidate >= count - 1) {
+        if (candidate <= 0 || candidate >= count - 1 || taken.has(candidate)) {
           continue;
         }
         const score = roundnessOf(candidate);
@@ -216,6 +226,10 @@ export function tickIndexes(
           bestScore = score;
         }
       }
+    }
+    if (best !== index) {
+      taken.delete(index);
+      taken.add(best);
     }
     return best;
   });

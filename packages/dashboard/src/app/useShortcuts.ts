@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // The keys, and the three rules that keep them from being a nuisance.
 //
@@ -32,12 +32,16 @@ function typing(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
-export function useShortcuts(shortcuts: Shortcut[], enabled = true): void {
+// What is armed, so the page can show it. A sequence that waits a second and
+// a half for its second key and says nothing meanwhile is a keyboard that
+// swallowed a press.
+export function useShortcuts(shortcuts: Shortcut[], enabled = true): string {
   // Held in a ref so a re-render between two keys of a sequence does not lose
   // the first one, and so the listener is bound once rather than on every
   // change of what the keys do.
   const table = useRef(shortcuts);
   table.current = shortcuts;
+  const [armed, setArmed] = useState('');
 
   useEffect(() => {
     if (!enabled) {
@@ -48,6 +52,7 @@ export function useShortcuts(shortcuts: Shortcut[], enabled = true): void {
 
     const clear = (): void => {
       prefix = '';
+      setArmed('');
       if (timer !== undefined) {
         clearTimeout(timer);
         timer = undefined;
@@ -82,6 +87,7 @@ export function useShortcuts(shortcuts: Shortcut[], enabled = true): void {
       clear();
       if (prefix === '' && starts) {
         prefix = key;
+        setArmed(key);
         timer = setTimeout(clear, SEQUENCE_MS);
       }
     };
@@ -92,4 +98,6 @@ export function useShortcuts(shortcuts: Shortcut[], enabled = true): void {
       clear();
     };
   }, [enabled]);
+
+  return armed;
 }

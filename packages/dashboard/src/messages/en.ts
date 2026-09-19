@@ -401,6 +401,7 @@ export const messages = {
     clearFilters: 'Clear the filters',
     theme: 'Light or dark',
     help: 'This card',
+    armed: 'then a letter',
   },
 } as const;
 

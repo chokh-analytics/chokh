@@ -5,7 +5,7 @@
   display: grid;
   place-items: center;
   padding: var(--s4);
-  background: rgb(23 34 43 / 40%);
+  background: var(--scrim);
   /* A fade, not a slide. The sheet is a layer that appears over the page, and
    * anything that travels reads as a thing arriving from somewhere. */
   animation: fade var(--fast) ease-out;

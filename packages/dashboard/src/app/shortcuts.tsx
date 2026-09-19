@@ -5,9 +5,10 @@ import { DEFAULT_COMPARE } from '../lib/query.js';
 import { resolvePreset, shiftRange } from '../lib/range.js';
 import { messages } from '../messages/en.js';
 import { ShortcutSheet, type ShortcutGroup } from '../ui/ShortcutSheet.js';
+import styles from './shortcuts.module.css';
 import { nextChoice, readChoice, writeChoice, applyChoice } from '../theme/theme.js';
 import { useApp } from './context.js';
-import { useShortcuts, type Shortcut } from './useShortcuts.js';
+import { useShortcuts } from './useShortcuts.js';
 import { useViewQuery } from './useViewQuery.js';
 import { destinationsFor } from './Shell.js';
 
@@ -26,13 +27,119 @@ export const OPEN_SHORTCUTS = 'chokh:shortcuts';
 // and "g g" for Geo is what every tool with this convention does.
 const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'u'];
 
+// One binding, described once: what it is called, which group it belongs in,
+// and what it does. The keys run this table and the card lists it, so a card
+// that says something the keyboard does not do is not a thing that can happen.
+interface Binding {
+  keys: string;
+  label: string;
+  group: string;
+  run: () => void;
+}
+
+export function bindingsFor(
+  siteId: string,
+  act: {
+    go: (path: string) => void;
+    preset: (preset: 'today' | 'yesterday' | '7d' | '30d') => void;
+    shift: (direction: -1 | 1) => void;
+    compare: () => void;
+    clearFilters: () => void;
+    theme: () => void;
+    help: () => void;
+  },
+): Binding[] {
+  return [
+    ...destinationsFor(siteId).map((destination, index) => ({
+      keys: `g ${DESTINATION_KEYS[index] ?? ''}`,
+      label: destination.label,
+      group: messages.shortcuts.groupGo,
+      run: () => act.go(destination.path),
+    })),
+    {
+      keys: 't',
+      label: messages.range.today,
+      group: messages.shortcuts.groupRange,
+      run: () => act.preset('today'),
+    },
+    {
+      keys: 'y',
+      label: messages.range.yesterday,
+      group: messages.shortcuts.groupRange,
+      run: () => act.preset('yesterday'),
+    },
+    {
+      keys: '7',
+      label: messages.range.last7,
+      group: messages.shortcuts.groupRange,
+      run: () => act.preset('7d'),
+    },
+    {
+      keys: '3',
+      label: messages.range.last30,
+      group: messages.shortcuts.groupRange,
+      run: () => act.preset('30d'),
+    },
+    {
+      keys: '[',
+      label: messages.shortcuts.earlier,
+      group: messages.shortcuts.groupRange,
+      run: () => act.shift(-1),
+    },
+    {
+      keys: ']',
+      label: messages.shortcuts.later,
+      group: messages.shortcuts.groupRange,
+      run: () => act.shift(1),
+    },
+    {
+      keys: 'c',
+      label: messages.shortcuts.compare,
+      group: messages.shortcuts.groupRange,
+      run: act.compare,
+    },
+    {
+      keys: 'x',
+      label: messages.shortcuts.clearFilters,
+      group: messages.shortcuts.groupView,
+      run: act.clearFilters,
+    },
+    {
+      keys: 'l',
+      label: messages.shortcuts.theme,
+      group: messages.shortcuts.groupView,
+      run: act.theme,
+    },
+    {
+      keys: '?',
+      label: messages.shortcuts.help,
+      group: messages.shortcuts.groupView,
+      run: act.help,
+    },
+  ];
+}
+
+// The same table, written for a person, in the order it was declared.
+export function groupsFrom(bindings: Binding[]): ShortcutGroup[] {
+  const groups: ShortcutGroup[] = [];
+  for (const binding of bindings) {
+    const existing = groups.find((group) => group.title === binding.group);
+    const row = { keys: binding.keys.split(' '), label: binding.label };
+    if (existing === undefined) {
+      groups.push({ title: binding.group, rows: [row] });
+      continue;
+    }
+    existing.rows.push(row);
+  }
+  return groups;
+}
+
 export function Shortcuts(): JSX.Element | null {
   const { site, now } = useApp();
   const [, navigate] = useLocation();
   const { query, set } = useViewQuery();
   const [open, setOpen] = useState(false);
   const timezone = site.settings.timezone;
-  const destinations = destinationsFor(site.id);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -42,78 +149,46 @@ export function Shortcuts(): JSX.Element | null {
     return () => window.removeEventListener(OPEN_SHORTCUTS, onAsked);
   }, []);
 
-  const table: Shortcut[] = [
-    ...destinations.map((destination, index) => ({
-      keys: `g ${DESTINATION_KEYS[index] ?? ''}`,
-      run: () => navigate(destination.path),
-    })),
-    { keys: 't', run: () => set({ ...query, range: resolvePreset('today', now, timezone) }) },
-    {
-      keys: 'y',
-      run: () => set({ ...query, range: resolvePreset('yesterday', now, timezone) }),
+  const bindings = bindingsFor(site.id, {
+    go: (path) => navigate(path),
+    preset: (preset) => set({ ...query, range: resolvePreset(preset, now, timezone) }),
+    shift: (direction) => set({ ...query, range: shiftRange(query.range, direction) }),
+    compare: () => set({ ...query, compare: query.compare === null ? DEFAULT_COMPARE : null }),
+    clearFilters: () => set({ ...query, filters: [] }),
+    theme: () => {
+      const store = typeof localStorage === 'undefined' ? undefined : localStorage;
+      const prefersDark =
+        typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+      const next = nextChoice(readChoice(store), prefersDark);
+      writeChoice(store, next);
+      applyChoice(document.documentElement, next);
     },
-    { keys: '7', run: () => set({ ...query, range: resolvePreset('7d', now, timezone) }) },
-    { keys: '3', run: () => set({ ...query, range: resolvePreset('30d', now, timezone) }) },
-    { keys: '[', run: () => set({ ...query, range: shiftRange(query.range, -1) }) },
-    { keys: ']', run: () => set({ ...query, range: shiftRange(query.range, 1) }) },
-    {
-      keys: 'c',
-      run: () => set({ ...query, compare: query.compare === null ? DEFAULT_COMPARE : null }),
-    },
-    { keys: 'x', run: () => set({ ...query, filters: [] }) },
-    {
-      keys: 'l',
-      run: () => {
-        const store = typeof localStorage === 'undefined' ? undefined : localStorage;
-        const prefersDark =
-          typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
-        const next = nextChoice(readChoice(store), prefersDark);
-        writeChoice(store, next);
-        applyChoice(document.documentElement, next);
-      },
-    },
-    { keys: '?', run: () => setOpen((was) => !was) },
-  ];
+    help: () => setOpen((was) => !was),
+  });
 
-  useShortcuts(table);
+  // Off while the sheet is open. The sheet is a layer over the page, and a
+  // page that keeps navigating underneath a dialog is a page that moved while
+  // somebody was reading what the keys do.
+  const armed = useShortcuts(
+    bindings.map((binding) => ({ keys: binding.keys, run: binding.run })),
+    !open,
+  );
 
-  if (!open) {
-    return null;
+  if (open) {
+    return <ShortcutSheet groups={groupsFrom(bindings)} onClose={close} />;
   }
 
-  return <ShortcutSheet groups={groupsFor(site.id)} onClose={close} />;
+  // What is armed, while it is armed. A sequence that waits a second and a
+  // half for its second key and shows nothing is a keyboard that swallowed a
+  // press.
+  return armed === '' ? null : <Armed prefix={armed} />;
 }
 
-// The same table, written for a person. Built from destinationsFor so a
-// destination added to the navigation cannot be missing from this card.
-export function groupsFor(siteId: string): ShortcutGroup[] {
-  return [
-    {
-      title: messages.shortcuts.groupGo,
-      rows: destinationsFor(siteId).map((destination, index) => ({
-        keys: ['g', DESTINATION_KEYS[index] ?? ''],
-        label: destination.label,
-      })),
-    },
-    {
-      title: messages.shortcuts.groupRange,
-      rows: [
-        { keys: ['t'], label: messages.range.today },
-        { keys: ['y'], label: messages.range.yesterday },
-        { keys: ['7'], label: messages.range.last7 },
-        { keys: ['3'], label: messages.range.last30 },
-        { keys: ['['], label: messages.shortcuts.earlier },
-        { keys: [']'], label: messages.shortcuts.later },
-        { keys: ['c'], label: messages.shortcuts.compare },
-      ],
-    },
-    {
-      title: messages.shortcuts.groupView,
-      rows: [
-        { keys: ['x'], label: messages.shortcuts.clearFilters },
-        { keys: ['l'], label: messages.shortcuts.theme },
-        { keys: ['?'], label: messages.shortcuts.help },
-      ],
-    },
-  ];
+function Armed({ prefix }: { prefix: string }): JSX.Element {
+  return (
+    <p className={styles.armed} role="status">
+      <kbd className={styles.armedKey}>{prefix}</kbd>
+      <span>{messages.shortcuts.armed}</span>
+    </p>
+  );
 }

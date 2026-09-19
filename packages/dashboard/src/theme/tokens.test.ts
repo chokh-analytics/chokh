@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,6 +12,29 @@ import {
   thresholdFor,
   type Palette,
 } from './tokens.js';
+
+// Every stylesheet in the package, found rather than listed, so a component
+// added later is covered without anybody remembering to add it. jsdom replaces
+// the global URL with its own, which node:url refuses, so nothing here builds
+// a file URL.
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+function stylesheets(): { name: string; text: string }[] {
+  const roots = ['.', '../app', '../ui', '../pages', '../reports'];
+  const files: { name: string; text: string }[] = [];
+  for (const root of roots) {
+    const dir = resolve(HERE, root);
+    for (const entry of readdirSync(dir)) {
+      if (entry.endsWith('.css')) {
+        files.push({
+          name: join(root, entry),
+          text: readFileSync(resolve(dir, entry), 'utf8'),
+        });
+      }
+    }
+  }
+  return files;
+}
 
 // The cheap test that keeps the Lighthouse gate from being a fire drill.
 //
@@ -49,5 +75,25 @@ describe('colour tokens', () => {
     expect(contrastRatio('#FFFFFF', '#000000')).toBeCloseTo(21, 5);
     expect(contrastRatio('#FFFFFF', '#FFFFFF')).toBeCloseTo(1, 5);
     expect(contrastRatio('#777777', '#FFFFFF')).toBeCloseTo(4.48, 2);
+  });
+});
+
+describe('where a colour may be written', () => {
+  // Only the token file. A colour written into a component is a colour with
+  // one value, and this product has two palettes: the sheet's scrim was the
+  // product's ink at forty percent, which in dark mode is a pale wash laid
+  // over a dark page rather than a dimming of it.
+  it('never lets a component stylesheet write a colour of its own', () => {
+    const offenders: string[] = [];
+    for (const sheet of stylesheets()) {
+      if (sheet.name.endsWith('tokens.css')) {
+        continue;
+      }
+      const written = sheet.text.match(/#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\(/gi) ?? [];
+      for (const colour of written) {
+        offenders.push(`${sheet.name}: ${colour}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

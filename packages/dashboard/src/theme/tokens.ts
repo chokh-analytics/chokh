@@ -17,6 +17,11 @@ export interface Palette {
   accent: string;
   accentInk: string;
   accentSoft: string;
+  // What is written on the accent itself, which is not the page's paper: the
+  // accent is dark in one palette and light in the other, so the text on it
+  // flips the other way. It was three hex values inside a button's stylesheet
+  // until the rule that colours live here caught them.
+  onAccent: string;
   live: string;
   liveSoft: string;
   dead: string;
@@ -37,6 +42,7 @@ export const LIGHT: Palette = {
   accent: '#0E7C73',
   accentInk: '#0A5C55',
   accentSoft: '#DDF0EC',
+  onAccent: '#FFFFFF',
   live: '#1B7A36',
   liveSoft: '#DDF2E1',
   dead: '#A93D18',
@@ -55,6 +61,7 @@ export const DARK: Palette = {
   accent: '#3BC9B8',
   accentInk: '#7FE0D3',
   accentSoft: '#12312F',
+  onAccent: '#08201E',
   live: '#5BCF7A',
   liveSoft: '#15301D',
   dead: '#F0855A',
@@ -88,6 +95,7 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
   { where: 'a link on a card', foreground: 'accentInk', background: 'paper' },
   { where: 'a chip label on its tint', foreground: 'accentInk', background: 'accentSoft' },
   { where: 'a row label over its bar', foreground: 'ink', background: 'accentSoft' },
+  { where: 'the label on a primary button', foreground: 'onAccent', background: 'accent' },
   { where: 'a KPI value on a card', foreground: 'ink', background: 'paper', large: true },
   { where: 'a rise on a card', foreground: 'live', background: 'paper' },
   { where: 'a fall on a card', foreground: 'dead', background: 'paper' },

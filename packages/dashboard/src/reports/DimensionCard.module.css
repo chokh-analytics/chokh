@@ -11,3 +11,12 @@
   padding: var(--s2) 0 var(--s1);
   border-top: 1px solid var(--line);
 }
+
+/* The sentence under a card whose rows cannot be clicked. */
+.note {
+  margin: 0;
+  padding: var(--s2) var(--s3) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
