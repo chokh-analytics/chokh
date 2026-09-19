@@ -110,11 +110,11 @@ jobs:
       # splits wrongly, a font that does not load, a route the static host
       # cannot answer, an envelope nobody parses the same way and a stream that
       # never reaches the page are all invisible to a per-package test.
-      - run: pnpm --filter @chokh/store run build
-
-      - run: pnpm --filter @chokh/server run build
-
-      - run: pnpm --filter @chokh/dashboard run build
+      #
+      # Every package, not the three this job names: the server imports the geo
+      # reader and the MongoDB adapter, and a job that builds only what it
+      # thinks it needs fails at the first import of what it forgot.
+      - run: pnpm build
 
       - run: pnpm --filter @chokh/dashboard exec playwright install --with-deps chromium
 
