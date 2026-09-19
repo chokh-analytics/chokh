@@ -279,9 +279,12 @@ export const PROFILE = {
   ips: [],
   firstTouch: { channel: 'organic', referrer: 'google.com' },
   lastTouch: { channel: 'direct' },
+  // Four stays of three things, the way ingest stamps them: a profile reads as
+  // the visits it was, and a fixture with one event per stay photographs a log.
   timeline: Array.from({ length: 12 }, (_entry, index) => ({
-    ts: NOW - index * 47 * 60_000,
+    ts: NOW - Math.floor(index / 3) * 9 * 3_600_000 - (index % 3) * 4 * 60_000,
     type: index % 5 === 3 ? 'event' : index % 7 === 6 ? 'leave' : 'pageview',
+    sessionId: `s_${4 - Math.floor(index / 3)}`,
     ...(index % 5 === 3
       ? { name: ROWS.event[index % ROWS.event.length] }
       : { path: ROWS.page[index % ROWS.page.length] }),
