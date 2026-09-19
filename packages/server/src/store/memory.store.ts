@@ -664,13 +664,14 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return { dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT), rawOnly: true };
     },
 
-    async realtime(siteId: string): Promise<RealtimeSnapshot> {
+    async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {
       siteOrThrow(siteId);
       const at = now();
-      // The whole presence window, not the online minute: the snapshot carries
-      // the people who were here a few minutes ago beside the ones who are
-      // here now, and only the reader knows which of the two it wants.
-      return snapshotFrom(await presence.entries(siteId, at - REALTIME_WINDOW_MS), at);
+      // As far back as the caller asked, which defaults to the whole presence
+      // window: the snapshot carries the people who were here a few minutes ago
+      // beside the ones who are here now, and only the reader knows which of
+      // the two it wants.
+      return snapshotFrom(await presence.entries(siteId, at - sinceMs), at);
     },
 
     visitor(siteId: string, visitorId: string): Promise<VisitorProfile | null> {

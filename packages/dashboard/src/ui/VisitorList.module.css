@@ -1,0 +1,97 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+
+.head th {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The half of the table that is not here any more. Muted rather than absent:
+ * a page that empties at three in the morning reads as broken, and "seen in the
+ * last thirty minutes" is the difference between a quiet site and a stopped
+ * one. Nothing in these rows is counted in the numbers above them.
+ */
+.rowMuted {
+  color: var(--muted);
+}
+
+.divider {
+  padding: var(--s4) var(--s3) var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.whoName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.whoId {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+
+.path {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.right {
+  text-align: right;
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.link:hover .whoName {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}

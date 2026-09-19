@@ -5,11 +5,12 @@ import {
   type Gated,
 } from '../lib/identity-gate.js';
 import { attempt, type Outcome } from '../lib/store-error.js';
-import type {
-  AnalyticsStore,
-  RealtimeSnapshot,
-  UserProfile,
-  VisitorProfile,
+import {
+  ONLINE_WINDOW_MS,
+  type AnalyticsStore,
+  type RealtimeSnapshot,
+  type UserProfile,
+  type VisitorProfile,
 } from '../store/AnalyticsStore.js';
 
 // The reads that are about people rather than about traffic: who is here now,
@@ -75,7 +76,12 @@ export function userPresence(
   return attempt(async () => {
     // The presence set first, because that is the cheap question and the one the
     // answer usually is: a sorted set read, not an aggregation.
-    const snapshot = await store.realtime(siteId);
+    //
+    // The online minute and not the half hour: this answers a yes or no about
+    // one person, and reading thirty minutes of everybody to answer it is
+    // thirty times the range for the same word. Realtime asks for the whole
+    // window because it draws the rest of it.
+    const snapshot = await store.realtime(siteId, ONLINE_WINDOW_MS);
     const live = snapshot.visitors
       .filter((candidate) => candidate.userId === userId)
       .sort((left, right) => right.lastSeenAt - left.lastSeenAt)[0];

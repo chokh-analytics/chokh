@@ -107,7 +107,14 @@ export function useEngagement(context: ReportContext, dim: Dimension, limit?: nu
 // for one tile; the Realtime page opens the stream instead and only falls back
 // to this. Both read the same shape, because a frame of the stream carries the
 // same envelope a poll does, which is why the server framed it that way.
-export function useRealtime(client: Client, siteId: string, everyMs = REALTIME_POLL_MS) {
+// everyMs false is a live stream having taken over: the query stays for the one
+// thing the stream cannot carry, which is the meta saying whether this caller
+// may read an address, and stops asking for what the stream is already sending.
+export function useRealtime(
+  client: Client,
+  siteId: string,
+  everyMs: number | false = REALTIME_POLL_MS,
+) {
   return useQuery({
     queryKey: ['realtime', siteId],
     queryFn: () => api.realtime(client, siteId),

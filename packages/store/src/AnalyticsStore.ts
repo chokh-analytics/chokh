@@ -52,10 +52,17 @@ export interface AnalyticsStore {
   // is.
   engagement(query: Query): Promise<EngagementResult>;
 
-  // Who is here now: online counts, the pages and countries they are on, and
-  // the visitors themselves. Read off the presence set that ingest writes, not
-  // off raw events.
-  realtime(siteId: string): Promise<RealtimeSnapshot>;
+  // Who is here now: online counts, the pages and countries they are on, the
+  // visitors themselves, and the rest of the presence window beside them. Read
+  // off the presence set that ingest writes, not off raw events.
+  //
+  // sinceMs is how far back to read, and it is here because the two callers
+  // want different things. A dashboard wants the whole window, because it draws
+  // the people who were here a few minutes ago beside the ones who are here
+  // now. An online badge beside one person's name wants the last minute, and
+  // reading thirty times as many entries to answer it is thirty times the
+  // Redis range for a yes or no.
+  realtime(siteId: string, sinceMs?: number): Promise<RealtimeSnapshot>;
 
   visitor(siteId: string, visitorId: string): Promise<VisitorProfile | null>;
 

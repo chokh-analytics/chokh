@@ -1,0 +1,308 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import type { JSX } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AppContext, type AppContextValue } from '../app/context.js';
+import { createClient } from '../lib/client.js';
+import { createQueryClient } from '../lib/queries.js';
+import { Realtime } from './Realtime.js';
+
+// Who is here now, and the four things this page can get wrong.
+//
+// The two lists have to stay two lists: the second is the last half hour and is
+// counted in none of the numbers above it, so a test that only counted rows
+// would pass with the muted half folded into the online one. The address column
+// has to follow the server's meta rather than the presence of a field, because
+// an absent address and a withheld one look identical. And a page that says
+// "Live" while it is polling says something untrue, so the two states are told
+// apart here.
+
+const NOW = Date.UTC(2026, 8, 20, 9, 0, 0);
+
+const SITE = {
+  id: 's_test',
+  name: 'Progsity',
+  domains: ['progsity.io'],
+  teamId: 'default',
+  settings: {
+    ipMode: 'full' as const,
+    visitorIdMode: 'persistent' as const,
+    botFilter: true,
+    retentionDays: 180,
+    timezone: 'Asia/Dhaka',
+    allowUnsignedIdentify: false,
+    excludeIps: [],
+    excludePaths: [],
+    excludeQueryParams: [],
+  },
+};
+
+function visitor(over: Record<string, unknown> = {}) {
+  return {
+    visitorId: 'v_aaaaaaaaaa1',
+    sessionId: 's_1',
+    since: NOW - 300_000,
+    lastSeenAt: NOW - 10_000,
+    path: '/pricing',
+    country: 'BD',
+    city: 'Dhaka',
+    browser: 'Chrome',
+    os: 'Windows',
+    device: 'desktop',
+    lat: 23.81,
+    lon: 90.41,
+    ...over,
+  };
+}
+
+function snapshot(over: Record<string, unknown> = {}) {
+  return {
+    online: 1,
+    signedIn: 0,
+    anonymous: 1,
+    byPage: [{ key: '/pricing', visitors: 1 }],
+    byCountry: [{ key: 'BD', visitors: 1 }],
+    byCity: [{ key: 'Dhaka', visitors: 1, country: 'BD', lat: 23.81, lon: 90.41 }],
+    visitors: [visitor()],
+    recent: [
+      visitor({
+        visitorId: 'v_bbbbbbbbbb2',
+        sessionId: 's_2',
+        path: '/docs',
+        lastSeenAt: NOW - 400_000,
+        city: 'Kolkata',
+        country: 'IN',
+        lat: 22.57,
+        lon: 88.36,
+      }),
+    ],
+    ...over,
+  };
+}
+
+function ok(data: unknown, meta?: unknown): Response {
+  return {
+    status: 200,
+    ok: true,
+    json: () => Promise.resolve({ success: true, data, meta }),
+  } as unknown as Response;
+}
+
+interface Routes {
+  realtime?: () => Response;
+  timeseries?: () => Response;
+}
+
+function series(): unknown {
+  const metrics = {
+    visitors: 2,
+    pageviews: 3,
+    visits: 2,
+    bounces: 0,
+    bounceRate: 0,
+    avgDurationMs: 1_000,
+  };
+  return {
+    interval: 'minute',
+    points: [
+      { start: NOW - 120_000, end: NOW - 60_000, metrics },
+      { start: NOW - 60_000, end: NOW, metrics: { ...metrics, pageviews: 4 } },
+    ],
+    previous: null,
+  };
+}
+
+function serve(routes: Routes = {}): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string) => {
+      const url = String(input);
+      if (url.includes('/stats/timeseries')) {
+        return Promise.resolve((routes.timeseries ?? (() => ok(series())))());
+      }
+      return Promise.resolve((routes.realtime ?? (() => ok(snapshot())))());
+    }),
+  );
+}
+
+interface FakeStream {
+  create: (url: string) => EventSource;
+  open: () => void;
+  frame: (data: unknown) => void;
+  fail: () => void;
+}
+
+// A stream a test drives by hand. EventSource is not in jsdom, so without this
+// the live half of the page is never exercised at all.
+function fakeStream(): FakeStream {
+  const handlers: {
+    onopen?: () => void;
+    onmessage?: (event: MessageEvent<string>) => void;
+    onerror?: () => void;
+  } = {};
+  const source = {
+    set onopen(fn: () => void) {
+      handlers.onopen = fn;
+    },
+    set onmessage(fn: (event: MessageEvent<string>) => void) {
+      handlers.onmessage = fn;
+    },
+    set onerror(fn: () => void) {
+      handlers.onerror = fn;
+    },
+    close: () => undefined,
+  } as unknown as EventSource;
+  return {
+    create: () => source,
+    open: () => handlers.onopen?.(),
+    frame: (data: unknown) =>
+      handlers.onmessage?.({
+        data: JSON.stringify({ success: true, data }),
+      } as MessageEvent<string>),
+    fail: () => handlers.onerror?.(),
+  };
+}
+
+function show(stream?: FakeStream): JSX.Element {
+  const client = createClient({ fetch: globalThis.fetch });
+  const value: AppContextValue = {
+    client,
+    me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] },
+    site: SITE,
+    now: NOW,
+  };
+  return (
+    <QueryClientProvider client={createQueryClient()}>
+      <AppContext.Provider value={value}>
+        <Realtime {...(stream === undefined ? {} : { stream: { create: stream.create } })} />
+      </AppContext.Provider>
+    </QueryClientProvider>
+  );
+}
+
+function list(): HTMLElement {
+  return screen.getByRole('table', { name: 'Everybody seen in the last half hour.' });
+}
+
+function tile(label: string): HTMLElement {
+  const found = screen
+    .getAllByText(label)
+    .map((node) => node.closest('[class*="tile"]'))
+    .find((node): node is HTMLElement => node !== null);
+  if (found === undefined) {
+    throw new Error(`No tile around ${label}`);
+  }
+  return found;
+}
+
+beforeEach(() => {
+  window.history.replaceState(null, '', '/s_test/realtime');
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe('Realtime', () => {
+  it('lists who is online, then the last half hour under its own heading', async () => {
+    serve();
+    render(show());
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    const lines = within(list())
+      .getAllByRole('row')
+      .map((row) => row.textContent ?? '');
+    const online = lines.findIndex((line) => line.includes('/pricing'));
+    const divider = lines.findIndex((line) => line.includes('Seen in the last 30 minutes'));
+    const earlier = lines.findIndex((line) => line.includes('/docs'));
+    expect(online).toBeGreaterThan(0);
+    expect(divider).toBeGreaterThan(online);
+    expect(earlier).toBeGreaterThan(divider);
+  });
+
+  // The half hour is a courtesy, not a count: folding it into "online" would
+  // say two people are on a site that one person is on.
+  it('counts only the online list in the number above the lists', async () => {
+    serve();
+    render(show());
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    expect(tile('Online now')).toHaveTextContent('1');
+    expect(tile('Online now')).not.toHaveTextContent('2');
+  });
+
+  it('hides the address column without the permission, and says why', async () => {
+    serve();
+    render(show());
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    expect(within(list()).queryByRole('columnheader', { name: 'Address' })).toBeNull();
+    expect(
+      screen.getByText('Addresses are hidden. They need the read:identity permission.'),
+    ).toBeInTheDocument();
+  });
+
+  // The column follows the server's own statement and not a field that happens
+  // to be there: a payload with no address and a payload with the address taken
+  // out are the same payload.
+  it('shows the address column when the meta says identity was allowed', async () => {
+    serve({
+      realtime: () =>
+        ok(snapshot({ visitors: [visitor({ ip: '203.0.113.9', userId: 'u_7' })] }), {
+          identity: true,
+        }),
+    });
+    render(show());
+
+    await waitFor(() =>
+      expect(within(list()).getByRole('columnheader', { name: 'Address' })).toBeInTheDocument(),
+    );
+    expect(within(list()).getByText('203.0.113.9')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Addresses are shown because this account has read:identity. Each read is logged.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says Live once the stream opens, and says polling when it gives up', async () => {
+    serve();
+    const stream = fakeStream();
+    render(show(stream));
+
+    stream.open();
+    stream.frame(snapshot());
+    expect(await screen.findByText('Live')).toBeInTheDocument();
+
+    stream.fail();
+    stream.fail();
+    stream.fail();
+    expect(await screen.findByText('Updating every 5s')).toBeInTheDocument();
+    expect(screen.queryByText('Live')).toBeNull();
+  });
+
+  it('says nobody is here rather than drawing an empty table', async () => {
+    serve({
+      realtime: () =>
+        ok(
+          snapshot({
+            online: 0,
+            anonymous: 0,
+            visitors: [],
+            recent: [],
+            byPage: [],
+            byCountry: [],
+            byCity: [],
+          }),
+        ),
+    });
+    render(show());
+
+    expect(await screen.findByText('Nobody is on the site right now.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('table', { name: 'Everybody seen in the last half hour.' }),
+    ).toBeNull();
+  });
+});

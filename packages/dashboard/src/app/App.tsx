@@ -7,6 +7,7 @@ import { createQueryClient, useMe } from '../lib/queries.js';
 import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
 import { Overview } from '../pages/Overview.js';
+import { Realtime } from '../pages/Realtime.js';
 import { SignIn } from '../pages/SignIn.js';
 import { Splash } from '../ui/Splash.js';
 import { Shell } from './Shell.js';
@@ -33,10 +34,9 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
   return (
     <Switch>
       <Route path="/:siteId" component={Overview} />
-      <Route
-        path="/:siteId/realtime"
-        component={() => <Placeholder title={messages.nav.realtime} />}
-      />
+      <Route path="/:siteId/realtime">
+        <Realtime />
+      </Route>
       <Route path="/:siteId/pages" component={() => <Placeholder title={messages.nav.pages} />} />
       <Route
         path="/:siteId/sources"

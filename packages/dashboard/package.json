@@ -26,12 +26,17 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
+    "@types/d3-geo": "^3.1.1",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "@types/topojson-client": "^3.1.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "d3-geo": "^3.1.1",
     "jsdom": "^26.1.0",
+    "topojson-client": "^3.1.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "world-atlas": "^2.0.2"
   }
 }

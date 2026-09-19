@@ -4,6 +4,7 @@ import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   MAX_HOUR_RANGE_DAYS,
   MAX_MINUTE_RANGE_HOURS,
+  ONLINE_WINDOW_MS,
   StoreQueryError,
   type BreakdownResult,
   type Metrics,
@@ -656,6 +657,16 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(snapshot.online).toBe(1);
         expect(snapshot.signedIn).toBe(0);
         expect(snapshot.recent[1]?.userId).toBe(F.USER_ID);
+      });
+
+      // An online badge beside one name is a question about the last minute,
+      // and an adapter that reads the half hour for it reads thirty times the
+      // range for the same yes or no. The window is the caller's to name.
+      it('reads only as far back as it was asked to', async () => {
+        const snapshot = await store.realtime(F.SITE_ID, ONLINE_WINDOW_MS);
+        expect(snapshot.online).toBe(1);
+        expect(snapshot.visitors.map((visitor) => visitor.visitorId)).toEqual(['v2']);
+        expect(snapshot.recent).toEqual([]);
       });
     });
 

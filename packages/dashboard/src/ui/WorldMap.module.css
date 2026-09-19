@@ -1,0 +1,44 @@
+.wrap {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/*
+ * One of the two places in this product where a stretched drawing is right:
+ * there is no text in it, so scaling it scales shapes and nothing a person has
+ * to read. The chart next to it does the opposite, for exactly that reason.
+ */
+.map {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.land path {
+  fill: var(--soft);
+  stroke: var(--line);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.dot {
+  fill: var(--accent);
+  fill-opacity: 0.75;
+  stroke: var(--paper);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: fill-opacity var(--fast) ease-out;
+}
+
+.dotHover {
+  fill-opacity: 1;
+}
+
+.caption {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  min-height: 1.4em;
+}

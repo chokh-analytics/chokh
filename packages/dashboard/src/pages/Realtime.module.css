@@ -1,0 +1,76 @@
+.page {
+  display: grid;
+  gap: var(--s4);
+  padding-top: var(--s5);
+  min-width: 0;
+}
+
+/* The only thing on any page that says what the page itself is doing. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.headline {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: stretch;
+}
+
+.spark {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s3) var(--s4);
+  display: grid;
+  align-content: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.sparkTitle {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--s4);
+  align-items: start;
+}
+
+.stack {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+/*
+ * Said either way, and never nothing. An absent address column with no
+ * explanation reads as a product that does not collect addresses; this one
+ * does, behind a permission, and the person reading deserves to know which of
+ * the two they are looking at.
+ */
+.identity {
+  padding: var(--s3) var(--s2) var(--s1);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .headline,
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
