@@ -25,7 +25,7 @@ import { Breakdown, Code, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Card } from '../ui/Card.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
-import { TimeChart, type ChartPoint } from '../ui/TimeChart.js';
+import { CHART_HEIGHT, TimeChart, type ChartPoint } from '../ui/TimeChart.js';
 import styles from './Overview.module.css';
 
 // Six numbers, one chart, four cards. Nothing else on the first screen.
@@ -318,14 +318,18 @@ export function Overview(): JSX.Element {
           </KpiRow>
 
           {series.isPending ? (
+            // Exactly the height the chart will be, taken from the chart's own
+            // constant rather than guessed: a skeleton 190 tall in front of a
+            // drawing 220 tall is a layout shift on every load, and it is the
+            // kind nobody reports because it happens before anybody is reading.
             <div className={styles.chartPanel}>
-              <Skeleton height="100%" />
+              <Skeleton height={CHART_HEIGHT} />
             </div>
           ) : series.isError ? (
             // A failed series is not an empty range. Drawn as "No data in this
             // range" it is a statement about the site rather than about the
             // request, and it is the statement somebody acts on.
-            <div className={styles.chartPanel}>
+            <div className={styles.chartPanel} style={{ minHeight: CHART_HEIGHT }}>
               <ErrorState error={series.error} onRetry={() => series.refetch()} />
             </div>
           ) : (

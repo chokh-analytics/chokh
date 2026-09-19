@@ -41,10 +41,21 @@
   color: var(--muted);
 }
 
-.plot {
+/* The measured box the chart draws itself into. */
+.box {
+  position: relative;
   width: 100%;
-  height: auto;
+}
+
+/*
+ * Width from the container, height fixed. Not height:auto with a stretched
+ * viewBox: that scales the drawing like an image, so the axis text was five
+ * pixels tall on a phone and half again too big on a wide screen. One SVG unit
+ * is one CSS pixel here, at every width.
+ */
+.plot {
   display: block;
+  width: 100%;
   overflow: visible;
   touch-action: pan-y;
 }

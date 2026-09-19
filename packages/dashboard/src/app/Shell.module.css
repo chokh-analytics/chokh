@@ -101,16 +101,36 @@
   flex: 1;
 }
 
-/* The two rows stack under a phone's width rather than scrolling sideways as a
- * block: the mark and the tools stay together, the nav gets its own line. */
+/*
+ * Two rows on a phone, and exactly two.
+ *
+ * The mark, the site switcher, the theme toggle and the account go on one row;
+ * the seven destinations get their own scrolling row underneath. The flexible
+ * spacer is what broke this: it took the space before the tools could wrap with
+ * the switcher, so the toggle and the account name landed on a third row of
+ * their own. A margin on the tools pushes them to the end of row one instead,
+ * which is the same intent without a box that can be pushed to a new line.
+ */
 @media (max-width: 720px) {
   .barInner {
     gap: var(--s2);
+  }
+
+  .spacer {
+    display: none;
+  }
+
+  .tools {
+    margin-left: auto;
   }
 
   .nav {
     order: 3;
     width: 100%;
     padding-bottom: var(--s1);
+    /* Edge to edge, so a scrolling row of seven looks like one rather than
+     * stopping short of the gutter. */
+    margin-inline: calc(var(--gutter) * -1);
+    padding-inline: var(--gutter);
   }
 }

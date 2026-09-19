@@ -13,11 +13,32 @@
   min-width: 0;
 }
 
+/*
+ * Four across or two by two, and never three and one.
+ *
+ * auto-fit with a 300px minimum is the obvious way to write this and it is why
+ * a 1440 screen laid the four cards out three and one, with an orphan Devices
+ * card alone on a row: 1232px of content fits three 300px columns and their
+ * gaps, and four by eight pixels. An explicit count cannot produce an orphan,
+ * because it never picks the number itself.
+ */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s4);
   min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /*

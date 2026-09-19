@@ -1,4 +1,4 @@
-import { useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import type { Interval } from '@chokh/store/time';
 
 import { formatClock, formatCount, formatDate } from '../lib/format.js';
@@ -17,13 +17,56 @@ import styles from './TimeChart.module.css';
 // measures the DOM, nothing re-renders on a resize, and the chart is the same
 // shape in a screenshot as it is on a phone.
 
-const WIDTH = 720;
-const HEIGHT = 190;
-const PAD = { top: 12, right: 34, bottom: 20, left: 6 };
-const PLOT = {
-  width: WIDTH - PAD.left - PAD.right,
-  height: HEIGHT - PAD.top - PAD.bottom,
-};
+// The chart is drawn in CSS pixels, not scaled like an image.
+//
+// A viewBox with preserveAspectRatio="none" and height:auto makes the drawing
+// stretch to the container: on a 1180px screen the 190 unit box became 311px
+// tall and every label grew by 1.6, and on a 360px phone it became 95px tall
+// and the axis text was about five pixels. The viewBox width tracks the
+// measured container instead, so one unit is one CSS pixel at every width and
+// a 10px tick is 10px everywhere.
+export const CHART_HEIGHT = 220;
+// What the box is before anything has been measured, which is also what it is
+// in a test environment with no ResizeObserver.
+const FALLBACK_WIDTH = 720;
+const PAD = { top: 12, right: 40, bottom: 22, left: 6 };
+
+interface Plot {
+  width: number;
+  height: number;
+}
+
+function plotOf(width: number): Plot {
+  return {
+    width: Math.max(80, width - PAD.left - PAD.right),
+    height: CHART_HEIGHT - PAD.top - PAD.bottom,
+  };
+}
+
+// How wide the box actually is. A ResizeObserver rather than a window listener,
+// because the chart changes width when the navigation wraps and when a card
+// beside it appears, neither of which is a window resize.
+function useMeasuredWidth(): [React.RefObject<HTMLDivElement | null>, number] {
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(FALLBACK_WIDTH);
+
+  useEffect(() => {
+    const element = box.current;
+    if (element === null || typeof ResizeObserver !== 'function') {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.contentRect.width ?? 0;
+      if (measured > 0) {
+        setWidth(Math.round(measured));
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return [box, width];
+}
 
 export interface ChartPoint {
   start: number;
@@ -53,38 +96,38 @@ export interface TimeChartProps {
   live?: boolean;
 }
 
-function scaleY(value: number, max: number): number {
+function scaleY(value: number, max: number, plot: Plot): number {
   if (max <= 0) {
-    return PAD.top + PLOT.height;
+    return PAD.top + plot.height;
   }
-  return PAD.top + PLOT.height - (value / max) * PLOT.height;
+  return PAD.top + plot.height - (value / max) * plot.height;
 }
 
-function scaleX(index: number, count: number): number {
+function scaleX(index: number, count: number, plot: Plot): number {
   if (count <= 1) {
-    return PAD.left + PLOT.width / 2;
+    return PAD.left + plot.width / 2;
   }
-  return PAD.left + (index / (count - 1)) * PLOT.width;
+  return PAD.left + (index / (count - 1)) * plot.width;
 }
 
-function pathOf(points: ChartPoint[], max: number): string {
+function pathOf(points: ChartPoint[], max: number, plot: Plot): string {
   return points
     .map((point, index) => {
-      const x = scaleX(index, points.length).toFixed(2);
-      const y = scaleY(point.value, max).toFixed(2);
+      const x = scaleX(index, points.length, plot).toFixed(2);
+      const y = scaleY(point.value, max, plot).toFixed(2);
       return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
     })
     .join(' ');
 }
 
-function areaOf(points: ChartPoint[], max: number): string {
+function areaOf(points: ChartPoint[], max: number, plot: Plot): string {
   if (points.length === 0) {
     return '';
   }
-  const base = (PAD.top + PLOT.height).toFixed(2);
-  const first = scaleX(0, points.length).toFixed(2);
-  const last = scaleX(points.length - 1, points.length).toFixed(2);
-  return `${pathOf(points, max)} L${last} ${base} L${first} ${base} Z`;
+  const base = (PAD.top + plot.height).toFixed(2);
+  const first = scaleX(0, points.length, plot).toFixed(2);
+  const last = scaleX(points.length - 1, points.length, plot).toFixed(2);
+  return `${pathOf(points, max, plot)} L${last} ${base} L${first} ${base} Z`;
 }
 
 // A round number at or above the highest point, so the top gridline is a
@@ -141,6 +184,8 @@ export function TimeChart({
 }: TimeChartProps): JSX.Element {
   const exact = formatExactValue ?? formatValue;
   const [hover, setHover] = useState<number | null>(null);
+  const [box, width] = useMeasuredWidth();
+  const plot = plotOf(width);
 
   const max = useMemo(() => {
     const here = points.reduce((best, point) => Math.max(best, point.value), 0);
@@ -172,11 +217,12 @@ export function TimeChart({
         )}
       </div>
 
-      <div style={{ position: 'relative' }}>
+      <div className={styles.box} ref={box}>
         <svg
           className={styles.plot}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          preserveAspectRatio="none"
+          width={width}
+          height={CHART_HEIGHT}
+          viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
           role="img"
           aria-label={format(messages.a11y.chartLabel, {
             metric: metricLabel,
@@ -188,28 +234,27 @@ export function TimeChart({
           })}
           onMouseLeave={() => setHover(null)}
           onMouseMove={(event) => {
-            const box = event.currentTarget.getBoundingClientRect();
-            const ratio = (event.clientX - box.left) / box.width;
-            const x = ratio * WIDTH;
+            const bounds = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - bounds.left;
             const index = Math.round(
-              ((x - PAD.left) / PLOT.width) * Math.max(1, points.length - 1),
+              ((x - PAD.left) / plot.width) * Math.max(1, points.length - 1),
             );
             setHover(Math.min(points.length - 1, Math.max(0, index)));
           }}
         >
           {/* Three horizontal gridlines, no vertical ones and no spines. */}
           {[0, 0.5, 1].map((fraction) => {
-            const y = PAD.top + PLOT.height * (1 - fraction);
+            const y = PAD.top + plot.height * (1 - fraction);
             return (
               <g key={fraction}>
                 <line
                   className={styles.grid}
                   x1={PAD.left}
-                  x2={PAD.left + PLOT.width}
+                  x2={PAD.left + plot.width}
                   y1={y}
                   y2={y}
                 />
-                <text className={styles.tick} x={PAD.left + PLOT.width + 6} y={y + 3.5}>
+                <text className={styles.tick} x={PAD.left + plot.width + 6} y={y + 3.5}>
                   {formatValue(max * fraction)}
                 </text>
               </g>
@@ -219,15 +264,15 @@ export function TimeChart({
           {hasData && (
             <>
               {previous !== null && previous !== undefined && previous.length > 1 && (
-                <path className={styles.previous} d={pathOf(previous, max)} />
+                <path className={styles.previous} d={pathOf(previous, max, plot)} />
               )}
-              <path className={styles.area} d={areaOf(points, max)} />
-              <path className={styles.line} d={pathOf(points, max)} />
+              <path className={styles.area} d={areaOf(points, max, plot)} />
+              <path className={styles.line} d={pathOf(points, max, plot)} />
               {points.length > 0 && (
                 <circle
                   className={styles.point}
-                  cx={scaleX(points.length - 1, points.length)}
-                  cy={scaleY(points[points.length - 1]?.value ?? 0, max)}
+                  cx={scaleX(points.length - 1, points.length, plot)}
+                  cy={scaleY(points[points.length - 1]?.value ?? 0, max, plot)}
                   r={3.5}
                 />
               )}
@@ -238,15 +283,15 @@ export function TimeChart({
             <>
               <line
                 className={styles.guide}
-                x1={scaleX(hover ?? 0, points.length)}
-                x2={scaleX(hover ?? 0, points.length)}
+                x1={scaleX(hover ?? 0, points.length, plot)}
+                x2={scaleX(hover ?? 0, points.length, plot)}
                 y1={PAD.top}
-                y2={PAD.top + PLOT.height}
+                y2={PAD.top + plot.height}
               />
               <circle
                 className={styles.point}
-                cx={scaleX(hover ?? 0, points.length)}
-                cy={scaleY(hovered.value, max)}
+                cx={scaleX(hover ?? 0, points.length, plot)}
+                cy={scaleY(hovered.value, max, plot)}
                 r={3.5}
               />
             </>
@@ -256,8 +301,8 @@ export function TimeChart({
             <text
               key={index}
               className={styles.tick}
-              x={scaleX(index, points.length)}
-              y={HEIGHT - 6}
+              x={scaleX(index, points.length, plot)}
+              y={CHART_HEIGHT - 7}
               textAnchor={index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle'}
             >
               {index === points.length - 1 && live
@@ -273,7 +318,7 @@ export function TimeChart({
           <div
             className={styles.hover}
             style={{
-              left: `clamp(0px, ${((scaleX(hover ?? 0, points.length) / WIDTH) * 100).toFixed(2)}% - 66px, calc(100% - 132px))`,
+              left: `clamp(0px, ${(scaleX(hover ?? 0, points.length, plot) - 66).toFixed(0)}px, calc(100% - 132px))`,
               top: 0,
             }}
           >

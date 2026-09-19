@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppContext, type AppContextValue } from '../app/context.js';
 import { createClient } from '../lib/client.js';
 import { createQueryClient } from '../lib/queries.js';
+import { CHART_HEIGHT } from '../ui/TimeChart.js';
 import { Overview } from './Overview.js';
 
 // What the page says when it does not know, which is the half of a dashboard
@@ -270,5 +271,22 @@ describe('Overview, what a row does', () => {
     await screen.findByText('Organic search');
     expect(screen.queryByRole('button', { name: /Organic search/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Bangladesh/ })).toBeInTheDocument();
+  });
+});
+
+// The skeleton is the exact height of the thing it stands in for, taken from
+// the chart's own constant. A skeleton 190 tall in front of a drawing 220 tall
+// is a layout shift on every load, and it is the kind nobody reports because it
+// happens before anybody is reading.
+describe('Overview, while it loads', () => {
+  it('holds open exactly the height the chart will be', async () => {
+    serve();
+    const { container } = render(show());
+    // The chart's own, not the tiles': every skeleton on this page is the
+    // height of what it stands in for, and this is the one that was wrong.
+    const skeleton = container.querySelector('[class*="chartPanel"] [class*="skeleton"]');
+    expect(skeleton).not.toBeNull();
+    expect((skeleton as HTMLElement).style.height).toBe(`${CHART_HEIGHT}px`);
+    await totalsLanded();
   });
 });
