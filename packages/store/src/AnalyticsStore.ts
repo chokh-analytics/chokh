@@ -1,6 +1,7 @@
 import type {
   AggregateResult,
   BreakdownResult,
+  EngagementResult,
   PurgeSummary,
   Query,
   RealtimeSnapshot,
@@ -43,6 +44,13 @@ export interface AnalyticsStore {
 
   // The same totals per value of one dimension, biggest first.
   breakdown(query: Query): Promise<BreakdownResult>;
+
+  // Time on page and scroll depth per value of one dimension, from the leave
+  // beacons in the range. Raw rows only: no rollup holds a leave, so this sees
+  // exactly as far back as the site keeps its events. A dimension only a stay
+  // carries is refused rather than answered empty, the way a filter naming one
+  // is.
+  engagement(query: Query): Promise<EngagementResult>;
 
   // Who is here now: online counts, the pages and countries they are on, and
   // the visitors themselves. Read off the presence set that ingest writes, not

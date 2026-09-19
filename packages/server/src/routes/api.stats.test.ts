@@ -58,6 +58,10 @@ describe('the reports', () => {
         visitorId: 'v_2',
         path: '/pricing',
         bot: false,
+        // What the leave beacon is for: the time on this page and how far down
+        // it they got. Nothing else in the store records either.
+        duration: 62_000,
+        scrollDepth: 75,
       },
     ]);
     // One visitor yesterday, rolled up, so a range that spans both reads history
@@ -204,6 +208,36 @@ describe('the reports', () => {
       );
     });
 
+    // The live view. A point a minute, and a cap far harder than the hourly one
+    // because a minute has no rollup either and nobody reads four thousand
+    // points.
+    it('gives one point per minute when asked', async () => {
+      const from = NOW - 30 * 60_000;
+      const response = await get(
+        `/api/sites/${SITE_ID}/stats/timeseries?from=${from}&to=${NOW}&interval=minute`,
+      );
+      const body = envelope<{ interval: string; points: { start: number; metrics: Metrics }[] }>(
+        response.body,
+      ).data;
+      expect(body?.interval).toBe('minute');
+      expect(body?.points).toHaveLength(30);
+      expect(body?.points[0]?.start).toBe(from);
+      const atThirty = body?.points.find((point) => point.start === NOW - 30 * 60_000);
+      expect(atThirty?.metrics.pageviews).toBe(1);
+      const total = body?.points.reduce((sum, point) => sum + point.metrics.pageviews, 0);
+      expect(total).toBe(1);
+    });
+
+    it('refuses a minute series longer than three hours', async () => {
+      expectFailure(
+        await get(
+          `/api/sites/${SITE_ID}/stats/timeseries?from=${NOW - 4 * HOUR}&to=${NOW}&interval=minute`,
+        ),
+        400,
+        'RANGE_TOO_LONG',
+      );
+    });
+
     it('gives one point for a week and one for a month', async () => {
       const week = await get(
         `/api/sites/${SITE_ID}/stats/timeseries?from=${YESTERDAY_START}&to=${TOMORROW}&interval=week`,
@@ -305,6 +339,70 @@ describe('the reports', () => {
         400,
         'UNSUPPORTED_FILTER',
       );
+    });
+  });
+
+  // Time on page and scroll depth, from the leave beacons and from nothing
+  // else, which is why this is a route of its own rather than two more metrics
+  // on a breakdown.
+  describe('engagement', () => {
+    it('answers the time on page and the scroll depth of each page', async () => {
+      const response = await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=page`);
+      const body = envelope<{
+        dim: string;
+        rawOnly: boolean;
+        rows: { key: string; avgTimeOnPageMs: number | null; avgScrollDepth: number | null; leaves: number }[];
+      }>(response.body);
+      expect(response.statusCode).toBe(200);
+      expect(body.success).toBe(true);
+      expect(body.data?.dim).toBe('page');
+      // Said on the wire, because it is what decides how far back this report
+      // can see: a rollup holds no leave beacon.
+      expect(body.data?.rawOnly).toBe(true);
+      expect(body.data?.rows).toEqual([
+        { key: '/pricing', avgTimeOnPageMs: 62_000, avgScrollDepth: 75, leaves: 1 },
+      ]);
+    });
+
+    it('carries the site and the range in the meta, the way the other reports do', async () => {
+      const response = await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=page`);
+      expect(envelope(response.body).meta).toMatchObject({ siteId: SITE_ID, from: TODAY_START });
+    });
+
+    it('answers no rows for a range whose pages nobody has left yet', async () => {
+      const response = await get(
+        `/api/sites/${SITE_ID}/stats/engagement?from=${YESTERDAY_START}&to=${TODAY_START}&dim=page`,
+      );
+      expect(envelope<{ rows: unknown[] }>(response.body).data?.rows).toEqual([]);
+    });
+
+    it('refuses a dimension a leave beacon does not carry, and a read with none', async () => {
+      expectFailure(
+        await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=entry`),
+        400,
+        'UNSUPPORTED_DIMENSION',
+      );
+      expectFailure(
+        await get(`/api/sites/${SITE_ID}/stats/engagement?${today}`),
+        400,
+        'MISSING_DIMENSION',
+      );
+    });
+
+    it('refuses nobody with the envelope and lets a viewer read it', async () => {
+      expectFailure(
+        await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=page`, {}),
+        401,
+        'UNAUTHENTICATED',
+      );
+      const viewer = await harness.account({
+        email: 'engagement-viewer@test.example',
+        role: 'viewer',
+      });
+      const response = await get(`/api/sites/${SITE_ID}/stats/engagement?${today}&dim=page`, {
+        cookie: viewer.cookie,
+      });
+      expect(response.statusCode).toBe(200);
     });
   });
 

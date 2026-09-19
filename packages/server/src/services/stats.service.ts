@@ -4,6 +4,7 @@ import type {
   AggregateResult,
   AnalyticsStore,
   BreakdownResult,
+  EngagementResult,
   Metrics,
   Query,
   TimeseriesResult,
@@ -28,6 +29,13 @@ export function timeseries(store: AnalyticsStore, query: Query): Promise<Outcome
 
 export function breakdown(store: AnalyticsStore, query: Query): Promise<Outcome<BreakdownResult>> {
   return attempt(() => store.breakdown(query));
+}
+
+export function engagement(
+  store: AnalyticsStore,
+  query: Query,
+): Promise<Outcome<EngagementResult>> {
+  return attempt(() => store.engagement(query));
 }
 
 // The columns a breakdown export has, in one place, so the CSV and the JSON

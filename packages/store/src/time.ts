@@ -131,17 +131,23 @@ export function dayKeysBetween(from: number, to: number, timezone: string): stri
   return keys;
 }
 
-export type Interval = 'hour' | 'day' | 'week' | 'month';
+export type Interval = 'minute' | 'hour' | 'day' | 'week' | 'month';
 
 // The instant the bucket holding ts begins. Weeks start on Monday, which is
 // what a Bangladeshi working week and ISO-8601 agree on.
 export function bucketStart(ts: number, interval: Interval, timezone: string): number {
   const wall = wallClock(ts, timezone);
-  if (interval === 'hour') {
+  if (interval === 'minute' || interval === 'hour') {
     // Shift into the zone, cut to the hour there, shift back. Zones offset by
     // 45 minutes are as correct as zones offset by a whole hour this way.
+    //
+    // A minute goes through the same door rather than a plain floor of the
+    // instant, because a zone whose offset is not a whole number of minutes
+    // (the historical local mean times are, and a range can reach one) would
+    // otherwise put a bucket boundary half a minute into the wrong minute.
+    const step = interval === 'minute' ? 60_000 : 3_600_000;
     const offset = offsetMs(ts, timezone);
-    return Math.floor((ts + offset) / 3_600_000) * 3_600_000 - offset;
+    return Math.floor((ts + offset) / step) * step - offset;
   }
   if (interval === 'month') {
     return instantOfMidnight(wall.year, wall.month, 1, timezone);
@@ -205,6 +211,9 @@ export function bucketIndexAt(starts: readonly number[], ts: number, rangeEnd: n
 }
 
 function nextBucket(start: number, interval: Interval, timezone: string): number {
+  if (interval === 'minute') {
+    return start + 60_000;
+  }
   if (interval === 'hour') {
     return start + 3_600_000;
   }

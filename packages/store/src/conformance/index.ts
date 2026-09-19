@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   MAX_HOUR_RANGE_DAYS,
+  MAX_MINUTE_RANGE_HOURS,
   StoreQueryError,
   type BreakdownResult,
   type Metrics,
@@ -217,6 +218,41 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(first?.metrics.pageviews).toBe(1);
       });
 
+      // The live view: a point a minute over the last half hour. It reads raw
+      // rows the way an hourly series does, which is why it is capped harder.
+      it('gives one point per minute of the last half hour', async () => {
+        const from = F.NOW - 30 * 60_000;
+        const result = await store.timeseries({
+          siteId: F.SITE_ID,
+          from,
+          to: F.NOW,
+          interval: 'minute',
+        });
+        expect(result.interval).toBe('minute');
+        expect(result.points).toHaveLength(30);
+        expect(result.points[0]?.start).toBe(from);
+        expect(result.points[29]?.start).toBe(F.NOW - 60_000);
+        // Three pageviews landed in that half hour: v3 on /docs and then on
+        // /pricing, and v2 on /pricing ten minutes ago. The crawler's is not
+        // one of them, the heartbeats are never rows, and neither the leave
+        // nor the signup event is a pageview.
+        const total = result.points.reduce((sum, point) => sum + point.metrics.pageviews, 0);
+        expect(total).toBe(3);
+        const at = (ts: number): number | undefined =>
+          result.points.find((point) => point.start === ts)?.metrics.pageviews;
+        expect(at(Date.UTC(2026, 8, 18, 3, 30, 0))).toBe(1);
+        expect(at(Date.UTC(2026, 8, 18, 3, 35, 0))).toBe(1);
+        expect(at(F.NOW - 600_000)).toBe(1);
+        expect(at(Date.UTC(2026, 8, 18, 3, 45, 0))).toBe(0);
+      });
+
+      it('refuses a minute series longer than the cap', async () => {
+        const from = F.NOW - (MAX_MINUTE_RANGE_HOURS + 1) * 60 * 60 * 1000;
+        const query = { siteId: F.SITE_ID, from, to: F.NOW, interval: 'minute' } as const;
+        await expect(store.timeseries(query)).rejects.toBeInstanceOf(StoreQueryError);
+        await expect(store.timeseries(query)).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+      });
+
       it('refuses an hourly series longer than the cap', async () => {
         const from = F.NOW - (MAX_HOUR_RANGE_DAYS + 1) * DAY;
         const query = { siteId: F.SITE_ID, from, to: F.NOW, interval: 'hour' } as const;
@@ -348,6 +384,45 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
       });
     });
 
+    // Time on page and scroll depth, read from leave beacons and from nothing
+    // else. The fixture has exactly one: v3 closing /pricing after 90 seconds
+    // having scrolled three quarters of the way down.
+    describe('engagement', () => {
+      it('reads time on page and scroll depth from the leave beacons', async () => {
+        const result = await store.engagement({ ...today, dim: 'page' });
+        expect(result.dim).toBe('page');
+        expect(result.rawOnly).toBe(true);
+        expect(result.rows).toEqual([
+          { key: '/pricing', avgTimeOnPageMs: 90_000, avgScrollDepth: 75, leaves: 1 },
+        ]);
+      });
+
+      it('answers no rows for a range with no leave in it', async () => {
+        expect((await store.engagement({ ...yesterday, dim: 'page' })).rows).toEqual([]);
+      });
+
+      it('groups by any dimension an event carries', async () => {
+        const result = await store.engagement({ ...today, dim: 'country' });
+        expect(result.rows).toEqual([
+          { key: 'BD', avgTimeOnPageMs: 90_000, avgScrollDepth: 75, leaves: 1 },
+        ]);
+      });
+
+      it('refuses a dimension only a stay carries', async () => {
+        const query = { ...today, dim: 'entry' } as const;
+        await expect(store.engagement(query)).rejects.toBeInstanceOf(StoreQueryError);
+        await expect(store.engagement(query)).rejects.toMatchObject({
+          code: 'UNSUPPORTED_DIMENSION',
+        });
+      });
+
+      it('refuses a read with no dimension', async () => {
+        await expect(store.engagement({ ...today })).rejects.toMatchObject({
+          code: 'MISSING_DIMENSION',
+        });
+      });
+    });
+
     describe('filters', () => {
       it('narrows to one value', async () => {
         const result = await store.aggregate({
@@ -475,6 +550,31 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
       it('keeps crawlers out of who is here', async () => {
         const snapshot = await store.realtime(F.SITE_ID);
         expect(snapshot.visitors.map((visitor) => visitor.visitorId)).not.toContain('bot');
+        expect(snapshot.recent.map((visitor) => visitor.visitorId)).not.toContain('bot');
+      });
+
+      // A dot per city, and the coordinate that places it was rounded on the
+      // way into the set, which is why it sits beside the country rather than
+      // behind read:identity.
+      it('says where the cities are, to two decimals', async () => {
+        const snapshot = await store.realtime(F.SITE_ID);
+        expect(snapshot.byCity).toEqual([
+          { key: 'Kolkata', visitors: 1, country: 'IN', lat: 22.57, lon: 88.36 },
+        ]);
+        expect(snapshot.visitors[0]?.lat).toBe(22.57);
+        expect(snapshot.visitors[0]?.lon).toBe(88.36);
+      });
+
+      // A quiet hour is not a broken page: the people who were here a few
+      // minutes ago come back beside the ones who are here now, and are
+      // counted in none of the three numbers above.
+      it('carries the rest of the half hour beside the online list', async () => {
+        const snapshot = await store.realtime(F.SITE_ID);
+        // v3 stopped 90 seconds ago, v1 ten minutes ago; v2 is the online one.
+        expect(snapshot.recent.map((visitor) => visitor.visitorId)).toEqual(['v3', 'v1']);
+        expect(snapshot.online).toBe(1);
+        expect(snapshot.signedIn).toBe(0);
+        expect(snapshot.recent[1]?.userId).toBe(F.USER_ID);
       });
     });
 

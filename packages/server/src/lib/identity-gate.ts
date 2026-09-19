@@ -47,7 +47,11 @@ function gatedVisitor(visitor: RealtimeVisitor, allowed: boolean, found: Set<str
 export function gateRealtime(snapshot: RealtimeSnapshot, allowed: boolean): Gated<RealtimeSnapshot> {
   const found = new Set<string>();
   const visitors = snapshot.visitors.map((visitor) => gatedVisitor(visitor, allowed, found));
-  return { value: { ...snapshot, visitors }, fields: [...found].sort() };
+  // The people who were here a few minutes ago are the same people, so they go
+  // through the same strip. A second list that forgot to would be the whole
+  // gate undone by the list nobody was looking at.
+  const recent = snapshot.recent.map((visitor) => gatedVisitor(visitor, allowed, found));
+  return { value: { ...snapshot, visitors, recent }, fields: [...found].sort() };
 }
 
 export function gateVisitorProfile(

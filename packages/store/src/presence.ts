@@ -1,6 +1,8 @@
 import {
+  MAX_RECENT_VISITORS,
   ONLINE_WINDOW_MS,
   REALTIME_WINDOW_MS,
+  type CityCountRow,
   type CountRow,
   type RealtimeSnapshot,
   type RealtimeVisitor,
@@ -36,8 +38,28 @@ export interface PresenceEntry {
   browser?: string;
   os?: string;
   device?: string;
+  // The city centre, to two decimal places, which is about a kilometre. The
+  // rounding happens here, once, and is the reason these two sit outside the
+  // identity gate: at two decimals a coordinate is the place a city is and can
+  // no longer be anybody's street, so it is traffic the way the country and
+  // the city name are. The address beside it is not, and stays gated.
+  lat?: number;
+  lon?: number;
   ip?: string;
   userId?: string;
+}
+
+// Two decimal places, and the rounding is a rule of the contract rather than a
+// habit of one adapter, because what makes a coordinate publishable is that
+// nothing more precise was ever kept.
+export const COORDINATE_DECIMALS = 2;
+
+export function roundCoordinate(value: number): number {
+  const factor = 10 ** COORDINATE_DECIMALS;
+  const rounded = Math.round(value * factor) / factor;
+  // A place a hair west of Greenwich rounds to negative zero, which is a real
+  // number in JavaScript and a surprise everywhere else. Zero is zero.
+  return rounded === 0 ? 0 : rounded;
 }
 
 export interface Presence {
@@ -64,6 +86,8 @@ export function presenceEntryOf(session: StoredSession): PresenceEntry | null {
   if (session.exitPath !== undefined) entry.path = session.exitPath;
   if (session.geo?.country !== undefined) entry.country = session.geo.country;
   if (session.geo?.city !== undefined) entry.city = session.geo.city;
+  if (session.geo?.lat !== undefined) entry.lat = roundCoordinate(session.geo.lat);
+  if (session.geo?.lon !== undefined) entry.lon = roundCoordinate(session.geo.lon);
   if (session.ua?.browser !== undefined) entry.browser = session.ua.browser;
   if (session.ua?.os !== undefined) entry.os = session.ua.os;
   if (session.ua?.device !== undefined) entry.device = session.ua.device;
@@ -82,6 +106,8 @@ function toVisitor(entry: PresenceEntry): RealtimeVisitor {
   if (entry.path !== undefined) visitor.path = entry.path;
   if (entry.country !== undefined) visitor.country = entry.country;
   if (entry.city !== undefined) visitor.city = entry.city;
+  if (entry.lat !== undefined) visitor.lat = entry.lat;
+  if (entry.lon !== undefined) visitor.lon = entry.lon;
   if (entry.browser !== undefined) visitor.browser = entry.browser;
   if (entry.os !== undefined) visitor.os = entry.os;
   if (entry.device !== undefined) visitor.device = entry.device;
@@ -104,13 +130,50 @@ function tally(
     .sort((left, right) => right.visitors - left.visitors || left.key.localeCompare(right.key));
 }
 
+// Where the live dots go. Grouped by the city and the country together so two
+// places that share a name do not become one dot halfway between them, and the
+// coordinates are whichever the first sighting of that city carried; every
+// sighting of one city carries the same pair, because they both come from the
+// same geo database row.
+function tallyCities(visitors: RealtimeVisitor[]): CityCountRow[] {
+  const rows = new Map<string, CityCountRow>();
+  for (const visitor of visitors) {
+    if (visitor.city === undefined) continue;
+    const id = `${visitor.country ?? ''}|${visitor.city}`;
+    const known = rows.get(id);
+    if (known !== undefined) {
+      known.visitors += 1;
+      continue;
+    }
+    const row: CityCountRow = { key: visitor.city, visitors: 1 };
+    if (visitor.country !== undefined) row.country = visitor.country;
+    if (visitor.lat !== undefined) row.lat = visitor.lat;
+    if (visitor.lon !== undefined) row.lon = visitor.lon;
+    rows.set(id, row);
+  }
+  return [...rows.values()].sort(
+    (left, right) => right.visitors - left.visitors || left.key.localeCompare(right.key),
+  );
+}
+
 // The snapshot both adapters answer with, built from the set rather than from
 // rows, so the MongoDB answer and the in-memory answer are the same sentence.
+//
+// Two lists, because a quiet hour is not a broken page. Online is the last
+// minute and is what every count on the page means; recent is the rest of the
+// presence window, the people who were here a few minutes ago, newest first
+// and capped. Nothing in recent is counted anywhere: online, signedIn and
+// anonymous are the online list and only ever the online list.
 export function snapshotFrom(entries: PresenceEntry[], now: number): RealtimeSnapshot {
-  const visitors = entries
-    .filter((entry) => entry.lastSeenAt > now - ONLINE_WINDOW_MS && entry.lastSeenAt <= now)
-    .map(toVisitor)
+  const seen = entries
+    .filter((entry) => entry.lastSeenAt <= now)
     .sort((left, right) => right.lastSeenAt - left.lastSeenAt);
+  const onlineFrom = now - ONLINE_WINDOW_MS;
+  const visitors = seen.filter((entry) => entry.lastSeenAt > onlineFrom).map(toVisitor);
+  const recent = seen
+    .filter((entry) => entry.lastSeenAt <= onlineFrom && entry.lastSeenAt > now - REALTIME_WINDOW_MS)
+    .slice(0, MAX_RECENT_VISITORS)
+    .map(toVisitor);
   const signedIn = visitors.filter((visitor) => visitor.userId !== undefined).length;
   return {
     online: visitors.length,
@@ -118,7 +181,9 @@ export function snapshotFrom(entries: PresenceEntry[], now: number): RealtimeSna
     anonymous: visitors.length - signedIn,
     byPage: tally(visitors, (visitor) => visitor.path),
     byCountry: tally(visitors, (visitor) => visitor.country),
+    byCity: tallyCities(visitors),
     visitors,
+    recent,
   };
 }
 

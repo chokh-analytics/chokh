@@ -337,7 +337,7 @@ export function bucketKeyExpression(
   interval: Interval,
   field = '$ts',
 ): Document {
-  const unit = interval === 'hour' ? 'hour' : 'day';
+  const unit = interval === 'minute' || interval === 'hour' ? interval : 'day';
   return { $dateTrunc: { date: { $toDate: field }, unit, timezone } };
 }
 
@@ -388,5 +388,36 @@ export function sessionTotalsByBucketPipeline(
   return [
     { $match: sessionMatch(siteId, span, wantsBots, filters) },
     { $group: { _id: bucketKeyExpression(timezone, interval, '$startedAt'), ...SUM_SESSIONS } },
+  ];
+}
+
+// Time on page and scroll depth per value of one dimension, from the leave
+// beacons of a span.
+//
+// The type match is inside the same $match as the site and the range, so the
+// {siteId, ts} index still leads the plan and the leaves are filtered as the
+// index is walked rather than afterwards. The two counts are separate sums
+// because a leave can carry a duration, a depth, both or neither, and a
+// missing one must not be averaged in as a zero.
+export function engagementPipeline(
+  siteId: string,
+  span: Range,
+  dim: Dimension,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  const key = dimensionExpression(dim);
+  return [
+    { $match: { ...eventMatch(siteId, span, wantsBots, filters), type: 'leave' } },
+    {
+      $group: {
+        _id: key,
+        durationSum: { $sum: { $ifNull: ['$duration', 0] } },
+        durationCount: { $sum: { $cond: [{ $ne: ['$duration', null] }, 1, 0] } },
+        scrollSum: { $sum: { $ifNull: ['$scrollDepth', 0] } },
+        scrollCount: { $sum: { $cond: [{ $ne: ['$scrollDepth', null] }, 1, 0] } },
+        leaves: { $sum: 1 },
+      },
+    },
   ];
 }

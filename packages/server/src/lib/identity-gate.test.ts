@@ -12,6 +12,7 @@ function snapshot(): RealtimeSnapshot {
     anonymous: 1,
     byPage: [{ key: '/pricing', visitors: 2 }],
     byCountry: [{ key: 'BD', visitors: 2 }],
+    byCity: [{ key: 'Dhaka', visitors: 2, country: 'BD', lat: 23.81, lon: 90.41 }],
     visitors: [
       {
         visitorId: 'v_1',
@@ -32,6 +33,17 @@ function snapshot(): RealtimeSnapshot {
         country: 'BD',
         since: NOW - 30_000,
         lastSeenAt: NOW,
+      },
+    ],
+    recent: [
+      {
+        visitorId: 'v_3',
+        userId: 'u_99',
+        path: '/docs',
+        country: 'BD',
+        ip: '203.0.113.9',
+        since: NOW - 900_000,
+        lastSeenAt: NOW - 300_000,
       },
     ],
   };
@@ -92,8 +104,32 @@ describe('gateRealtime', () => {
     const anonymous: RealtimeSnapshot = {
       ...snapshot(),
       visitors: [{ visitorId: 'v_2', path: '/', since: NOW, lastSeenAt: NOW }],
+      recent: [],
     };
     expect(gateRealtime(anonymous, true).fields).toEqual([]);
+  });
+
+  // The second list is the same people a few minutes earlier. A strip that only
+  // covered the first one would be the gate undone by the list nobody checked.
+  it('strips the recent list too, and counts what it revealed', () => {
+    const open = gateRealtime(snapshot(), true);
+    expect(open.value.recent[0]?.ip).toBe('203.0.113.9');
+    expect(open.value.recent[0]?.userId).toBe('u_99');
+
+    const closed = gateRealtime(snapshot(), false);
+    expect(closed.value.recent[0]).not.toHaveProperty('ip');
+    expect(closed.value.recent[0]).not.toHaveProperty('userId');
+    expect(closed.value.recent[0]?.path).toBe('/docs');
+    expect(closed.fields).toEqual([]);
+  });
+
+  // A city centre rounded to two decimals is a place, not a person, which is why
+  // it is beside the country rather than behind the scope.
+  it('never gates the city tally or its coordinates', () => {
+    const gated = gateRealtime(snapshot(), false);
+    expect(gated.value.byCity).toEqual([
+      { key: 'Dhaka', visitors: 2, country: 'BD', lat: 23.81, lon: 90.41 },
+    ]);
   });
 });
 

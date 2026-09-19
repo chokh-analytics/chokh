@@ -1,4 +1,4 @@
-import type { BreakdownRow, Metrics } from './query.js';
+import type { BreakdownRow, EngagementRow, Metrics } from './query.js';
 import type { RollupDim } from './plan.js';
 import { isBounce } from './session.js';
 import type { StoredSession } from './types.js';
@@ -67,6 +67,76 @@ export function sortBreakdownRows(rows: BreakdownRow[]): BreakdownRow[] {
     }
     if (right.metrics.pageviews !== left.metrics.pageviews) {
       return right.metrics.pageviews - left.metrics.pageviews;
+    }
+    return left.key.localeCompare(right.key);
+  });
+}
+
+// The arithmetic of the engagement report, kept here for the same reason the
+// rest of it is: two adapters must not disagree about what an average time on
+// page is.
+//
+// Duration and scroll depth are counted separately from the leaves, because a
+// leave beacon can carry one, both or neither: a page closed before the scroll
+// listener ever fired has a time and no depth, and averaging it as a zero
+// would say the visitor read none of a page they may have read all of.
+export interface EngagementTally {
+  durationSum: number;
+  durationCount: number;
+  scrollSum: number;
+  scrollCount: number;
+  leaves: number;
+}
+
+export function zeroEngagement(): EngagementTally {
+  return { durationSum: 0, durationCount: 0, scrollSum: 0, scrollCount: 0, leaves: 0 };
+}
+
+export function addLeave(
+  into: EngagementTally,
+  leave: { duration?: number; scrollDepth?: number },
+): void {
+  into.leaves += 1;
+  if (leave.duration !== undefined) {
+    into.durationSum += leave.duration;
+    into.durationCount += 1;
+  }
+  if (leave.scrollDepth !== undefined) {
+    into.scrollSum += leave.scrollDepth;
+    into.scrollCount += 1;
+  }
+}
+
+export function addEngagement(into: EngagementTally, from: Partial<EngagementTally>): void {
+  into.durationSum += from.durationSum ?? 0;
+  into.durationCount += from.durationCount ?? 0;
+  into.scrollSum += from.scrollSum ?? 0;
+  into.scrollCount += from.scrollCount ?? 0;
+  into.leaves += from.leaves ?? 0;
+}
+
+// An average over nothing is unknown, not zero, the same rule finishMetrics
+// keeps for a bounce rate.
+export function finishEngagement(key: string, tally: EngagementTally): EngagementRow {
+  return {
+    key,
+    avgTimeOnPageMs: tally.durationCount === 0 ? null : tally.durationSum / tally.durationCount,
+    avgScrollDepth: tally.scrollCount === 0 ? null : tally.scrollSum / tally.scrollCount,
+    leaves: tally.leaves,
+  };
+}
+
+// Most read first, then longest held, then alphabetical, so a tie never
+// reorders itself between two reads or between two adapters.
+export function sortEngagementRows(rows: EngagementRow[]): EngagementRow[] {
+  return rows.sort((left, right) => {
+    if (right.leaves !== left.leaves) {
+      return right.leaves - left.leaves;
+    }
+    const leftTime = left.avgTimeOnPageMs ?? -1;
+    const rightTime = right.avgTimeOnPageMs ?? -1;
+    if (rightTime !== leftTime) {
+      return rightTime - leftTime;
     }
     return left.key.localeCompare(right.key);
   });

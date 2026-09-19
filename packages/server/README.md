@@ -158,8 +158,9 @@ success envelope. A failure on either is the ordinary envelope.
 | `DELETE /api/sites/:siteId/keys/:keyId` | `admin` | Takes effect immediately |
 | `PUT /api/teams/:teamId/members/:userId` | owner of the team | Role and identity flag |
 | `GET /api/sites/:siteId/stats/aggregate` | `read:stats` | Totals for a range |
-| `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=hour\|day\|week\|month` |
+| `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=minute\|hour\|day\|week\|month` |
 | `GET /api/sites/:siteId/stats/breakdown` | `read:stats` | `dim=page\|referrer\|country\|…` |
+| `GET /api/sites/:siteId/stats/engagement` | `read:stats` | Time on page and scroll depth, raw rows only |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any breakdown, as a file |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
@@ -175,7 +176,10 @@ timestamp. `from` is inclusive, `to` is exclusive, and a range that ends before
 it starts is refused rather than answered with zeroes, because zeroes read as
 "nobody came".
 
-- `interval=hour|day|week|month`, `day` by default. Hourly is capped at 7 days.
+- `interval=minute|hour|day|week|month`, `day` by default. Neither a minute
+  nor an hour has a daily rollup behind it, so both read raw rows for the whole
+  range and both are capped: 7 days for hours, 3 hours for minutes. The minute
+  interval exists for the live view, where the question is the last half hour.
 - `compare=previous_period|previous_year` adds `previous` and `previousRange`.
 - `dim=` any dimension, required for a breakdown and for the CSV export.
 - `limit=` rows in a breakdown, 100 by default.
@@ -190,6 +194,24 @@ it starts is refused rather than answered with zeroes, because zeroes read as
 
 `meta` carries the site, its timezone and the range that was read, so a chart can
 label itself without drawing a day boundary a second time.
+
+### Time on page and scroll depth
+
+`GET /api/sites/:siteId/stats/engagement?dim=page` answers one row per value
+with `avgTimeOnPageMs`, `avgScrollDepth` and `leaves`. Both averages come from
+leave beacons, which a browser sends per page rather than per visit, so this is
+a measurement and not the gap between two pageviews: the last page of a visit
+has no following pageview to subtract from, and it is usually the page worth
+knowing about.
+
+Two things the response says out loud. `rawOnly: true`, because no rollup holds
+a leave beacon and this report therefore sees exactly as far back as the site
+keeps its raw events. And `leaves`, because it is the sample size: a page with
+one leave has an average of one, and a report that hides that is inviting
+somebody to act on it. An average over no measurement is `null`, never zero, so
+a page somebody closed at once and a page nobody has closed do not read the
+same. A dimension only a stay carries (`entry`, `exit`, `channel`) is refused
+with `UNSUPPORTED_DIMENSION` rather than answered empty.
 
 ### Two ways to be somebody
 
@@ -258,7 +280,13 @@ The log has no TTL, because "who looked at this person" is asked months later.
 
 - The **realtime list** stays visible to anybody with `read:stats`, with `ip` and
   `userId` removed. The page, the country, the city, the device and the counts
-  are traffic. This is the IP column a dashboard hides, not the list.
+  are traffic. This is the IP column a dashboard hides, not the list. The
+  `recent` list goes through the same strip, because it is the same people a few
+  minutes earlier.
+- **City coordinates are not gated.** They are rounded to two decimal places
+  when the presence entry is written, which is about a kilometre, so what is
+  kept is where a city is and never where a person is. Nothing finer than that
+  is ever in the set for anybody to read later.
 - A **visitor profile** is the same: the history stays, the addresses come back
   empty and the name and traits are absent.
 - A **user profile** and a **user's presence** are refused outright without the
@@ -411,7 +439,12 @@ never scanned for this.
   container and wrong behind a load balancer.
 
 Online means a sign of life within the last minute, and "online for" counts from
-the session start. Crawlers are not in the set. Presence is not storage: it is a
+the session start. The snapshot carries two lists: `visitors`, who are online
+now and are what `online`, `signedIn` and `anonymous` count, and `recent`, the
+rest of the half hour window, newest first and capped at fifty, counted in
+nothing. A quiet hour should not read as a broken page. `byCity` is the live
+map: one row per city and country pair, with the coordinates to draw it.
+Crawlers are in neither list and in none of the counts. Presence is not storage: it is a
 minute's window over a half hour set, rebuilt by the next heartbeat, so losing
 Redis costs the online count for a minute and nothing else.
 

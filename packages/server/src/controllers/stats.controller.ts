@@ -13,6 +13,7 @@ import {
   aggregate,
   breakdown,
   breakdownCsv,
+  engagement,
   timeseries,
 } from '../services/stats.service.js';
 import type { Query, Site } from '../store/AnalyticsStore.js';
@@ -131,6 +132,26 @@ export function createBreakdownController(deps: ApiDeps) {
         meta(parsed.site, parsed.input),
       ),
     );
+  };
+}
+
+// Time on page and scroll depth. A separate route rather than two more metrics
+// on a breakdown, because these two are averages over leave beacons and the
+// others are counts over every row: putting them in one response would mean a
+// page with no leave beacon reporting a bounce rate beside a time on page that
+// is not missing but unmeasured, and the two would look like the same kind of
+// number.
+export function createEngagementController(deps: ApiDeps) {
+  return async function engagementController(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = parse(request, reply);
+    if (parsed === null) {
+      return reply;
+    }
+    const result = await engagement(deps.store, parsed.query);
+    if (!result.ok) {
+      return reply.code(result.status).send(fail(result.code, result.message));
+    }
+    return reply.send(ok(result.data, meta(parsed.site, parsed.input)));
   };
 }
 

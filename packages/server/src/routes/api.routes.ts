@@ -30,6 +30,7 @@ import {
 import {
   createAggregateController,
   createBreakdownController,
+  createEngagementController,
   createExportController,
   createTimeseriesController,
 } from '../controllers/stats.controller.js';
@@ -133,6 +134,11 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/stats/breakdown',
     { preHandler: scope('read:stats') },
     createBreakdownController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/engagement',
+    { preHandler: scope('read:stats') },
+    createEngagementController(deps),
   );
   app.get(
     '/api/sites/:siteId/export.csv',

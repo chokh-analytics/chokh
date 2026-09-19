@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apply } from './migrate.js';
 import { createMongoStore } from './mongo.store.js';
 import {
+  engagementPipeline,
   rawBreakdownPipeline,
   rawTotalsByBucketPipeline,
   rollupTotalsByDatePipeline,
@@ -133,14 +134,24 @@ describe('bucketed series pipelines', () => {
     return scanStages(explained);
   }
 
-  it.each(['hour', 'day'] as const)('scans an index for raw totals by %s', async (interval) => {
-    const stages = await explain(
-      'events',
-      rawTotalsByBucketPipeline(fixture.SITE_ID, span, fixture.TIMEZONE, interval, false, undefined),
-    );
-    expect(stages).toContain('IXSCAN');
-    expect(stages).not.toContain('COLLSCAN');
-  });
+  it.each(['minute', 'hour', 'day'] as const)(
+    'scans an index for raw totals by %s',
+    async (interval) => {
+      const stages = await explain(
+        'events',
+        rawTotalsByBucketPipeline(
+          fixture.SITE_ID,
+          span,
+          fixture.TIMEZONE,
+          interval,
+          false,
+          undefined,
+        ),
+      );
+      expect(stages).toContain('IXSCAN');
+      expect(stages).not.toContain('COLLSCAN');
+    },
+  );
 
   it.each(['hour', 'day'] as const)('scans an index for session totals by %s', async (interval) => {
     const stages = await explain(
@@ -170,6 +181,32 @@ describe('bucketed series pipelines', () => {
     expect(stages).toContain('IXSCAN');
     expect(stages).not.toContain('COLLSCAN');
   });
+});
+
+// The engagement read is raw rows only and has no rollup to fall back on, so a
+// collection scan here is not a slow report, it is the whole events collection
+// read on every load of the Pages page.
+describe('engagement pipeline', () => {
+  it.each(['page', 'country', 'device'] as const)(
+    'scans an index for leave beacons by %s',
+    async (dim) => {
+      const explained = (await db
+        .collection('events')
+        .aggregate(
+          engagementPipeline(
+            fixture.SITE_ID,
+            { from: fixture.DAY_BEFORE_START, to: fixture.NOW },
+            dim,
+            false,
+            undefined,
+          ),
+        )
+        .explain('queryPlanner')) as unknown as Document;
+      const stages = scanStages(explained);
+      expect(stages).toContain('IXSCAN');
+      expect(stages).not.toContain('COLLSCAN');
+    },
+  );
 });
 
 describe('the adapter never creates an index', () => {

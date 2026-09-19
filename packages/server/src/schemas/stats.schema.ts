@@ -183,7 +183,7 @@ export const statsQuerySchema = z.object({
   to: instant,
   filters: filters.optional(),
   compare: z.enum(['previous_period', 'previous_year']).optional(),
-  interval: z.enum(['hour', 'day', 'week', 'month']).optional(),
+  interval: z.enum(['minute', 'hour', 'day', 'week', 'month']).optional(),
   dim: dimension.optional(),
   metrics: metrics.optional(),
   limit: z.coerce.number().int().positive().max(1000).optional(),

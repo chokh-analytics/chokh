@@ -112,6 +112,14 @@ export const BOT_DIMENSION: Dimension = 'bot';
 export const MAX_HOUR_RANGE_DAYS = 7;
 export const MAX_HOUR_RANGE_MS = MAX_HOUR_RANGE_DAYS * 24 * 60 * 60 * 1000;
 
+// A minute series is the live view: the last half hour, a point a minute. It
+// reads raw rows the way an hourly series does and is capped far harder,
+// because a minute of a busy site is the same number of rows as an hour of a
+// quiet one and nobody reads a chart of four thousand points. Three hours is
+// 180 points, which is already more than the sparkline it exists for needs.
+export const MAX_MINUTE_RANGE_HOURS = 3;
+export const MAX_MINUTE_RANGE_MS = MAX_MINUTE_RANGE_HOURS * 60 * 60 * 1000;
+
 // How many rows a breakdown answers with when the query names no limit.
 export const DEFAULT_BREAKDOWN_LIMIT = 100;
 
@@ -193,6 +201,33 @@ export interface CountRow {
   visitors: number;
 }
 
+// How long a page held somebody and how far down it they got.
+//
+// Both numbers are read from leave beacons and from nowhere else. A leave
+// carries the time on page and the scroll quartile of the page it closes, one
+// per page rather than one per stay, so this is a measurement and not the gap
+// between two pageviews: the last page of a visit has no following pageview to
+// subtract from, and it is the page most worth knowing about.
+//
+// leaves is on the row because it is the sample size. A page with one leave
+// has an average of one, and a report that hides that is inviting somebody to
+// act on it.
+export interface EngagementRow {
+  key: string;
+  avgTimeOnPageMs: number | null;
+  avgScrollDepth: number | null;
+  leaves: number;
+}
+
+export interface EngagementResult {
+  dim: Dimension;
+  rows: EngagementRow[];
+  // Leaves are raw rows, so this report only sees as far back as the site
+  // keeps them. A rollup holds no leave, and inventing one later would mean
+  // writing a number nobody measured.
+  rawOnly: true;
+}
+
 // Online means a sign of life within the last minute, and "since" is the start
 // of the stay, so "online for 12 minutes" counts from the session. Both are
 // read off the presence set, never off raw events.
@@ -205,6 +240,10 @@ export interface RealtimeVisitor {
   path?: string;
   country?: string;
   city?: string;
+  // Where the city is, to two decimal places. Rounded at the presence entry,
+  // so this is a place on a map and never a person at an address.
+  lat?: number;
+  lon?: number;
   browser?: string;
   os?: string;
   device?: string;
@@ -213,13 +252,31 @@ export interface RealtimeVisitor {
   lastSeenAt: number;
 }
 
+// A city tally carries where to draw it. The key is the city name and the row
+// is identified by the city and the country together, so two places that share
+// a name are two rows rather than one wrong one.
+export interface CityCountRow extends CountRow {
+  country?: string;
+  lat?: number;
+  lon?: number;
+}
+
+// How many of the last half hour are kept beside the online list. A quiet hour
+// should not read as a broken page, and a busy site should not send its whole
+// half hour down an SSE frame every five seconds.
+export const MAX_RECENT_VISITORS = 50;
+
 export interface RealtimeSnapshot {
   online: number;
   signedIn: number;
   anonymous: number;
   byPage: CountRow[];
   byCountry: CountRow[];
+  byCity: CityCountRow[];
   visitors: RealtimeVisitor[];
+  // Seen inside the presence window but not inside the online one: the people
+  // who were here a few minutes ago. Newest first, capped.
+  recent: RealtimeVisitor[];
 }
 
 export interface TimelineEntry {
@@ -421,6 +478,42 @@ export function assertFilterable(filters: Filter[] | undefined): void {
       );
     }
   }
+}
+
+// How long a range may be for the interval it asked for. Both caps exist for
+// the same reason: neither a minute nor an hour has a rollup, so both read raw
+// rows for the whole range, and a chart nobody can read is not worth the scan.
+// One function, so two adapters cannot cap at two lengths.
+export function assertIntervalRange(interval: Interval, from: number, to: number): void {
+  if (interval === 'hour' && to - from > MAX_HOUR_RANGE_MS) {
+    throw new StoreQueryError(
+      'RANGE_TOO_LONG',
+      `An hourly series reads raw rows, so it is capped at ${MAX_HOUR_RANGE_DAYS} days. Ask for days instead.`,
+    );
+  }
+  if (interval === 'minute' && to - from > MAX_MINUTE_RANGE_MS) {
+    throw new StoreQueryError(
+      'RANGE_TOO_LONG',
+      `A minute series reads raw rows, so it is capped at ${MAX_MINUTE_RANGE_HOURS} hours. Ask for hours instead.`,
+    );
+  }
+}
+
+// An engagement read groups leave beacons, which are events, so it can answer
+// for every dimension an event carries and for none of the three only a stay
+// does. Refused rather than answered empty, for the same reason a filter
+// naming one is: an empty report reads as nobody came.
+export function assertEngageable(dim: Dimension | undefined): Dimension {
+  if (dim === undefined) {
+    throw new StoreQueryError('MISSING_DIMENSION', 'An engagement read needs a dim');
+  }
+  if (EVENT_PATH_BY_DIMENSION[dim] === undefined) {
+    throw new StoreQueryError(
+      'UNSUPPORTED_DIMENSION',
+      `A leave beacon does not carry ${dim}, so time on page cannot be grouped by it`,
+    );
+  }
+  return dim;
 }
 
 // Whether the session side can answer a filtered read at all. A filter naming

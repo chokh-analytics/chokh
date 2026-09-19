@@ -1,21 +1,24 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
-  MAX_HOUR_RANGE_MS,
-  ONLINE_WINDOW_MS,
   PROFILE_EVENT_LIMIT,
+  REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
   SESSION_DIMENSIONS,
   SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
+  addEngagement,
   addTotals,
+  assertEngageable,
   assertFilterable,
+  assertIntervalRange,
   botSelector,
   bucketIndexAt,
   bucketsBetween,
   comparisonRange,
   createMemoryPresence,
   dayBounds,
+  finishEngagement,
   finishMetrics,
   foldVisitor,
   groupForFold,
@@ -26,13 +29,17 @@ import {
   sessionsAnswerFilters,
   snapshotFrom,
   sortBreakdownRows,
+  sortEngagementRows,
   startOfDay,
+  zeroEngagement,
   zeroTotals,
   type AggregateResult,
   type AnalyticsStore,
   type BreakdownResult,
   type BreakdownRow,
   type Dimension,
+  type EngagementResult,
+  type EngagementTally,
   type Interval,
   type Metrics,
   type Presence,
@@ -67,6 +74,7 @@ import {
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 
 import {
+  engagementPipeline,
   rawTotalsByBucketPipeline,
   rollupTotalsByDatePipeline,
   sessionTotalsByBucketPipeline,
@@ -594,12 +602,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       const site = await siteOrThrow(query.siteId);
       assertFilterable(query.filters);
       const interval: Interval = query.interval ?? 'day';
-      if (interval === 'hour' && query.to - query.from > MAX_HOUR_RANGE_MS) {
-        throw new StoreQueryError(
-          'RANGE_TOO_LONG',
-          'An hourly series reads raw rows, so it is capped at 7 days. Ask for days instead.',
-        );
-      }
+      assertIntervalRange(interval, query.from, query.to);
       const timezone = site.settings.timezone;
       // One query per source for the whole range, not one per bucket. Every row
       // comes back keyed by the instant its day or hour began, and is folded into
@@ -690,10 +693,43 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       return { dim: query.dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT) };
     },
 
+    async engagement(query: Query): Promise<EngagementResult> {
+      await siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      const dim = assertEngageable(query.dim);
+      // One aggregation over the whole range. A leave lives in events and
+      // nowhere else, so there is no rollup half of this read to plan around.
+      const tallies = new Map<string, EngagementTally>();
+      for (const row of await events
+        .aggregate(
+          engagementPipeline(
+            query.siteId,
+            { from: query.from, to: query.to },
+            dim,
+            botSelector(query.filters),
+            query.filters,
+          ),
+        )
+        .toArray()) {
+        if (row._id === null || row._id === undefined) continue;
+        const key = String(row._id);
+        const tally = tallies.get(key) ?? zeroEngagement();
+        addEngagement(tally, row as Partial<EngagementTally>);
+        tallies.set(key, tally);
+      }
+      const rows = sortEngagementRows(
+        [...tallies].map(([key, tally]) => finishEngagement(key, tally)),
+      );
+      return { dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT), rawOnly: true };
+    },
+
     async realtime(siteId: string): Promise<RealtimeSnapshot> {
       await siteOrThrow(siteId);
       const at = now();
-      return snapshotFrom(await presence.entries(siteId, at - ONLINE_WINDOW_MS), at);
+      // The whole presence window, not the online minute: the snapshot carries
+      // the people who were here a few minutes ago beside the ones who are
+      // here now, and only the reader knows which of the two it wants.
+      return snapshotFrom(await presence.entries(siteId, at - REALTIME_WINDOW_MS), at);
     },
 
     async visitor(siteId: string, visitorId: string): Promise<VisitorProfile | null> {

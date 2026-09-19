@@ -1,14 +1,16 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
-  MAX_HOUR_RANGE_MS,
-  ONLINE_WINDOW_MS,
+  REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
   SESSION_DIMENSIONS,
   SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
+  addLeave,
   addSession,
   addTotals,
+  assertEngageable,
+  assertIntervalRange,
   assertFilterable,
   botSelector,
   bucketsBetween,
@@ -17,6 +19,7 @@ import {
   dayBounds,
   dayKey,
   dimensionValue,
+  finishEngagement,
   finishMetrics,
   foldVisitor,
   groupForFold,
@@ -30,13 +33,17 @@ import {
   sessionsAnswerFilters,
   snapshotFrom,
   sortBreakdownRows,
+  sortEngagementRows,
   startOfDay,
+  zeroEngagement,
   zeroTotals,
   type AggregateResult,
   type AnalyticsStore,
   type BreakdownResult,
   type BreakdownRow,
   type Dimension,
+  type EngagementResult,
+  type EngagementTally,
   type Interval,
   type Metrics,
   type Presence,
@@ -590,12 +597,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       const site = siteOrThrow(query.siteId);
       assertFilterable(query.filters);
       const interval: Interval = query.interval ?? 'day';
-      if (interval === 'hour' && query.to - query.from > MAX_HOUR_RANGE_MS) {
-        throw new StoreQueryError(
-          'RANGE_TOO_LONG',
-          'An hourly series reads raw rows, so it is capped at 7 days. Ask for days instead.',
-        );
-      }
+      assertIntervalRange(interval, query.from, query.to);
       const timezone = site.settings.timezone;
       const series = (range: Range): TimeseriesPoint[] =>
         bucketsBetween(range.from, range.to, interval, timezone).map((start, index, all) => {
@@ -623,10 +625,34 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return { dim: query.dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT) };
     },
 
+    async engagement(query: Query): Promise<EngagementResult> {
+      siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      const dim = assertEngageable(query.dim);
+      const tallies = new Map<string, EngagementTally>();
+      // One span, the whole range: a leave lives in events and nowhere else,
+      // so there is no rollup half of this read to plan around.
+      for (const event of rawRows(query, { from: query.from, to: query.to })) {
+        if (event.type !== 'leave') continue;
+        const key = dimensionValue(event, dim);
+        if (key === undefined) continue;
+        const tally = tallies.get(key) ?? zeroEngagement();
+        addLeave(tally, event);
+        tallies.set(key, tally);
+      }
+      const rows = sortEngagementRows(
+        [...tallies].map(([key, tally]) => finishEngagement(key, tally)),
+      );
+      return { dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT), rawOnly: true };
+    },
+
     async realtime(siteId: string): Promise<RealtimeSnapshot> {
       siteOrThrow(siteId);
       const at = now();
-      return snapshotFrom(await presence.entries(siteId, at - ONLINE_WINDOW_MS), at);
+      // The whole presence window, not the online minute: the snapshot carries
+      // the people who were here a few minutes ago beside the ones who are
+      // here now, and only the reader knows which of the two it wants.
+      return snapshotFrom(await presence.entries(siteId, at - REALTIME_WINDOW_MS), at);
     },
 
     visitor(siteId: string, visitorId: string): Promise<VisitorProfile | null> {

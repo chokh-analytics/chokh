@@ -54,7 +54,17 @@ export function fixtureSite(): Site {
 
 const DHAKA = { country: 'BD', region: 'Dhaka', city: 'Dhaka', lat: 23.81, lon: 90.41, tz: TIMEZONE };
 const CHATTOGRAM = { country: 'BD', region: 'Chattogram', city: 'Chattogram', tz: TIMEZONE };
-const KOLKATA = { country: 'IN', region: 'West Bengal', city: 'Kolkata', tz: 'Asia/Kolkata' };
+// Kolkata carries more precision than the presence set is allowed to keep, so
+// the rounding rule is proved end to end and not only in a unit test: v2 is the
+// one visitor who is online, and this is the pair that reaches the map.
+const KOLKATA = {
+  country: 'IN',
+  region: 'West Bengal',
+  city: 'Kolkata',
+  lat: 22.5726459,
+  lon: 88.3638953,
+  tz: 'Asia/Kolkata',
+};
 
 const ANDROID = { browser: 'Chrome', browserVersion: '130', os: 'Android', device: 'mobile' } as const;
 const WINDOWS = { browser: 'Edge', browserVersion: '129', os: 'Windows', device: 'desktop' } as const;
