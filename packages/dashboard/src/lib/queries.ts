@@ -18,6 +18,7 @@ export const HISTORY_STALE_MS = 60_000;
 export const LIVE_STALE_MS = 30_000;
 export const LIVE_REFETCH_MS = 30_000;
 export const REALTIME_POLL_MS = 5_000;
+export const ME_STALE_MS = 5 * 60_000;
 
 export function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -28,7 +29,11 @@ export function createQueryClient(): QueryClient {
         // read by a second and a half.
         retry: (attempt, error) => attempt < 1 && isRetryable(error),
         refetchOnWindowFocus: true,
-        refetchOnMount: false,
+        // Left at the default on purpose. Set to false, a report that has gone
+        // stale while somebody was on another page stays stale when they come
+        // back to it, because a remount is the one moment a page has to ask
+        // again. staleTime is what stops this being a refetch per navigation.
+        refetchOnMount: true,
         // Nothing polls behind a hidden tab.
         refetchIntervalInBackground: false,
       },
@@ -53,9 +58,11 @@ export function useMe(client: Client): UseQueryResult<Answer<Me>> {
   return useQuery({
     queryKey: ['me'],
     queryFn: () => api.me(client),
-    // Who somebody is does not change while they read a chart. It changes when
-    // they come back to the tab, which is what a focus refetch is for.
-    staleTime: Number.POSITIVE_INFINITY,
+    // Who somebody is barely changes while they read a chart, but "barely" is
+    // not "never": a membership or a new site should arrive without a reload,
+    // and an infinite staleTime also means this query never re-renders the
+    // component that holds the clock every range is resolved against.
+    staleTime: ME_STALE_MS,
     retry: false,
   });
 }

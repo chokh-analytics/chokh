@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from 'react';
 
-import { messages } from '../messages/en.js';
+import { format, messages } from '../messages/en.js';
 import type { Delta } from '../lib/format.js';
 import { InfoDot } from './InfoDot.js';
 import { Skeleton } from './State.js';
@@ -51,10 +51,7 @@ export function KpiTile({
 }: KpiTileProps): JSX.Element {
   const body = (
     <>
-      <span className={styles.label}>
-        {label}
-        {help !== undefined && <InfoDot text={help} label={`What ${label} means`} />}
-      </span>
+      <span className={styles.label}>{label}</span>
       {loading ? (
         <Skeleton height={32} width="70%" style={{ marginBlock: 2 }} />
       ) : (
@@ -70,21 +67,40 @@ export function KpiTile({
     </>
   );
 
+  // The help dot is a sibling of the press target and never a child of it.
+  //
+  // A button inside a button is invalid HTML, and it is not a technicality: the
+  // browser gives the inner one no events of its own, so pressing the dot to
+  // read what a metric means would have changed which metric the chart draws.
+  // It sits in the corner instead, above the target rather than inside it.
+  const dot =
+    help === undefined ? null : (
+      <span className={styles.help}>
+        <InfoDot text={help} label={format(messages.a11y.metricHelp, { metric: label })} />
+      </span>
+    );
+
   if (onSelect === undefined) {
-    return <div className={styles.tile}>{body}</div>;
+    return (
+      <div className={styles.tile}>
+        <span className={styles.face}>{body}</span>
+        {dot}
+      </div>
+    );
   }
 
   return (
-    <button
-      type="button"
-      className={[styles.tile, styles.selectable, selected ? styles.current : '']
-        .filter(Boolean)
-        .join(' ')}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
-      {body}
-    </button>
+    <div className={[styles.tile, selected ? styles.current : ''].filter(Boolean).join(' ')}>
+      <button
+        type="button"
+        className={[styles.face, styles.selectable].join(' ')}
+        aria-pressed={selected}
+        onClick={onSelect}
+      >
+        {body}
+      </button>
+      {dot}
+    </div>
   );
 }
 

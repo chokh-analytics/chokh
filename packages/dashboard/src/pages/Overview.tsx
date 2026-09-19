@@ -4,7 +4,7 @@ import type { Dimension, Metrics } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { RangeBar } from '../app/RangeBar.js';
 import { useViewQuery } from '../app/useViewQuery.js';
-import { toggleFilter } from '../lib/filters.js';
+import { isFilterable, toggleFilter } from '../lib/filters.js';
 import {
   delta,
   deltaPoints,
@@ -44,23 +44,52 @@ const METRIC_LABELS: Record<MetricName, string> = {
   avgDuration: messages.metrics.avgDuration,
 };
 
-function valueOf(metrics: Metrics, name: MetricName): number {
+// What a metric is, kept nullable all the way to the formatter.
+//
+// A bounce rate over no visits and an average duration over no visits are both
+// null, and turning them into a zero here is what put "not available" in a tile
+// beside a red "down 100%": the delta was computed against a zero nobody
+// measured. The chart needs a number, so it coalesces at the point of drawing
+// and nowhere earlier.
+function valueOf(metrics: Metrics, name: MetricName): number | null {
   switch (name) {
     case 'visitors':
       return metrics.visitors;
     case 'pageviews':
       return metrics.pageviews;
     case 'bounceRate':
-      return metrics.bounceRate ?? 0;
+      return metrics.bounceRate;
     case 'avgDuration':
-      return metrics.avgDurationMs ?? 0;
+      return metrics.avgDurationMs;
   }
 }
+
+// How each metric is written, so the chart axis, the hover card, the peak line
+// and the hidden table say the same thing the tile above them says. Without
+// this every series is a count, and the bounce rate chart's axis reads 0, 0, 1
+// under a tile that says 30%.
+const METRIC_FORMAT: Record<MetricName, (value: number) => string> = {
+  visitors: formatCount,
+  pageviews: formatCount,
+  bounceRate: (value) => formatRate(value) ?? '',
+  avgDuration: (value) => formatDuration(value) ?? '',
+};
+
+const METRIC_EXACT: Record<MetricName, (value: number) => string> = {
+  visitors: formatExact,
+  pageviews: formatExact,
+  bounceRate: (value) => formatRate(value) ?? '',
+  avgDuration: (value) => formatDuration(value) ?? '',
+};
 
 // One card's worth of rows, with the shares measured against the biggest row in
 // that card rather than against the site total: the point of the bar is to rank
 // what is on screen.
-function useBreakdownCard(dim: Dimension, label: (key: string) => string, icon?: (key: string) => JSX.Element | undefined) {
+function useBreakdownCard(
+  dim: Dimension,
+  label: (key: string) => string,
+  icon?: (key: string) => JSX.Element | undefined,
+) {
   const { client, siteId, query, now, filters } = useOverviewContext();
   const result = useBreakdown({ client, siteId, query, now }, dim, 5);
   const { set } = useViewQuery();
@@ -68,6 +97,11 @@ function useBreakdownCard(dim: Dimension, label: (key: string) => string, icon?:
   const rows: BreakdownRowView[] = useMemo(() => {
     const data = result.data?.data.rows ?? [];
     const top = data.reduce((best, row) => Math.max(best, row.metrics.visitors), 0);
+    // The store refuses a filter naming an entry page, an exit page or a
+    // channel, so toggleFilter drops one and the row does nothing. Five Sources
+    // rows that highlight, take a click and change nothing are worse than five
+    // rows that do not invite one: the row is plain text instead.
+    const filterable = isFilterable(dim);
     return data.map((row) => ({
       key: row.key,
       label: label(row.key),
@@ -75,7 +109,12 @@ function useBreakdownCard(dim: Dimension, label: (key: string) => string, icon?:
       title: formatExact(row.metrics.visitors),
       share: top === 0 ? 0 : row.metrics.visitors / top,
       icon: icon?.(row.key),
-      onClick: () => set({ ...query, filters: toggleFilter(filters, { dim, op: 'is', value: row.key }) }),
+      ...(filterable
+        ? {
+            onClick: () =>
+              set({ ...query, filters: toggleFilter(filters, { dim, op: 'is', value: row.key }) }),
+          }
+        : {}),
     }));
   }, [result.data, label, icon, dim, set, query, filters]);
 
@@ -157,7 +196,7 @@ export function Overview(): JSX.Element {
     () =>
       (series.data?.data.points ?? []).map((point) => ({
         start: point.start,
-        value: valueOf(point.metrics, query.metric),
+        value: valueOf(point.metrics, query.metric) ?? 0,
       })),
     [series.data, query.metric],
   );
@@ -167,7 +206,7 @@ export function Overview(): JSX.Element {
         ? null
         : series.data.data.previous.map((point) => ({
             start: point.start,
-            value: valueOf(point.metrics, query.metric),
+            value: valueOf(point.metrics, query.metric) ?? 0,
           })),
     [series.data, query.metric],
   );
@@ -214,40 +253,44 @@ export function Overview(): JSX.Element {
         <div className={styles.headline}>
           {(totals.isFetching || series.isFetching) && !loading && <Working />}
           <KpiRow>
+            {/*
+              A realtime read that failed is not nobody being here. Drawn as
+              "0 online" with a grey dot it is indistinguishable from a quiet
+              minute, which is the most confident kind of wrong a live tile can
+              be.
+            */}
             <KpiTile
               label={messages.metrics.onlineNow}
-              value={String(live.data?.data.online ?? 0)}
+              value={live.isError ? null : String(live.data?.data.online ?? 0)}
               help={messages.metricHelp.onlineNow}
               loading={live.isPending}
               live={
-                <LiveValue
-                  count={live.data?.data.online ?? 0}
-                  note={format(messages.metrics.signedInSplit, {
-                    signedIn: live.data?.data.signedIn ?? 0,
-                    anonymous: live.data?.data.anonymous ?? 0,
-                  })}
-                />
+                live.isError ? (
+                  <span className={styles.tileError}>{messages.states.error}</span>
+                ) : (
+                  <LiveValue
+                    count={live.data?.data.online ?? 0}
+                    note={format(messages.metrics.signedInSplit, {
+                      signedIn: live.data?.data.signedIn ?? 0,
+                      anonymous: live.data?.data.anonymous ?? 0,
+                    })}
+                  />
+                )
               }
             />
             {METRICS.map((name) => {
-              const isRate = name === 'bounceRate';
-              const isDuration = name === 'avgDuration';
               const raw = metrics === undefined ? null : valueOf(metrics, name);
               const previousRaw = previous === null ? null : valueOf(previous, name);
-              const value =
-                metrics === undefined
-                  ? null
-                  : isRate
-                    ? formatRate(metrics.bounceRate)
-                    : isDuration
-                      ? formatDuration(metrics.avgDurationMs)
-                      : formatCount(raw ?? 0);
               return (
                 <KpiTile
                   key={name}
                   label={METRIC_LABELS[name]}
-                  value={value}
-                  title={isRate || isDuration ? undefined : formatExact(raw ?? 0)}
+                  // Null stays null all the way here, so a duration nobody
+                  // measured reads "not available" rather than 0s.
+                  value={raw === null ? null : METRIC_FORMAT[name](raw)}
+                  title={
+                    name === 'visitors' || name === 'pageviews' ? formatExact(raw ?? 0) : undefined
+                  }
                   help={(messages.metricHelp as Record<string, string>)[name]}
                   loading={loading}
                   selected={query.metric === name}
@@ -255,9 +298,11 @@ export function Overview(): JSX.Element {
                   delta={
                     // A rate moves in points and everything else moves in
                     // percent, because a bounce rate rising from 38 to 41 moved
-                    // three points and "up 7.9%" is true and useless.
-                    isRate
-                      ? deltaPoints(metrics?.bounceRate, previous?.bounceRate, GOOD_WHEN.bounceRate)
+                    // three points and "up 7.9%" is true and useless. Both take
+                    // the nullable value, so an unmeasured number has no delta
+                    // rather than a delta against a zero.
+                    name === 'bounceRate'
+                      ? deltaPoints(raw, previousRaw, GOOD_WHEN.bounceRate)
                       : delta(raw, previousRaw, GOOD_WHEN[name])
                   }
                 />
@@ -273,16 +318,15 @@ export function Overview(): JSX.Element {
           </KpiRow>
 
           {series.isPending ? (
-            <div
-              style={{
-                background: 'var(--paper)',
-                border: '1px solid var(--line)',
-                borderTop: 0,
-                borderRadius: '0 0 var(--r3) var(--r3)',
-                padding: 'var(--s3) var(--s4) var(--s2)',
-              }}
-            >
-              <Skeleton height={190} />
+            <div className={styles.chartPanel}>
+              <Skeleton height="100%" />
+            </div>
+          ) : series.isError ? (
+            // A failed series is not an empty range. Drawn as "No data in this
+            // range" it is a statement about the site rather than about the
+            // request, and it is the statement somebody acts on.
+            <div className={styles.chartPanel}>
+              <ErrorState error={series.error} onRetry={() => series.refetch()} />
             </div>
           ) : (
             <TimeChart
@@ -292,6 +336,8 @@ export function Overview(): JSX.Element {
               previous={previousPoints}
               interval={interval}
               timezone={timezone}
+              formatValue={METRIC_FORMAT[query.metric]}
+              formatExactValue={METRIC_EXACT[query.metric]}
               live={isLive(query.range, now)}
             />
           )}

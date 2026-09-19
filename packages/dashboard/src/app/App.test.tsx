@@ -1,7 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
+import { NOW_TICK_MS, roundedNow, useNow } from './useNow.js';
 
 // The four things that can be true the moment GET /api/me answers, and the one
 // route that decides which of them a person sees.
@@ -184,5 +186,107 @@ describe('who sees what', () => {
     });
     render(<App />);
     await waitFor(() => expect(window.location.pathname).toBe('/s_test'));
+  });
+});
+
+// The session, which is the half of this that nobody sees working and everybody
+// sees failing.
+describe('a session that ends', () => {
+  const ME = {
+    actor: { kind: 'session', id: 'u_1' },
+    user: { id: 'u_1', email: 'owner@chokh.test' },
+    sites: [SITE],
+  };
+
+  // The interceptor used to call setQueryData(['me'], undefined), which
+  // TanStack ignores, so a session that expired mid visit left every card on
+  // the page reporting UNAUTHENTICATED at somebody who could do nothing about
+  // it from there.
+  it('sends an expired session to sign in, carrying where it was', async () => {
+    at('/s_test?range=30d');
+    let expired = false;
+    serve({
+      '/api/me': () => (expired ? refusal(401, 'UNAUTHENTICATED') : envelope(ME)),
+      // The session ends while a report is on screen, which is the case that
+      // matters: the cards were all that noticed, and all they could do was
+      // say UNAUTHENTICATED at somebody who could do nothing about it there.
+      '/api/sites/s_test/stats/aggregate': () => {
+        expired = true;
+        return refusal(401, 'UNAUTHENTICATED');
+      },
+    });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    expect(new URLSearchParams(window.location.search).get('next')).toBe('/s_test?range=30d');
+  });
+
+  // The other half of the same fix: after signing in, back to the report they
+  // were reading rather than to whichever site happens to be first.
+  it('returns to where they were once they are back in', async () => {
+    at('/login?next=%2Fs_test%2Fdevices');
+    serve({
+      '/api/me': () => envelope(ME),
+      '/api/auth/login': () => envelope({ user: ME.user }),
+    });
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe('/s_test/devices'));
+  });
+
+  // Without this the next account at the same browser is served the previous
+  // person's rows while their own load, which on a site with read:identity is
+  // somebody else's addresses.
+  it('empties the cache on the way out', async () => {
+    at('/s_test');
+    let signedIn = true;
+    serve({
+      '/api/me': () => (signedIn ? envelope(ME) : refusal(401, 'UNAUTHENTICATED')),
+      '/api/auth/logout': () => {
+        signedIn = false;
+        return envelope({ signedOut: true });
+      },
+    });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Overview' });
+    expect(document.body.textContent).toContain('Progsity');
+
+    await userEvent.click(screen.getByRole('button', { name: /owner@chokh.test/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    // Nothing of the previous account is left on the page. Without the clear,
+    // the site they could read is still in the cache and still on screen while
+    // the next person's own sites load.
+    await waitFor(() => expect(document.body.textContent).not.toContain('Progsity'));
+  });
+});
+
+// Every range in this dashboard is resolved against now. Read once at render,
+// it stops the moment the page settles, and a dashboard left open all afternoon
+// keeps asking about the same window while Online now, which polls on its own,
+// keeps moving.
+describe('the clock', () => {
+  it('rounds to the tick, so a key changes once a minute and not every render', () => {
+    const at = Date.UTC(2026, 8, 18, 4, 30, 41, 512);
+    expect(roundedNow(at)).toBe(Date.UTC(2026, 8, 18, 4, 30, 0, 0));
+    expect(roundedNow(at + 1_000)).toBe(roundedNow(at));
+    expect(roundedNow(at + 60_000)).toBe(Date.UTC(2026, 8, 18, 4, 31, 0, 0));
+  });
+
+  it('advances the window a report asks about', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.UTC(2026, 8, 18, 4, 0, 30));
+      const { result } = renderHook(() => useNow());
+      const first = result.current;
+
+      act(() => {
+        vi.setSystemTime(Date.UTC(2026, 8, 18, 4, 2, 5));
+        vi.advanceTimersByTime(NOW_TICK_MS * 2);
+      });
+      expect(result.current).toBeGreaterThan(first);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

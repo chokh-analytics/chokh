@@ -169,6 +169,7 @@ export const messages = {
   overview: {
     title: 'Overview',
     chartPeak: 'Peak {value} at {when}',
+    chartPrevious: '{label}: {value}',
     chartNow: 'now',
     topPages: 'Top pages',
     sources: 'Sources',
@@ -253,6 +254,8 @@ export const messages = {
 
   a11y: {
     chartLabel: '{metric} by {interval}, {range}',
+    rangeFromTo: '{from} to {to}',
+    metricHelp: 'What {metric} means',
     chartTable: 'The numbers behind the chart above.',
     bucket: 'Time',
     liveCount: 'People online now',

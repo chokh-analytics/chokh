@@ -28,27 +28,38 @@
   }
 }
 
+/*
+ * A tile is a cell, and the thing inside it is what can be pressed. The help
+ * dot is a sibling of that, because a button inside a button is invalid HTML
+ * and gets no events of its own: pressing the dot would have changed which
+ * metric the chart draws instead of saying what the metric means.
+ */
 .tile {
   position: relative;
-  display: grid;
-  align-content: start;
-  gap: var(--s1);
-  padding: var(--s3) var(--s4);
-  /* Cleared first, because four of these six are buttons and a button keeps the
-   * browser's own border on the two sides this rule does not name: the tiles
-   * that can be pressed would be boxed and the two that cannot would not, which
-   * reads as four selected tiles. */
-  border: 0;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   margin: 0 -1px -1px 0;
-  text-align: left;
-  background: none;
   min-width: 0;
 }
 
-/* A tile that picks the chart metric is a button; one that does not is a plain
- * cell. A control that looks pressable and is not is the thing this product
+.face {
+  display: grid;
+  align-content: start;
+  gap: var(--s1);
+  width: 100%;
+  height: 100%;
+  padding: var(--s3) var(--s4);
+  /* Cleared first, because a button keeps the browser's own border otherwise
+   * and the tiles that can be pressed would be boxed while the two that cannot
+   * would not, which reads as four selected tiles. */
+  border: 0;
+  background: none;
+  text-align: left;
+  min-width: 0;
+}
+
+/* A face that picks the chart metric is a button; one that does not is a plain
+ * span. A control that looks pressable and is not is the thing this product
  * refuses everywhere else too. */
 .selectable {
   cursor: pointer;
@@ -63,11 +74,18 @@
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* Top right, clear of the value and clear of the press target underneath it. */
+.help {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s3);
+  line-height: 0;
+}
+
 .label {
-  display: flex;
-  align-items: center;
-  gap: var(--s1);
   font-family: var(--font-mono);
+  /* Room for the help dot in the corner, so a long label never runs under it. */
+  padding-right: var(--s4);
   font-size: var(--t-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;

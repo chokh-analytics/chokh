@@ -1,7 +1,7 @@
 import { useMemo, useState, type JSX } from 'react';
 import type { Interval } from '@chokh/store/time';
 
-import { formatClock, formatCount, formatDate, formatExact } from '../lib/format.js';
+import { formatClock, formatCount, formatDate } from '../lib/format.js';
 import { format, messages } from '../messages/en.js';
 import styles from './TimeChart.module.css';
 
@@ -38,6 +38,15 @@ export interface TimeChartProps {
   timezone: string;
   metricLabel: string;
   previousLabel?: string;
+  // How this metric is written.
+  //
+  // Without it every series is a count, so the bounce rate chart's axis reads
+  // 0, 0, 1 for what the tile above it calls 30%, and the duration chart reads
+  // 192K where the tile says 3m 12s. The axis, the hover card, the peak line
+  // and the hidden table all go through this, because they are four places
+  // showing one number and four is exactly enough for three of them to drift.
+  formatValue?: (value: number) => string;
+  formatExactValue?: (value: number) => string;
   // Drawn open rather than closed: the last bucket of a live range is a
   // fraction of a bucket, so the final point is marked as "now" rather than
   // being allowed to look like a fall.
@@ -126,8 +135,11 @@ export function TimeChart({
   timezone,
   metricLabel,
   previousLabel = messages.range.previousLabel,
+  formatValue = formatCount,
+  formatExactValue,
   live = false,
 }: TimeChartProps): JSX.Element {
+  const exact = formatExactValue ?? formatValue;
   const [hover, setHover] = useState<number | null>(null);
 
   const max = useMemo(() => {
@@ -153,7 +165,7 @@ export function TimeChart({
         {peak !== null && peak.value > 0 && (
           <span className={styles.peak}>
             {format(messages.overview.chartPeak, {
-              value: formatCount(peak.value),
+              value: formatValue(peak.value),
               when: labelFor(peak.start, interval, timezone),
             })}
           </span>
@@ -169,11 +181,10 @@ export function TimeChart({
           aria-label={format(messages.a11y.chartLabel, {
             metric: metricLabel,
             interval,
-            range: `${labelFor(points[0]?.start ?? 0, interval, timezone)} to ${labelFor(
-              points[points.length - 1]?.start ?? 0,
-              interval,
-              timezone,
-            )}`,
+            range: format(messages.a11y.rangeFromTo, {
+              from: labelFor(points[0]?.start ?? 0, interval, timezone),
+              to: labelFor(points[points.length - 1]?.start ?? 0, interval, timezone),
+            }),
           })}
           onMouseLeave={() => setHover(null)}
           onMouseMove={(event) => {
@@ -199,7 +210,7 @@ export function TimeChart({
                   y2={y}
                 />
                 <text className={styles.tick} x={PAD.left + PLOT.width + 6} y={y + 3.5}>
-                  {formatCount(max * fraction)}
+                  {formatValue(max * fraction)}
                 </text>
               </g>
             );
@@ -269,12 +280,13 @@ export function TimeChart({
             <span className={styles.hoverWhen}>
               {labelFor(hovered.start, interval, timezone)}
             </span>
-            <span className={styles.hoverValue}>
-              {formatExact(hovered.value)} {metricLabel.toLowerCase()}
-            </span>
+            <span className={styles.hoverValue}>{exact(hovered.value)}</span>
             {hoveredPrevious !== undefined && hoveredPrevious !== null && (
               <span className={styles.hoverPrevious}>
-                {previousLabel}: {formatExact(hoveredPrevious.value)}
+                {format(messages.overview.chartPrevious, {
+                  label: previousLabel,
+                  value: exact(hoveredPrevious.value),
+                })}
               </span>
             )}
           </div>
@@ -313,7 +325,7 @@ export function TimeChart({
           {points.map((point) => (
             <tr key={point.start}>
               <th scope="row">{labelFor(point.start, interval, timezone)}</th>
-              <td>{formatExact(point.value)}</td>
+              <td>{exact(point.value)}</td>
             </tr>
           ))}
         </tbody>

@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type JSX } from 'react';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { Redirect, Route, Switch, useLocation, useParams } from 'wouter';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { Redirect, Route, Switch, useLocation, useParams, useSearch } from 'wouter';
 
 import { createClient, type Client } from '../lib/client.js';
 import { createQueryClient, useMe } from '../lib/queries.js';
@@ -10,6 +10,7 @@ import { Overview } from '../pages/Overview.js';
 import { SignIn } from '../pages/SignIn.js';
 import { Splash } from '../ui/Splash.js';
 import { Shell } from './Shell.js';
+import { useNow } from './useNow.js';
 import type { AppContextValue } from './context.js';
 
 // Boot, in the order a browser can actually do it.
@@ -81,34 +82,79 @@ function SiteFrame({
   );
 }
 
-function Authenticated({ client }: { client: Client }): JSX.Element {
-  const [, navigate] = useLocation();
+// Where /login sends somebody back to. Only ever a path of this dashboard,
+// because a next that leaves it is how a trusted link becomes a phishing link,
+// which is the rule the SSO exchange keeps on the server.
+export function safeNext(next: string | null): string | null {
+  if (next === null || !next.startsWith('/') || next.startsWith('//')) {
+    return null;
+  }
+  return next.startsWith('/login') ? null : next;
+}
+
+function Authenticated({
+  client,
+  onExpired,
+}: {
+  client: Client;
+  onExpired: { current: () => void };
+}): JSX.Element {
+  const [location, navigate] = useLocation();
+  const search = useSearch();
+  const queryClient = useQueryClient();
   const me = useMe(client);
+  const now = useNow();
   const [mode, setMode] = useState<'signIn' | 'register'>('signIn');
+
+  // What a 401 from anywhere does, wired to the client the moment this renders.
+  //
+  // It has to live here and not in App, because it needs the router: the whole
+  // point is that somebody whose session expired halfway through a report lands
+  // on the sign in page and comes back to the report they were reading, rather
+  // than looking at a page of cards that each say UNAUTHENTICATED.
+  useEffect(() => {
+    onExpired.current = () => {
+      // Only when somebody was signed in a moment ago. A 401 on the very first
+      // GET /api/me is the ordinary signed out path, and clearing the cache
+      // there restarts the query that just failed, for ever.
+      if (queryClient.getQueryData(['me']) === undefined) {
+        return;
+      }
+      const here = `${location}${search === '' ? '' : `?${search}`}`;
+      // Everything cached belongs to the session that has just ended.
+      queryClient.clear();
+      if (safeNext(here) !== null) {
+        navigate(`/login?next=${encodeURIComponent(here)}`, { replace: true });
+      }
+    };
+  }, [onExpired, location, search, navigate, queryClient]);
 
   const signedOut = useCallback(() => {
     // Everything in the cache belongs to the person who has just left,
-    // including addresses the next person at this browser may not read.
-    void me.refetch();
+    // including addresses the next person at this browser may not read. Clearing
+    // it is not tidiness: without it the next account signing in at this
+    // browser is served the previous person's rows while their own load.
+    queryClient.clear();
     navigate('/login');
-  }, [me, navigate]);
+  }, [navigate, queryClient]);
+
+  const signedIn = useCallback(() => {
+    const next = safeNext(new URLSearchParams(search).get('next'));
+    void me.refetch();
+    if (next !== null) {
+      navigate(next, { replace: true });
+    }
+  }, [me, navigate, search]);
 
   if (me.isPending) {
     return <Splash />;
   }
 
   if (me.isError || me.data === undefined) {
-    return (
-      <SignIn
-        client={client}
-        mode={mode}
-        onModeChange={setMode}
-        onSignedIn={() => void me.refetch()}
-      />
-    );
+    return <SignIn client={client} mode={mode} onModeChange={setMode} onSignedIn={signedIn} />;
   }
 
-  const value = { client, me: me.data.data, now: Date.now(), sites: me.data.data.sites };
+  const value = { client, me: me.data.data, now, sites: me.data.data.sites };
 
   if (value.sites.length === 0) {
     return <FirstRun client={client} onReady={() => void me.refetch()} />;
@@ -120,9 +166,11 @@ function Authenticated({ client }: { client: Client }): JSX.Element {
     <Switch>
       {/* A person who is already signed in and lands on /login has followed a
           stale link or pressed back. Sending them to their numbers is better
-          than showing them a form they do not need. */}
+          than showing them a form they do not need, and to the report the link
+          carried if it carried one: that is the other half of what next is for,
+          because a session can come back before the form is ever submitted. */}
       <Route path="/login">
-        <Redirect to={home} replace />
+        <Redirect to={safeNext(new URLSearchParams(search).get('next')) ?? home} replace />
       </Route>
       {/*
         Two patterns and not one. A wildcard segment does not match its own
@@ -146,6 +194,9 @@ function Authenticated({ client }: { client: Client }): JSX.Element {
 
 export function App(): JSX.Element {
   const queryClient = useMemo(() => createQueryClient(), []);
+  // A box the router fills in, because the client is built once and outside
+  // every router hook, and what a 401 should do is a navigation.
+  const onExpired = useRef<() => void>(() => {});
   const client = useMemo(
     () =>
       createClient({
@@ -153,19 +204,17 @@ export function App(): JSX.Element {
         // empty and every request is same origin. A dev server points it at the
         // collector instead.
         baseUrl: import.meta.env.VITE_API_URL ?? '',
-        onUnauthenticated: () => {
-          // One decision for the whole application: a session that has expired
-          // mid visit puts the person back on the sign in page rather than
-          // leaving every card to fail on its own.
-          queryClient.setQueryData(['me'], undefined);
-        },
+        // One decision for the whole application: a session that has expired
+        // mid visit puts the person back on the sign in page rather than
+        // leaving every card to fail on its own.
+        onUnauthenticated: () => onExpired.current(),
       }),
-    [queryClient],
+    [],
   );
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Authenticated client={client} />
+      <Authenticated client={client} onExpired={onExpired} />
     </QueryClientProvider>
   );
 }

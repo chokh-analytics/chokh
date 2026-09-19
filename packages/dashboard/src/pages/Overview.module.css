@@ -19,3 +19,23 @@
   gap: var(--s4);
   min-width: 0;
 }
+
+/*
+ * The panel the chart lives in, and the one its skeleton and its error state
+ * borrow. One rule, so a load, a failure and a chart are the same shape and the
+ * page never jumps between them.
+ */
+.chartPanel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r3) var(--r3);
+  padding: var(--s3) var(--s4) var(--s2);
+  display: grid;
+  align-content: center;
+}
+
+.tileError {
+  font-size: var(--t-label);
+  color: var(--dead);
+}
