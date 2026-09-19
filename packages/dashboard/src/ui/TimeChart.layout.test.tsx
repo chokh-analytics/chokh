@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CHART_HEIGHT, TimeChart, type ChartPoint } from './TimeChart.js';
+import { CHART_HEIGHT, TimeChart, tickIndexes, type ChartPoint } from './TimeChart.js';
 
 // How big the drawing is, which is a different question from what it draws.
 //
@@ -101,6 +101,30 @@ describe('the size of the drawing', () => {
 function css(name: string): string {
   return readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
 }
+
+// Five dates at a readable size want about ninety pixels each, so making the
+// text legible on a phone and then drawing five of it is the same problem
+// again.
+describe('how many labels the axis holds', () => {
+  it('drops to three where five would run into each other', () => {
+    expect(tickIndexes(30, 390)).toHaveLength(3);
+    expect(tickIndexes(30, 1180)).toHaveLength(5);
+  });
+
+  it('always keeps the first and the last', () => {
+    for (const width of [390, 1180]) {
+      const ticks = tickIndexes(30, width);
+      expect(ticks[0]).toBe(0);
+      expect(ticks[ticks.length - 1]).toBe(29);
+    }
+  });
+
+  it('never invents a label for a bucket that is not there', () => {
+    expect(tickIndexes(2, 390)).toEqual([0, 1]);
+    expect(tickIndexes(1, 390)).toEqual([0]);
+    expect(tickIndexes(0, 390)).toEqual([]);
+  });
+});
 
 describe('the rules a stylesheet keeps', () => {
   it('never lets the card grid choose its own column count', () => {

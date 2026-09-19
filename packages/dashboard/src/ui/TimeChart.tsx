@@ -159,13 +159,17 @@ function labelFor(ts: number, interval: Interval, timezone: string): string {
     : formatDate(ts, timezone);
 }
 
-// Five labels at most, always including the first and the last, so the axis is
-// legible at every range instead of becoming a smear at ninety days.
-function tickIndexes(count: number): number[] {
+// How many labels the axis can hold, always including the first and the last.
+//
+// Five at a readable size needs about ninety pixels each, so a phone gets
+// three: at 390 wide, five dates run into each other and the fix that made
+// them legible would have been undone by the fix that made them fit.
+export function tickIndexes(count: number, width: number): number[] {
   if (count <= 1) {
     return count === 1 ? [0] : [];
   }
-  const wanted = Math.min(5, count);
+  const room = width < 480 ? 3 : 5;
+  const wanted = Math.min(room, count);
   const step = (count - 1) / (wanted - 1);
   return Array.from({ length: wanted }, (_, index) => Math.round(index * step));
 }
@@ -199,7 +203,7 @@ export function TimeChart({
   );
 
   const hasData = points.some((point) => point.value > 0);
-  const ticks = tickIndexes(points.length);
+  const ticks = tickIndexes(points.length, width);
   const hovered = hover === null ? null : points[hover];
   const hoveredPrevious = hover === null ? null : previous?.[hover];
 
