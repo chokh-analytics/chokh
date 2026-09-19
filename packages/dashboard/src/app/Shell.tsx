@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react';
 import { Link, useLocation, useRoute } from 'wouter';
 
 import { api } from '../lib/api.js';
@@ -9,7 +9,8 @@ import {
   nextChoice,
   type ThemeChoice,
 } from '../theme/theme.js';
-import { messages } from '../messages/en.js';
+import { useSiteCounts } from '../lib/queries.js';
+import { format, messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
 import { Popover } from '../ui/Popover.js';
 import popover from '../ui/Popover.module.css';
@@ -99,9 +100,6 @@ function ThemeToggle(): JSX.Element {
 // a group of buttons, not a menu widget: naming a menu promises arrow key
 // navigation, and a screen reader tells somebody to use keys that do nothing.
 function SiteSwitcher({ value }: { value: AppContextValue }): JSX.Element {
-  const [, navigate] = useLocation();
-  const others = value.me.sites;
-
   return (
     <Popover
       align="left"
@@ -115,32 +113,75 @@ function SiteSwitcher({ value }: { value: AppContextValue }): JSX.Element {
         </Button>
       )}
     >
-      {({ close }) => (
-        <>
-          <p className={popover.heading}>{messages.nav.siteSwitcher}</p>
-          {others.map((site) => (
-            <button
-              key={site.id}
-              type="button"
-              className={[popover.item, site.id === value.site.id ? popover.itemCurrent : '']
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => {
-                close();
-                // A site change is a navigation and not a filter: the whole
-                // tree remounts rather than half of it refetching against a
-                // cache that still holds the other site's numbers.
-                navigate(`/${site.id}`);
-              }}
-            >
-              <span>{site.name}</span>
-              <span className={popover.itemNote}>{site.domains[0]}</span>
-            </button>
-          ))}
-          {others.length === 1 && <p className={popover.heading}>{messages.nav.noOtherSites}</p>}
-        </>
-      )}
+      {({ close }) => <SiteList value={value} onPicked={close} />}
     </Popover>
+  );
+}
+
+// The list itself, in its own component because it mounts only when the
+// switcher is open, and that is what makes one live read per site affordable:
+// nothing here is asked for on a page where the list is shut, and the reads
+// share their key with the Overview's own live tile.
+function SiteList({
+  value,
+  onPicked,
+}: {
+  value: AppContextValue;
+  onPicked: () => void;
+}): JSX.Element {
+  const [, navigate] = useLocation();
+  const sites = useMemo(
+    // By name, because the id order the API answers in is an implementation
+    // detail and somebody with six sites is looking for a word. The site being
+    // read stays first wherever its name falls, so the list never moves under
+    // the pointer that opened it.
+    () =>
+      [...value.me.sites].sort((left, right) => {
+        if (left.id === value.site.id) return -1;
+        if (right.id === value.site.id) return 1;
+        return left.name.localeCompare(right.name);
+      }),
+    [value.me.sites, value.site.id],
+  );
+  const counts = useSiteCounts(value.client, sites.map((site) => site.id));
+
+  return (
+    <>
+      <p className={popover.heading}>{messages.nav.siteSwitcher}</p>
+      {sites.map((site) => {
+        const online = counts.online.get(site.id);
+        return (
+          <button
+            key={site.id}
+            type="button"
+            className={[popover.item, site.id === value.site.id ? popover.itemCurrent : '']
+              .filter(Boolean)
+              .join(' ')}
+            onClick={() => {
+              onPicked();
+              // A site change is a navigation and not a filter: the whole tree
+              // remounts rather than half of it refetching against a cache
+              // that still holds the other site's numbers.
+              navigate(`/${site.id}`);
+            }}
+          >
+            <span>{site.name}</span>
+            <span className={popover.itemNote}>
+              {/*
+                The live count is why somebody opens this list: "which of my
+                sites has people on it right now" is the question, and a list
+                of names cannot answer it. A count that has not arrived is
+                absent rather than zero.
+              */}
+              {online === undefined
+                ? site.domains[0]
+                : format(messages.nav.siteOnline, { count: online })}
+            </span>
+          </button>
+        );
+      })}
+      {sites.length === 1 && <p className={popover.heading}>{messages.nav.noOtherSites}</p>}
+    </>
   );
 }
 

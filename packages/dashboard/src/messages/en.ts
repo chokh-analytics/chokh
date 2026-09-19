@@ -44,6 +44,7 @@ export const messages = {
     signOut: 'Sign out',
     siteSwitcher: 'Switch site',
     noOtherSites: 'This is the only site you can read.',
+    siteOnline: '{count} online',
   },
 
   auth: {

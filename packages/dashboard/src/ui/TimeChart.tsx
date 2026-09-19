@@ -175,14 +175,76 @@ function labelFor(ts: number, interval: Interval, timezone: string): string {
 // Five at a readable size needs about ninety pixels each, so a phone gets
 // three: at 390 wide, five dates run into each other and the fix that made
 // them legible would have been undone by the fix that made them fit.
-export function tickIndexes(count: number, width: number): number[] {
+export function tickIndexes(
+  count: number,
+  width: number,
+  // How round the label at an index is, higher being rounder, 0 meaning not
+  // round at all. Only the clock has an answer: a day is as round as the day
+  // beside it.
+  roundnessOf?: (index: number) => number,
+): number[] {
   if (count <= 1) {
     return count === 1 ? [0] : [];
   }
   const room = width < 480 ? 3 : 5;
   const wanted = Math.min(room, count);
   const step = (count - 1) / (wanted - 1);
-  return Array.from({ length: wanted }, (_, index) => Math.round(index * step));
+  const even = Array.from({ length: wanted }, (_, index) => Math.round(index * step));
+  if (roundnessOf === undefined) {
+    return even;
+  }
+
+  // Even spacing on an hourly day picks 0, 6, 12, 17, 23, and 17:00 beside
+  // 12:00 and 23:00 reads as an error rather than as a tick. Each interior
+  // tick moves to the roundest hour within half a step of where it was, which
+  // buys 18:00 without letting a label drift into its neighbour.
+  const reach = Math.max(1, Math.floor(step / 2));
+  return even.map((index, position) => {
+    if (position === 0 || position === wanted - 1) {
+      return index;
+    }
+    let best = index;
+    let bestScore = roundnessOf(index);
+    for (let offset = 1; offset <= reach; offset += 1) {
+      for (const candidate of [index - offset, index + offset]) {
+        if (candidate <= 0 || candidate >= count - 1) {
+          continue;
+        }
+        const score = roundnessOf(candidate);
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
+    }
+    return best;
+  });
+}
+
+// How round a clock time is: midnight and midday first, then the quarters of
+// the day, then every third and every second hour. A minute axis is scored the
+// same way on its minutes, because :00 and :30 read as landmarks and :17 does
+// not.
+export function clockRoundness(ts: number, interval: Interval, timezone: string): number {
+  const [hours, minutes] = formatClock(ts, timezone).split(':').map(Number);
+  if (hours === undefined || minutes === undefined) {
+    return 0;
+  }
+  if (interval === 'minute') {
+    if (minutes === 0) return 4;
+    if (minutes === 30) return 3;
+    if (minutes % 15 === 0) return 2;
+    if (minutes % 5 === 0) return 1;
+    return 0;
+  }
+  if (minutes !== 0) {
+    return 0;
+  }
+  if (hours === 0 || hours === 12) return 4;
+  if (hours % 6 === 0) return 3;
+  if (hours % 3 === 0) return 2;
+  if (hours % 2 === 0) return 1;
+  return 0;
 }
 
 export function TimeChart({
@@ -216,7 +278,13 @@ export function TimeChart({
   );
 
   const hasData = !loading && points.some((point) => point.value > 0);
-  const ticks = tickIndexes(points.length, width);
+  const ticks = tickIndexes(
+    points.length,
+    width,
+    interval === 'minute' || interval === 'hour'
+      ? (index) => clockRoundness(points[index]?.start ?? 0, interval, timezone)
+      : undefined,
+  );
   const hasComparison = !loading && previous !== null && previous !== undefined && previous.length > 1;
   const hovered = hover === null ? null : points[hover];
   const hoveredPrevious = hover === null ? null : previous?.[hover];

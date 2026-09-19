@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -525,5 +525,83 @@ describe('when a report asks again', () => {
     // And never behind a hidden tab: a dashboard left open overnight is not a
     // load test.
     expect(client.getDefaultOptions().queries?.refetchIntervalInBackground).toBe(false);
+  });
+});
+
+// The list somebody opens to answer "which of my sites has people on it right
+// now". A column of names in the order the API happened to return them cannot
+// answer it, and neither can a list that only says the names.
+describe('the site switcher', () => {
+  const OTHERS = [
+    { ...SITE, id: 's_zulu', name: 'Zulu', domains: ['zulu.test'] },
+    SITE,
+    { ...SITE, id: 's_alpha', name: 'Alpha', domains: ['alpha.test'] },
+  ];
+
+  function serveSwitcher(): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string) => {
+        const path = String(input).split('?')[0] ?? '';
+        if (path === '/api/me') {
+          return Promise.resolve(
+            envelope({
+              actor: { kind: 'session', id: 'u_1' },
+              user: { id: 'u_1', email: 'owner@chokh.test' },
+              sites: OTHERS,
+              teams: [],
+            }),
+          );
+        }
+        if (path.endsWith('/realtime')) {
+          const online = path.includes('s_zulu') ? 12 : path.includes('s_alpha') ? 0 : 4;
+          return Promise.resolve(envelope({ online, signedIn: 0, anonymous: online }));
+        }
+        const metrics = {
+          visitors: 10,
+          pageviews: 20,
+          visits: 10,
+          bounces: 2,
+          bounceRate: 0.2,
+          avgDurationMs: 30_000,
+        };
+        if (path.endsWith('/aggregate')) {
+          return Promise.resolve(envelope({ metrics, previous: null }));
+        }
+        if (path.endsWith('/timeseries')) {
+          return Promise.resolve(envelope({ interval: 'day', points: [], previous: null }));
+        }
+        return Promise.resolve(envelope({ dim: 'page', rows: [] }));
+      }),
+    );
+  }
+
+  it('says how many people are on each site', async () => {
+    at('/s_test');
+    serveSwitcher();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Progsity/ }));
+
+    const list = await screen.findByRole('group', { name: 'Switch site' });
+    await waitFor(() => expect(within(list).getByText('12 online')).toBeDefined());
+    expect(within(list).getByText('0 online')).toBeDefined();
+  });
+
+  it('puts the site being read first and the rest by name', async () => {
+    at('/s_test');
+    serveSwitcher();
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Progsity/ }));
+    const list = await screen.findByRole('group', { name: 'Switch site' });
+    await waitFor(() => expect(within(list).getByText('12 online')).toBeDefined());
+
+    const names = within(list)
+      .getAllByRole('button')
+      .map((button) => button.textContent ?? '');
+    expect(names[0]).toContain('Progsity');
+    expect(names[1]).toContain('Alpha');
+    expect(names[2]).toContain('Zulu');
   });
 });

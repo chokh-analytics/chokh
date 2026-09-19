@@ -3,7 +3,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CHART_HEIGHT, TimeChart, tickIndexes, type ChartPoint } from './TimeChart.js';
+import {
+  CHART_HEIGHT,
+  TimeChart,
+  clockRoundness,
+  tickIndexes,
+  type ChartPoint,
+} from './TimeChart.js';
 
 // How big the drawing is, which is a different question from what it draws.
 //
@@ -123,6 +129,52 @@ describe('how many labels the axis holds', () => {
     expect(tickIndexes(2, 390)).toEqual([0, 1]);
     expect(tickIndexes(1, 390)).toEqual([0]);
     expect(tickIndexes(0, 390)).toEqual([]);
+  });
+});
+
+// A day of hours, at UTC so the index is the hour.
+const HOURS = Array.from({ length: 24 }, (_hour, index) => Date.UTC(2026, 8, 18, index, 0, 0));
+const roundness = (index: number): number =>
+  clockRoundness(HOURS[index] ?? 0, 'hour', 'UTC');
+
+describe('where the labels land on a clock', () => {
+  // Evenly spaced, a day of hours labels 0, 6, 12, 17, 23, and 17:00 between
+  // 12:00 and 23:00 reads as a mistake rather than as a tick.
+  it('moves an hourly tick to the round hour beside it', () => {
+    expect(tickIndexes(24, 1180)).toEqual([0, 6, 12, 17, 23]);
+    expect(tickIndexes(24, 1180, roundness)).toEqual([0, 6, 12, 18, 23]);
+  });
+
+  it('keeps the first and the last exactly where the data starts and ends', () => {
+    const ticks = tickIndexes(24, 1180, roundness);
+    expect(ticks[0]).toBe(0);
+    expect(ticks[ticks.length - 1]).toBe(23);
+  });
+
+  // Half a step, no further. A label that walked two hours to find a rounder
+  // number would sit next to its neighbour.
+  it('never moves a tick further than half the gap', () => {
+    const even = tickIndexes(24, 1180);
+    const snapped = tickIndexes(24, 1180, roundness);
+    snapped.forEach((index, position) => {
+      expect(Math.abs(index - (even[position] ?? 0))).toBeLessThanOrEqual(2);
+    });
+  });
+
+  it('scores midnight and midday above the hours between them', () => {
+    const at = (hour: number): number => clockRoundness(Date.UTC(2026, 8, 18, hour), 'hour', 'UTC');
+    expect(at(0)).toBeGreaterThan(at(6));
+    expect(at(6)).toBeGreaterThan(at(3));
+    expect(at(3)).toBeGreaterThan(at(2));
+    expect(at(17)).toBe(0);
+  });
+
+  it('scores a minute axis on its minutes', () => {
+    const at = (minute: number): number =>
+      clockRoundness(Date.UTC(2026, 8, 18, 9, minute), 'minute', 'UTC');
+    expect(at(0)).toBeGreaterThan(at(30));
+    expect(at(30)).toBeGreaterThan(at(15));
+    expect(at(17)).toBe(0);
   });
 });
 

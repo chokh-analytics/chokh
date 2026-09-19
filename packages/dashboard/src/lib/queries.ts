@@ -1,4 +1,4 @@
-import { QueryClient, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { QueryClient, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { Dimension } from '@chokh/store/contract';
 
 import { api, type Me } from './api.js';
@@ -173,5 +173,31 @@ export function useUserProfile(client: Client, siteId: string, userId: string | 
     enabled: userId !== null,
     staleTime: PROFILE_STALE_MS,
     retry: false,
+  });
+}
+
+// How busy each site is, for the switcher.
+//
+// One read per site, and only while the list is open: the switcher mounts its
+// own children when somebody opens it, so nothing here is asked for on a page
+// where the list is shut. They share the ['realtime', siteId] key with the
+// Overview tile, so opening the switcher on the site being read costs nothing.
+export function useSiteCounts(client: Client, siteIds: string[]) {
+  return useQueries({
+    queries: siteIds.map((siteId) => ({
+      queryKey: ['realtime', siteId],
+      queryFn: () => api.realtime(client, siteId),
+      staleTime: REALTIME_POLL_MS,
+    })),
+    combine: (results) => {
+      const online = new Map<string, number>();
+      results.forEach((result, index) => {
+        const siteId = siteIds[index];
+        if (siteId !== undefined && result.data !== undefined) {
+          online.set(siteId, result.data.data.online);
+        }
+      });
+      return { online, pending: results.some((result) => result.isPending) };
+    },
   });
 }
