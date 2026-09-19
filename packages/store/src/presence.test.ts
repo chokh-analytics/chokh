@@ -4,10 +4,10 @@ import { runPresenceConformance } from './conformance/presence.js';
 import {
   createMemoryPresence,
   presenceEntryOf,
-  roundCoordinate,
   snapshotFrom,
   type PresenceEntry,
 } from './presence.js';
+import { roundCoordinate } from './query.js';
 import type { StoredSession } from './types.js';
 
 const NOW = Date.UTC(2026, 8, 18, 4, 0, 0);

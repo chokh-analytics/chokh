@@ -236,6 +236,23 @@ export interface EngagementResult {
   rawOnly: true;
 }
 
+// Two decimal places, and the rounding is a rule of the contract rather than a
+// habit of one adapter, because what makes a coordinate publishable is that
+// nothing more precise was ever kept. It lives here rather than beside the
+// presence set because a dashboard has to apply it too: a visitor profile's
+// home location comes off the visitor row, which the geo database wrote at full
+// precision, and a second copy of this arithmetic in a page is a second thing
+// that can disagree about what "publishable" means.
+export const COORDINATE_DECIMALS = 2;
+
+export function roundCoordinate(value: number): number {
+  const factor = 10 ** COORDINATE_DECIMALS;
+  const rounded = Math.round(value * factor) / factor;
+  // A place a hair west of Greenwich rounds to negative zero, which is a real
+  // number in JavaScript and a surprise everywhere else. Zero is zero.
+  return rounded === 0 ? 0 : rounded;
+}
+
 // Online means a sign of life within the last minute, and "since" is the start
 // of the stay, so "online for 12 minutes" counts from the session. Both are
 // read off the presence set, never off raw events.

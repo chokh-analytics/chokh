@@ -18,6 +18,12 @@ export const HISTORY_STALE_MS = 60_000;
 export const LIVE_STALE_MS = 30_000;
 export const LIVE_REFETCH_MS = 30_000;
 export const REALTIME_POLL_MS = 5_000;
+
+// A profile is a fact about somebody's whole history, not about a range, so it
+// does not go stale in the seconds a stats read does. Half a minute is long
+// enough that walking back and forth between a profile and its timeline does
+// not write two audit rows for one look.
+export const PROFILE_STALE_MS = 30_000;
 export const ME_STALE_MS = 5 * 60_000;
 
 export function createQueryClient(): QueryClient {
@@ -142,5 +148,30 @@ export function useHasAnyData(
     queryFn: () => api.aggregate(client, site.id, { from, to: now }),
     enabled: when,
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+// One person, looked up by hand.
+//
+// Not cached beyond the session and never prefetched: a read that names
+// somebody writes an audit row on the server, so asking speculatively would be
+// writing "this account looked at this person" for a page nobody opened.
+export function useVisitorProfile(client: Client, siteId: string, visitorId: string | null) {
+  return useQuery({
+    queryKey: ['visitor', siteId, visitorId],
+    queryFn: () => api.visitor(client, siteId, visitorId as string),
+    enabled: visitorId !== null,
+    staleTime: PROFILE_STALE_MS,
+    retry: false,
+  });
+}
+
+export function useUserProfile(client: Client, siteId: string, userId: string | null) {
+  return useQuery({
+    queryKey: ['user', siteId, userId],
+    queryFn: () => api.user(client, siteId, userId as string),
+    enabled: userId !== null,
+    staleTime: PROFILE_STALE_MS,
+    retry: false,
   });
 }

@@ -4,11 +4,11 @@ import { Redirect, Route, Switch, useLocation, useParams, useSearch } from 'wout
 
 import { createClient, type Client } from '../lib/client.js';
 import { createQueryClient, useMe } from '../lib/queries.js';
-import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
 import { Devices } from '../pages/Devices.js';
 import { Geo } from '../pages/Geo.js';
 import { Overview } from '../pages/Overview.js';
+import { People } from '../pages/People.js';
 import { Pages } from '../pages/Pages.js';
 import { Realtime } from '../pages/Realtime.js';
 import { Sources } from '../pages/Sources.js';
@@ -25,14 +25,6 @@ import type { AppContextValue } from './context.js';
 // on screen is the splash and not a skeleton of a dashboard: a page of grey
 // rectangles would be a guess at a layout that may never appear. The moment it
 // answers, exactly one of four things is true, and each has its own screen.
-
-function Placeholder({ title }: { title: string }): JSX.Element {
-  // The seven reports arrive in the commits after this one. Until then a
-  // destination that exists in the navigation renders its own name rather than
-  // nothing, so the shell can be walked and judged before there is a chart in
-  // it.
-  return <h1>{title}</h1>;
-}
 
 function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
   return (
@@ -53,7 +45,17 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
       <Route path="/:siteId/devices">
         <Devices />
       </Route>
-      <Route path="/:siteId/people" component={() => <Placeholder title={messages.nav.people} />} />
+      <Route path="/:siteId/people">
+        <People />
+      </Route>
+      {/*
+        Two segments, and both of them matter: a visitor id is a browser and a
+        user id is a person your application named, and the server treats the
+        two lookups differently.
+      */}
+      <Route path="/:siteId/people/:kind/:id">
+        <People />
+      </Route>
       {/* Anything else under a site is a link somebody mistyped, and the
           navigation is still there to get them out of it. */}
       <Route>

@@ -1,0 +1,164 @@
+.page {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.crumb {
+  display: flex;
+}
+
+.lookup {
+  display: grid;
+  gap: var(--s4);
+  padding: var(--s4);
+  max-width: 56ch;
+}
+
+.lede,
+.note {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.note {
+  font-size: var(--t-label);
+}
+
+/* The field and its button on one line, and the button at the bottom of it so
+ * it sits against the input rather than against the help text under it. */
+.form {
+  display: flex;
+  gap: var(--s2);
+  align-items: flex-start;
+}
+
+.form > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin: 0;
+  padding: var(--s3) var(--s4) 0;
+  flex-wrap: wrap;
+}
+
+.whoName {
+  font-size: var(--t-h1);
+  color: var(--ink);
+}
+
+.whoId {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3) var(--s5);
+  margin: 0;
+  padding: var(--s4);
+}
+
+@media (max-width: 680px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fact {
+  min-width: 0;
+}
+
+.factLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  color: var(--muted);
+}
+
+.factValue {
+  margin: var(--s1) 0 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.logged {
+  margin: 0;
+  padding: 0 var(--s4) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: var(--s2) var(--s4) var(--s3);
+  display: grid;
+}
+
+.entry {
+  min-width: 0;
+}
+
+.day {
+  margin: var(--s3) 0 var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/*
+ * A fixed column for the clock and a fixed column for the verb, so fifty rows
+ * read down the page as three columns rather than as fifty sentences of
+ * different lengths.
+ */
+.entryRow {
+  display: grid;
+  grid-template-columns: 9ch 10ch minmax(0, 1fr);
+  gap: var(--s2);
+  align-items: baseline;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-body);
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.kind {
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.what {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

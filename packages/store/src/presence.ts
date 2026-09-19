@@ -2,6 +2,7 @@ import {
   MAX_RECENT_VISITORS,
   ONLINE_WINDOW_MS,
   REALTIME_WINDOW_MS,
+  roundCoordinate,
   type CityCountRow,
   type CountRow,
   type RealtimeSnapshot,
@@ -47,19 +48,6 @@ export interface PresenceEntry {
   lon?: number;
   ip?: string;
   userId?: string;
-}
-
-// Two decimal places, and the rounding is a rule of the contract rather than a
-// habit of one adapter, because what makes a coordinate publishable is that
-// nothing more precise was ever kept.
-export const COORDINATE_DECIMALS = 2;
-
-export function roundCoordinate(value: number): number {
-  const factor = 10 ** COORDINATE_DECIMALS;
-  const rounded = Math.round(value * factor) / factor;
-  // A place a hair west of Greenwich rounds to negative zero, which is a real
-  // number in JavaScript and a surprise everywhere else. Zero is zero.
-  return rounded === 0 ? 0 : rounded;
 }
 
 export interface Presence {
