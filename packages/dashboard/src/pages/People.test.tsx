@@ -54,10 +54,12 @@ function profile(over: Record<string, unknown> = {}) {
     devices: ['Chrome on Windows'],
     ips: [],
     firstTouch: { channel: 'organic', referrer: 'google.com' },
+    // Two stays: two things on the 19th, one the day before. Every event
+    // carries the stay ingest stamped it with.
     timeline: [
-      { ts: Date.UTC(2026, 8, 19, 17, 30, 0), type: 'pageview', path: '/pricing' },
-      { ts: Date.UTC(2026, 8, 19, 17, 28, 0), type: 'event', name: 'signup' },
-      { ts: Date.UTC(2026, 8, 18, 9, 0, 0), type: 'pageview', path: '/docs' },
+      { ts: Date.UTC(2026, 8, 19, 17, 30, 0), type: 'pageview', path: '/pricing', sessionId: 's_2' },
+      { ts: Date.UTC(2026, 8, 19, 17, 28, 0), type: 'event', name: 'signup', sessionId: 's_2' },
+      { ts: Date.UTC(2026, 8, 18, 9, 0, 0), type: 'pageview', path: '/docs', sessionId: 's_1' },
     ],
     ...over,
   };
@@ -79,8 +81,46 @@ function refused(code: string, message: string, status = 403): Response {
   } as unknown as Response;
 }
 
-function serve(answer: () => Response = () => ok(profile())): void {
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(answer())));
+function realtime(over: Record<string, unknown> = {}) {
+  return {
+    online: 0,
+    signedIn: 0,
+    anonymous: 0,
+    byPage: [],
+    byCountry: [],
+    byCity: [],
+    visitors: [],
+    recent: [],
+    ...over,
+  };
+}
+
+function present(over: Record<string, unknown> = {}) {
+  return {
+    visitorId: 'v_abcdef123456',
+    sessionId: 's_now',
+    since: NOW - 300_000,
+    lastSeenAt: NOW - 10_000,
+    path: '/pricing',
+    country: 'BD',
+    city: 'Dhaka',
+    browser: 'Chrome',
+    os: 'Android',
+    device: 'mobile',
+    ...over,
+  };
+}
+
+function serve(
+  answer: () => Response = () => ok(profile()),
+  live: () => Response = () => ok(realtime()),
+): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: string) =>
+      Promise.resolve(String(input).includes('/realtime') ? live() : answer()),
+    ),
+  );
 }
 
 function show(): JSX.Element {
@@ -130,6 +170,55 @@ describe('People, looking somebody up', () => {
     expect(screen.getByText(/needs the read:identity permission/)).toBeInTheDocument();
   });
 
+  // A search box with nothing beside it only works for somebody who already has
+  // an id to paste, and nobody has one.
+  it('lists everybody seen in the last half hour under the box', async () => {
+    serve(
+      () => ok(profile()),
+      () =>
+        ok(
+          realtime({
+            online: 1,
+            anonymous: 1,
+            visitors: [present()],
+            recent: [present({ visitorId: 'v_earlier', path: '/docs' })],
+          }),
+        ),
+    );
+    render(show());
+
+    const here = await screen.findByRole('region', { name: 'Here in the last half hour' });
+    await waitFor(() => expect(within(here).getByText('/pricing')).toBeInTheDocument());
+    expect(within(here).getByText('/docs')).toBeInTheDocument();
+    expect(within(here).getByText('Seen in the last 30 minutes')).toBeInTheDocument();
+  });
+
+  it('opens a profile from a row of that list', async () => {
+    serve(
+      () => ok(profile()),
+      () => ok(realtime({ online: 1, anonymous: 1, visitors: [present()] })),
+    );
+    render(show());
+
+    const here = await screen.findByRole('region', { name: 'Here in the last half hour' });
+    await waitFor(() => expect(within(here).getByText('/pricing')).toBeInTheDocument());
+    await userEvent.click(within(here).getByRole('button', { name: /Visitor/ }));
+
+    expect(window.location.pathname).toBe('/s_test/people/v/v_abcdef123456');
+  });
+
+  it('says so when nobody has been here', async () => {
+    serve();
+    render(show());
+
+    const here = await screen.findByRole('region', { name: 'Here in the last half hour' });
+    await waitFor(() =>
+      expect(
+        within(here).getByText('Nobody has been on the site in the last half hour.'),
+      ).toBeInTheDocument(),
+    );
+  });
+
   it('goes to the profile of the id that was typed', async () => {
     serve();
     render(show());
@@ -142,16 +231,21 @@ describe('People, looking somebody up', () => {
 });
 
 describe('People, one profile', () => {
-  it('rounds the home location to two decimals before it is shown', async () => {
+  // A pair of coordinates is for putting a dot on a map, and there is no map on
+  // a profile: printed beside somebody's name it reads as a position rather
+  // than a place, which is a different claim about a person.
+  it('names the place and prints no coordinates', async () => {
     at('/s_test/people/v/v_abcdef123456');
     serve();
     render(show());
 
     const facts = await screen.findByRole('region', { name: 'Profile' });
     await waitFor(() =>
-      expect(within(facts).getByText('Dhaka, Bangladesh (23.81, 90.41)')).toBeInTheDocument(),
+      expect(within(facts).getByText('Dhaka, Bangladesh')).toBeInTheDocument(),
     );
-    // The number ingest actually stored must not reach the screen.
+    expect(within(facts).queryByText(/23\.81/)).toBeNull();
+    expect(within(facts).queryByText(/90\.41/)).toBeNull();
+    // And nothing the geo database stored at full precision.
     expect(within(facts).queryByText(/23\.8103456/)).toBeNull();
   });
 
@@ -160,7 +254,7 @@ describe('People, one profile', () => {
     serve();
     render(show());
 
-    await screen.findByText('Dhaka, Bangladesh (23.81, 90.41)');
+    await screen.findByText('Dhaka, Bangladesh');
     expect(screen.queryByText('Addresses')).toBeNull();
   });
 
@@ -173,18 +267,81 @@ describe('People, one profile', () => {
     expect(screen.getByText('This lookup was written to the audit log.')).toBeInTheDocument();
   });
 
-  it('draws the timeline newest first, with the date once per day', async () => {
+  // Fifty rows of pageviews is a log, and a log is what an analytics product
+  // gives you instead of an answer. Four visits is the shape of the thing.
+  it('groups the timeline into the stays it actually was', async () => {
     at('/s_test/people/v/v_abcdef123456');
     serve();
     render(show());
 
     const timeline = await screen.findByRole('region', { name: 'What they did' });
-    await waitFor(() => expect(within(timeline).getByText('/pricing')).toBeInTheDocument());
-    const items = within(timeline).getAllByRole('listitem');
-    expect(items[0]?.textContent).toContain('/pricing');
-    expect(items[2]?.textContent).toContain('/docs');
-    // Two entries on the 19th, one on the 18th: two date headings, not three.
-    expect(within(timeline).getAllByText(/2026$/)).toHaveLength(2);
+    // Two stays from three events, the most recent one open. Found by what the
+    // head says rather than by counting buttons, because the card's help dot is
+    // a button too.
+    const heads = (): HTMLElement[] =>
+      within(timeline).getAllByRole('button', { name: /what happened/i });
+    await waitFor(() => expect(heads()).toHaveLength(2));
+    const stays = heads();
+    expect(stays[0]).toHaveAttribute('aria-expanded', 'true');
+    expect(stays[1]).toHaveAttribute('aria-expanded', 'false');
+    expect(stays[0]).toHaveTextContent('2 things');
+
+    // The open one shows what happened in it; the shut one does not.
+    expect(within(timeline).getByText('/pricing')).toBeInTheDocument();
+    expect(within(timeline).queryByText('/docs')).toBeNull();
+
+    await userEvent.click(stays[1] as HTMLElement);
+    expect(within(timeline).getByText('/docs')).toBeInTheDocument();
+  });
+
+  it('keeps a row with no stay on it rather than dropping it', async () => {
+    at('/s_test/people/v/v_abcdef123456');
+    serve(() =>
+      ok(
+        profile({
+          timeline: [
+            { ts: Date.UTC(2026, 8, 19, 17, 30, 0), type: 'pageview', path: '/old' },
+            { ts: Date.UTC(2026, 8, 19, 17, 28, 0), type: 'pageview', path: '/older' },
+          ],
+        }),
+      ),
+    );
+    render(show());
+
+    const timeline = await screen.findByRole('region', { name: 'What they did' });
+    // A row written before ingest stamped stays becomes a stay of its own
+    // rather than joining somebody else's.
+    await waitFor(() =>
+      expect(within(timeline).getAllByRole('button', { name: /what happened/i })).toHaveLength(2),
+    );
+  });
+
+  it('says they are here now, and what they are reading', async () => {
+    at('/s_test/people/v/v_abcdef123456');
+    serve(
+      () => ok(profile()),
+      () => ok(realtime({ online: 1, anonymous: 1, visitors: [present()] })),
+    );
+    render(show());
+
+    const facts = await screen.findByRole('region', { name: 'Profile' });
+    // The live line, which carries both words: the facts list below has a
+    // "Last seen" label of its own, so this matches the sentence and not the
+    // label.
+    await waitFor(() =>
+      expect(within(facts).getByText(/Online now.*Reading \/pricing/)).toBeInTheDocument(),
+    );
+    expect(within(facts).queryByText(/Last seen \S/)).toBeNull();
+  });
+
+  it('says when they were last seen when they are not here', async () => {
+    at('/s_test/people/v/v_abcdef123456');
+    serve();
+    render(show());
+
+    const facts = await screen.findByRole('region', { name: 'Profile' });
+    await waitFor(() => expect(within(facts).getByText(/Last seen \S/)).toBeInTheDocument());
+    expect(within(facts).queryByText(/Online now/)).toBeNull();
   });
 
   // A user lookup names a person, so the server refuses it outright rather than

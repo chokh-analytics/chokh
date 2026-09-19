@@ -313,6 +313,10 @@ export interface TimelineEntry {
   type: EventType;
   path?: string;
   name?: string;
+  // Which stay this belongs to, so a profile can group fifty events into the
+  // four visits they actually were. Stamped by ingest under the thirty minute
+  // gap rule; absent only on a row written before that stamping existed.
+  sessionId?: string;
 }
 
 export interface VisitorProfile {

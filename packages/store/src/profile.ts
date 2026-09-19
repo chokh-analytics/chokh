@@ -145,6 +145,8 @@ export function profileFrom(
       const entry: TimelineEntry = { ts: event.ts, type: event.type };
       if (event.path !== undefined) entry.path = event.path;
       if (event.name !== undefined) entry.name = event.name;
+      // The stay, so a reader sees four visits rather than fifty events.
+      if (event.sessionId !== undefined) entry.sessionId = event.sessionId;
       return entry;
     });
 

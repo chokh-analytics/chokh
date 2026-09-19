@@ -24,6 +24,11 @@ export const REALTIME_POLL_MS = 5_000;
 // enough that walking back and forth between a profile and its timeline does
 // not write two audit rows for one look.
 export const PROFILE_STALE_MS = 30_000;
+
+// How often a profile asks whether that person is still here. Slower than the
+// Realtime page's own poll, because this is one badge beside a name rather
+// than the report somebody is watching.
+export const PROFILE_PRESENCE_MS = 15_000;
 export const ME_STALE_MS = 5 * 60_000;
 
 export function createQueryClient(): QueryClient {

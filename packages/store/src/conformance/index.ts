@@ -688,6 +688,17 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(profile?.timeline[0]?.ts).toBe(Date.UTC(2026, 8, 18, 3, 50, 0));
       });
 
+      // A profile reads as the visits it was, not as a list of fifty events,
+      // and the only thing that can group them is the stay ingest stamped.
+      it('says which stay each thing on the timeline belongs to', async () => {
+        const profile = await store.visitor(F.SITE_ID, 'v1');
+        const stays = profile?.timeline.map((entry) => entry.sessionId) ?? [];
+        expect(stays.every((stay) => typeof stay === 'string' && stay.length > 0)).toBe(true);
+        // This visitor came back across three days, so the timeline covers
+        // more than one stay.
+        expect(new Set(stays).size).toBeGreaterThan(1);
+      });
+
       it('keeps the first and the last thing that brought them', async () => {
         const profile = await store.visitor(F.SITE_ID, 'v3');
         // v3 arrived from a search and came back on their own two days later.
