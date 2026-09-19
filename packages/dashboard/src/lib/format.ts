@@ -263,3 +263,28 @@ export function countryName(code: string | undefined): string | null {
     return null;
   }
 }
+
+// A language tag as a language. Same reasoning as the country above: "bn" is a
+// row nobody can read at a glance, and the browser already knows the word.
+let languages: Intl.DisplayNames | null | undefined;
+
+export function languageName(tag: string | undefined): string | null {
+  if (tag === undefined || !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(tag)) {
+    return null;
+  }
+  if (languages === undefined) {
+    try {
+      languages = new Intl.DisplayNames(['en'], { type: 'language' });
+    } catch {
+      languages = null;
+    }
+  }
+  try {
+    const name = languages?.of(tag) ?? null;
+    // Intl answers with the tag itself when it knows nothing, which would put
+    // the same string in the label and the badge beside it.
+    return name === null || name.toLowerCase() === tag.toLowerCase() ? null : name;
+  } catch {
+    return null;
+  }
+}

@@ -5,7 +5,7 @@ import { useApp } from '../app/context.js';
 import { useTabParam } from '../app/useTabParam.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { isFilterable, toggleFilter } from '../lib/filters.js';
-import { countryName, formatCount, formatExact, formatRate } from '../lib/format.js';
+import { countryName, formatCount, formatExact, formatRate, languageName } from '../lib/format.js';
 import { useBreakdown } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { Breakdown, Code, type BreakdownRowView } from '../ui/Breakdown.js';
@@ -95,7 +95,9 @@ export function DimensionCard({
       unknown: row.key === '',
       // The code beside the name, because a filter is written in codes and
       // somebody reading "United Kingdom" should be able to see what to type.
-      ...(dim === 'country' && row.key !== '' ? { icon: <Code>{row.key}</Code> } : {}),
+      ...((dim === 'country' || dim === 'lang') && row.key !== ''
+        ? { icon: <Code>{row.key}</Code> }
+        : {}),
       ...(filterable
         ? {
             onClick: () =>
@@ -192,6 +194,9 @@ export function labelFor(dim: Dimension, key: string): string {
   }
   if (dim === 'country') {
     return countryName(key) ?? key;
+  }
+  if (dim === 'lang') {
+    return languageName(key) ?? key;
   }
   return key;
 }

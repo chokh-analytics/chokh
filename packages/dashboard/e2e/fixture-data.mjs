@@ -177,7 +177,13 @@ export function breakdown(dim, limit = 10) {
   const falloff = FALLOFF[dim] ?? 1.5;
   const rows = keys.slice(0, limit).map((key, index) => ({
     key,
-    metrics: metrics(Math.max(11, Math.round(top / falloff ** index))),
+    metrics: metrics(Math.max(11, Math.round(top / falloff ** index)), {
+      // A rate that is the same on every row is a column nobody reads, and on
+      // a screenshot it reads as a bug. These walk, so the Sources report shows
+      // what it is for: search bounces less than social.
+      bounceRate: Math.round((0.22 + ((index * 7) % 9) * 0.045) * 100) / 100,
+      avgDurationMs: 60_000 + ((index * 5) % 7) * 31_000,
+    }),
   }));
   return { dim, rows };
 }

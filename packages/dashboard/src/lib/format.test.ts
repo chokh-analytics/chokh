@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   COMPACT_FROM,
+  languageName,
   delta,
   deltaPoints,
   countryName,
@@ -180,5 +181,22 @@ describe('countryName', () => {
     expect(countryName('')).toBeNull();
     expect(countryName('BDX')).toBeNull();
     expect(countryName('12')).toBeNull();
+  });
+});
+
+describe('languageName', () => {
+  it('names the language a tag stands for', () => {
+    expect(languageName('bn')).toBe('Bangla');
+    expect(languageName('en')).toBe('English');
+    expect(languageName('pt-BR')).toBe('Brazilian Portuguese');
+  });
+
+  // Intl answers with the tag itself when it knows nothing, which would put the
+  // same string in the label and in the code badge beside it.
+  it('answers null rather than echoing a tag back', () => {
+    expect(languageName('zz')).toBeNull();
+    expect(languageName(undefined)).toBeNull();
+    expect(languageName('')).toBeNull();
+    expect(languageName('not a tag')).toBeNull();
   });
 });
