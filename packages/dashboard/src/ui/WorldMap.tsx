@@ -8,10 +8,10 @@ import styles from './WorldMap.module.css';
 
 // One dot per city, sized by how many people are in it.
 //
-// This is the report neither Plausible nor Fathom has, and the one the founder
-// asked for first. It is only on Realtime, because only the presence set
-// carries coordinates: a city breakdown over a range answers names, and a name
-// is not a place.
+// It is only on Realtime, because only the presence set carries coordinates: a
+// city breakdown over a range answers names, and a name is not a place. That is
+// also why an aggregate-only product cannot draw this one however it wants to,
+// and why this product can: it keeps a live entry per visitor for a minute.
 //
 // The coordinates are rounded to two decimals when the presence entry is
 // written, which is about a kilometre. That rounding is why they are not behind

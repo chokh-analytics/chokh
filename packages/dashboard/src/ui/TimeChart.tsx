@@ -451,8 +451,8 @@ export function TimeChart({
 
       {/*
         The numbers, for anybody who cannot see the line. A chart with an
-        aria-label is a described picture; a chart with its own table is data.
-        Neither Plausible nor Fathom does this.
+        aria-label is a described picture; a chart with its own table is data,
+        and it is the rule every chart in this product follows.
       */}
       <table className="sr-only">
         <caption>{messages.a11y.chartTable}</caption>

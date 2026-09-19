@@ -23,6 +23,101 @@ a collector, a stats API, a realtime stream and a dashboard.
 - Single sign-on, so a staff member clicks through from your own admin panel and
   is already signed in
 
+## The dashboard
+
+![The Chokh overview, light](docs/images/dashboard-overview-light.png)
+
+Six numbers, one chart, four cards, and nothing else on the first screen. Every
+number carries a comparison, because a number on its own is not something
+anybody can act on. Clicking any row filters the whole page rather than opening
+another one: click a country and the pages, the sources and the devices become
+that country's.
+
+The five rules it is designed around:
+
+1. The first screen answers the question. Everything else is a report somebody
+   asked for.
+2. Every number carries a comparison.
+3. One accent colour. Green and red mean good and bad, never "this series" and
+   "that series".
+4. Any row can be clicked to filter, and a row that cannot be filtered is not
+   dressed up as one that can.
+5. Nothing pretends. A read that failed says so instead of drawing a zero, a
+   number nobody measured says "not available" instead of 0, and a page nobody
+   has closed yet has no time on page rather than a time of nought.
+
+**Realtime** is the report that says who, and not only how many.
+
+![Who is on the site right now, dark](docs/images/dashboard-realtime-dark.png)
+
+Online first, then everybody seen in the last half hour in a muted tone,
+because a page that empties at three in the morning reads as broken. The map
+places a dot per city from coordinates that were rounded to two decimals, about
+a kilometre, when the presence entry was written: what is kept is where a city
+is, and it was never anything finer. An address is a different matter and
+appears only for an account with `read:identity`, which is said on screen along
+with the fact that the read was logged.
+
+**Geography** paints five bands on a log scale.
+
+![Visitors by country](docs/images/dashboard-geo-light.png)
+
+A continuous ramp looks more precise and reads worse: nobody can tell 1,400
+from 1,700 by shade, and on analytics data a linear scale paints the world in
+the lightest band with one country in the darkest. The outlines are projected
+once at build time and shipped as path strings, so no browser downloads a
+mapping library to draw a file that never changes.
+
+**It comes with the server.** There is no second process, no separate host and
+no CDN: `docker compose up` serves the dashboard and the collector on one
+origin, which is also why the session cookie works and why nothing here is a
+cross-origin request.
+
+### What it costs to load
+
+Measured on 2026-09-20 with `pnpm size:dashboard`, which reads the build
+manifest and gzips each file:
+
+| | gzipped |
+| --- | --- |
+| Application | 73.8 KB |
+| Libraries (React, the router, the query cache) | 84.6 KB |
+| Stylesheet | 7.3 KB |
+| Fonts (IBM Plex Sans and Mono, latin, woff2) | 59.0 KB |
+
+The fonts are counted because they are served from the install: a dashboard
+that fetches a font from somebody else's CDN tells that CDN who is reading it,
+which is the thing this product exists not to do. The budgets are per file and
+CI fails a build that exceeds one.
+
+### Accessibility
+
+Lighthouse scores it 1 on the Overview and on Realtime, in both the light and
+the dark palette, over 25 and 28 applicable audits respectively. CI fails under
+1, and the run also asserts that the page it audited had the dashboard rendered
+in it, because Lighthouse scores a blank page 1. Every chart carries its numbers
+as a table for a screen reader, including the world map.
+
+### Keyboard
+
+`g` then a letter for a report, `t` `y` `7` `3` for the ranges, `[` and `]` to
+step the window, `c` for the comparison, `x` to clear the filters, `l` for the
+palette. `?` lists them all. Nothing fires while you are typing, and nothing
+takes a key the browser already uses.
+
+### Pictures and audits
+
+```bash
+pnpm --filter @chokh/dashboard build
+pnpm --filter @chokh/dashboard run shots   # fourteen screenshots, seven reports in two themes
+pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
+pnpm --filter @chokh/dashboard run test:e2e
+```
+
+Each starts its own fixture install, so none of them needs a database, and the
+clock is frozen for the screenshots so the same command produces the same
+pictures.
+
 ## One-line install
 
 ```bash
