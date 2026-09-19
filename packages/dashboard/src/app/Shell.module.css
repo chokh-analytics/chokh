@@ -7,10 +7,19 @@
  * because of it.
  */
 
+/*
+ * A flex column and not a grid.
+ *
+ * A sticky element inside a grid sticks within its own grid area, and a row
+ * sized auto is exactly as tall as its contents, so it has nowhere to travel:
+ * the bar below would scroll away with the page and look like it had simply
+ * been forgotten. In a flex column the containing block is the whole column,
+ * which is what sticky needs.
+ */
 .shell {
   min-height: 100dvh;
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
 }
 
 .bar {
@@ -29,6 +38,9 @@
   align-items: center;
   gap: var(--s3);
   flex-wrap: wrap;
+  /* The height the range bar below sticks under. Fixed rather than measured, so
+   * the two never overlap by a pixel on some font's line height. */
+  min-height: var(--topbar-height);
 }
 
 .spacer {
@@ -84,8 +96,9 @@
   max-width: var(--page-max);
   width: 100%;
   margin: 0 auto;
-  padding: var(--s5) var(--gutter) var(--s7);
+  padding: 0 var(--gutter) var(--s7);
   min-width: 0;
+  flex: 1;
 }
 
 /* The two rows stack under a phone's width rather than scrolling sideways as a

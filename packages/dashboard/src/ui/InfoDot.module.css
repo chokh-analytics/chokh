@@ -1,0 +1,44 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dot {
+  display: inline-flex;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  line-height: 0;
+  border-radius: 50%;
+  transition: color var(--fast) ease-out;
+}
+
+.dot:hover {
+  color: var(--accent-ink);
+}
+
+/* Above rather than below, because these sit in a row of card headers and a
+ * bubble hanging down would cover the first line of numbers. */
+.bubble {
+  position: absolute;
+  bottom: calc(100% + var(--s2));
+  left: -8px;
+  z-index: 50;
+  width: max-content;
+  max-width: min(320px, calc(100vw - var(--gutter) * 2));
+  padding: var(--s2) var(--s3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--t-label);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
+  white-space: normal;
+}

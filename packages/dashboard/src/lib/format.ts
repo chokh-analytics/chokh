@@ -236,14 +236,30 @@ export function formatOnlineFor(since: number, now: number): string {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
-// A country code as its flag. Two regional indicator letters, which every
-// modern system draws and which costs no image and no request. A code that is
-// not two letters comes back empty rather than as two stray glyphs.
-export function flagOf(country: string | undefined): string {
-  if (country === undefined || !/^[A-Za-z]{2}$/.test(country)) {
-    return '';
+// A country code as a country.
+//
+// Not a flag. Two regional indicator letters are the obvious answer and they
+// are the wrong one: Windows ships no flag glyphs, so on a large share of the
+// machines this dashboard is read from, every row of the countries card would
+// be two empty boxes followed by two letters. Intl.DisplayNames is in every
+// browser this product supports and answers with the name somebody actually
+// reads, with the code kept beside it for the ones that are ambiguous.
+let regions: Intl.DisplayNames | null | undefined;
+
+export function countryName(code: string | undefined): string | null {
+  if (code === undefined || !/^[A-Za-z]{2}$/.test(code)) {
+    return null;
   }
-  return String.fromCodePoint(
-    ...[...country.toUpperCase()].map((letter) => 0x1f1e6 + letter.charCodeAt(0) - 65),
-  );
+  if (regions === undefined) {
+    try {
+      regions = new Intl.DisplayNames(['en'], { type: 'region' });
+    } catch {
+      regions = null;
+    }
+  }
+  try {
+    return regions?.of(code.toUpperCase()) ?? null;
+  } catch {
+    return null;
+  }
 }

@@ -1,0 +1,98 @@
+/*
+ * The three things a card says when it is not showing numbers.
+ *
+ * All three are a sentence and none is a blank box. The difference between "no
+ * data yet", "your filters matched nobody" and "that did not load" is the
+ * difference between waiting, adjusting and retrying, and a grey rectangle
+ * tells somebody none of it.
+ */
+
+.state {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  padding: var(--s4) var(--s2);
+  color: var(--muted);
+  font-size: var(--t-body);
+}
+
+.centred {
+  justify-items: center;
+  text-align: center;
+}
+
+.errorCode {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--dead);
+}
+
+/*
+ * A skeleton is the exact height of the thing it stands in for. Anything else
+ * makes the page jump when the numbers land, and layout shift is both a
+ * Lighthouse audit and the most irritating thing a dashboard can do.
+ */
+.skeleton {
+  background: linear-gradient(90deg, var(--soft) 25%, var(--line) 50%, var(--soft) 75%);
+  background-size: 300% 100%;
+  border-radius: var(--r1);
+  animation: sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--soft);
+  }
+}
+
+/*
+ * A refetch keeps the numbers on screen at full strength and says so with a
+ * thread under the bar. Greying out figures somebody can still read is a worse
+ * lie than showing them.
+ */
+.working {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+}
+
+.working::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: var(--accent);
+  animation: slide 1.1s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

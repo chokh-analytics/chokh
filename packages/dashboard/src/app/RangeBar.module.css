@@ -1,0 +1,153 @@
+/*
+ * The sticky second row: what window, compared against what, narrowed by what,
+ * drawn in whose clock.
+ *
+ * It sticks under the navigation rather than scrolling away, because on a long
+ * report the question "which range am I looking at" is the one somebody asks
+ * halfway down.
+ */
+
+.bar {
+  position: sticky;
+  /* Under the navigation, not on top of it. On a long report the question
+   * "which range am I looking at" is the one somebody asks halfway down. */
+  top: var(--topbar-height);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  padding: var(--s3) 0 var(--s4);
+  background: var(--ground);
+}
+
+.group {
+  display: flex;
+  gap: 2px;
+  background: var(--soft);
+  border-radius: var(--r2);
+  padding: 2px;
+}
+
+.preset {
+  border: 0;
+  background: none;
+  border-radius: var(--r1);
+  padding: var(--s1) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+  white-space: nowrap;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out;
+}
+
+.preset:hover {
+  color: var(--ink);
+}
+
+.presetCurrent {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgb(23 34 43 / 6%);
+}
+
+.step {
+  display: flex;
+  gap: 2px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.zone {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/*
+ * A filter chip. Accent while it is doing its job, amber when the server
+ * refused it, and always carrying its own way out.
+ */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 3px var(--s2) 3px var(--s3);
+  border-radius: var(--r4);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: var(--t-label);
+  max-width: 100%;
+}
+
+.chipWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.chipText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chipDim {
+  font-family: var(--font-mono);
+}
+
+.chipOff {
+  display: inline-flex;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  line-height: 0;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.chipOff:hover {
+  opacity: 1;
+}
+
+.clear {
+  font-size: var(--t-label);
+  color: var(--muted);
+  border: 0;
+  background: none;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r2);
+}
+
+.clear:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.custom {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s2);
+}
+
+.customRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+
+@media (max-width: 640px) {
+  .zone {
+    width: 100%;
+  }
+}

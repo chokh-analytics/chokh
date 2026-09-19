@@ -4,7 +4,7 @@ import {
   COMPACT_FROM,
   delta,
   deltaPoints,
-  flagOf,
+  countryName,
   formatClock,
   formatCount,
   formatDuration,
@@ -165,16 +165,20 @@ describe('times', () => {
   });
 });
 
-describe('flagOf', () => {
-  it('draws a country code as its flag', () => {
-    expect(flagOf('BD')).toBe('\u{1F1E7}\u{1F1E9}');
-    expect(flagOf('in')).toBe('\u{1F1EE}\u{1F1F3}');
+describe('countryName', () => {
+  // A flag emoji is the obvious answer and the wrong one: Windows ships no flag
+  // glyphs, so a countries card drawn with them is a column of empty boxes on a
+  // large share of the machines this is read from.
+  it('names the country a code stands for', () => {
+    expect(countryName('BD')).toBe('Bangladesh');
+    expect(countryName('in')).toBe('India');
+    expect(countryName('GB')).toBe('United Kingdom');
   });
 
-  it('draws nothing at all for anything that is not a country code', () => {
-    expect(flagOf(undefined)).toBe('');
-    expect(flagOf('')).toBe('');
-    expect(flagOf('BDX')).toBe('');
-    expect(flagOf('12')).toBe('');
+  it('answers null for anything that is not a country code', () => {
+    expect(countryName(undefined)).toBeNull();
+    expect(countryName('')).toBeNull();
+    expect(countryName('BDX')).toBeNull();
+    expect(countryName('12')).toBeNull();
   });
 });

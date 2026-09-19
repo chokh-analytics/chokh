@@ -98,7 +98,11 @@ export function rangeProblem(range: DateRange): RangeProblem {
 // a person has to understand.
 export function defaultInterval(range: DateRange): Interval {
   const days = (range.to - range.from) / (24 * 60 * 60 * 1000);
-  if (days <= 7) {
+  // Two days, not seven. The store will answer an hourly series up to a week,
+  // but a week of hours is 168 points whose axis labels are five different
+  // hours of five different days, which reads as noise rather than as a shape.
+  // A person who wants that asks for it; nothing gets it by default.
+  if (days <= 2) {
     return 'hour';
   }
   if (days <= 90) {

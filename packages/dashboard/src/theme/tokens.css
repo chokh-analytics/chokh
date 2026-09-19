@@ -68,6 +68,9 @@
 
   --page-max: 1280px;
   --gutter: 24px;
+  /* What the navigation is tall, so the range bar can stick underneath it
+   * rather than on top of it. */
+  --topbar-height: 49px;
 
   --fast: 120ms;
   --slow: 180ms;

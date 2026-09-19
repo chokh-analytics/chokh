@@ -1,0 +1,148 @@
+/*
+ * Six numbers, always visible.
+ *
+ * Plausible makes its KPI row a tab strip, so choosing "Pageviews" hides the
+ * shape of the other three. Here every number stays on screen and the chart
+ * follows the selection, because the five numbers are the answer most of the
+ * time and the chart is how somebody checks it.
+ */
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3) var(--r3) 0 0;
+  overflow: hidden;
+}
+
+@media (max-width: 1100px) {
+  .row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tile {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--s1);
+  padding: var(--s3) var(--s4);
+  /* Cleared first, because four of these six are buttons and a button keeps the
+   * browser's own border on the two sides this rule does not name: the tiles
+   * that can be pressed would be boxed and the two that cannot would not, which
+   * reads as four selected tiles. */
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin: 0 -1px -1px 0;
+  text-align: left;
+  background: none;
+  min-width: 0;
+}
+
+/* A tile that picks the chart metric is a button; one that does not is a plain
+ * cell. A control that looks pressable and is not is the thing this product
+ * refuses everywhere else too. */
+.selectable {
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+
+.selectable:hover {
+  background: var(--soft);
+}
+
+.current {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/*
+ * Mono, at 30px. A column of figures set in a text face drifts; set in a
+ * monospace it reads like an instrument, which is what this is. tabular-nums is
+ * on the root, so nothing here twitches as it updates.
+ */
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--t-kpi);
+  line-height: 1.05;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.delta {
+  font-size: var(--t-label);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Green and red mean good and bad, never up and down. Only bounce rate is
+ * inverted, and only because a rise in it is a worse day. */
+.good {
+  color: var(--live);
+}
+
+.bad {
+  color: var(--dead);
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* The one thing on any page that moves on its own. */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--live-soft);
+  flex: none;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.dotIdle {
+  background: var(--muted);
+  box-shadow: none;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}

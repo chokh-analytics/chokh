@@ -6,6 +6,7 @@ import { createClient, type Client } from '../lib/client.js';
 import { createQueryClient, useMe } from '../lib/queries.js';
 import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
+import { Overview } from '../pages/Overview.js';
 import { SignIn } from '../pages/SignIn.js';
 import { Splash } from '../ui/Splash.js';
 import { Shell } from './Shell.js';
@@ -30,7 +31,7 @@ function Placeholder({ title }: { title: string }): JSX.Element {
 function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
   return (
     <Switch>
-      <Route path="/:siteId" component={() => <Placeholder title={messages.overview.title} />} />
+      <Route path="/:siteId" component={Overview} />
       <Route
         path="/:siteId/realtime"
         component={() => <Placeholder title={messages.nav.realtime} />}

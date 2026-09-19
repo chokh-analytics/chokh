@@ -1,0 +1,127 @@
+/*
+ * One row shape for every report in the product: a label on the left, a number
+ * on the right, a bar behind, and a click that filters.
+ *
+ * The bar is behind the text rather than beside it, so the label gets the full
+ * width of the card and a long path is readable instead of being squeezed into
+ * half of one.
+ */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.row {
+  position: relative;
+}
+
+.cell {
+  position: relative;
+  padding: 0;
+  border: 0;
+}
+
+.bar {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: var(--accent-soft);
+  border-radius: var(--r1);
+  pointer-events: none;
+}
+
+.inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 32px;
+  padding: var(--s1) var(--s2);
+  border: 0;
+  border-radius: var(--r1);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+/* A row that can filter is a button and says so on hover. A row that cannot is
+ * plain text with no hover at all: a control that looks pressable and does
+ * nothing is worse than one that does not look pressable. */
+.clickable {
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+
+.clickable:hover {
+  background: var(--soft);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.secondary {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--muted);
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* A dimension value the browser never sent. Named rather than blank, because a
+ * blank row looks like a bug in the report. */
+.unknown {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.flag {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.head th {
+  padding: var(--s1) var(--s2) var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.head th:not(:first-child) {
+  text-align: right;
+}
+
+.code {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--soft);
+  border-radius: var(--r1);
+  padding: 1px 5px;
+}

@@ -1,0 +1,21 @@
+.page {
+  display: grid;
+  gap: var(--s5);
+  min-width: 0;
+}
+
+/* The KPI row and the chart are one object: the row has the top corners, the
+ * chart has the bottom ones and no top border, so a number and its shape sit
+ * inside one frame rather than in two boxes that happen to be adjacent. */
+.headline {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--s4);
+  min-width: 0;
+}

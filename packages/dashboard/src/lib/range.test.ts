@@ -111,7 +111,12 @@ describe('defaultInterval', () => {
   // hours. Nothing here may ever return an interval it would refuse.
   it('never picks an interval the store would refuse', () => {
     expect(defaultInterval(span(DAY))).toBe('hour');
-    expect(defaultInterval(span(7 * DAY))).toBe('hour');
+    // Two days, not the seven the store would allow: a week of hours is 168
+    // points whose five axis labels are five different hours of five different
+    // days, and that reads as noise rather than as a shape.
+    expect(defaultInterval(span(2 * DAY))).toBe('hour');
+    expect(defaultInterval(span(3 * DAY))).toBe('day');
+    expect(defaultInterval(span(7 * DAY))).toBe('day');
     expect(defaultInterval(span(8 * DAY))).toBe('day');
     expect(defaultInterval(span(90 * DAY))).toBe('day');
     expect(defaultInterval(span(91 * DAY))).toBe('week');

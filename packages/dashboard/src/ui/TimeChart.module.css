@@ -1,0 +1,173 @@
+/*
+ * One series, one accent, thin marks.
+ *
+ * The rules this chart is drawn under, all five of them visible here: no dots
+ * except the last point and the hovered one, no vertical grid, no axis spines,
+ * a legend only when there are two series, and no animation on a data change. A
+ * line that redraws itself every thirty seconds is a distraction; one that
+ * tweens between two ranges implies a continuity that is not there.
+ */
+
+.chart {
+  position: relative;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--r3) var(--r3);
+  padding: var(--s3) var(--s4) var(--s2);
+  display: grid;
+  gap: var(--s2);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.peak {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.plot {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.area {
+  fill: var(--accent);
+  fill-opacity: var(--chart-fill);
+  stroke: none;
+}
+
+/* The comparison, behind the line and never competing with it: one pixel,
+ * dashed, muted, no fill. */
+.previous {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  stroke-opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.grid {
+  stroke: var(--ink);
+  stroke-opacity: 0.08;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.tick {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  fill: var(--muted);
+}
+
+.guide {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.point {
+  fill: var(--accent);
+}
+
+.legend {
+  display: flex;
+  gap: var(--s4);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.swatch {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+
+.swatchPrevious {
+  border-top: 1px dashed var(--muted);
+}
+
+/*
+ * The hover card. Absolutely placed against the plot, never following the
+ * cursor exactly, so it does not jitter as somebody reads it.
+ */
+.hover {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow-pop);
+  padding: var(--s2) var(--s3);
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+}
+
+.hoverWhen {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.hoverValue {
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.hoverPrevious {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+/*
+ * Empty draws the frame and a sentence, never a flat line at zero. A flat line
+ * at zero is a measurement, and "we have no rows for this range" is not one.
+ */
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  font-size: var(--t-body);
+  pointer-events: none;
+}

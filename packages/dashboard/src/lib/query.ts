@@ -26,13 +26,11 @@ import {
 // something anybody can edit, and a page that refuses to load because a
 // character is wrong is worse than one that loads without a filter.
 
-export const METRICS = [
-  'visitors',
-  'pageviews',
-  'visits',
-  'bounceRate',
-  'avgDuration',
-] as const;
+// The four series the chart can draw, which is also the four KPI tiles that
+// can be pressed to change it. Visits is deliberately not among them: it moves
+// with visitors almost exactly, and a row of six tiles that holds one number
+// nobody ever selects is a row with a dead control in it.
+export const METRICS = ['visitors', 'pageviews', 'bounceRate', 'avgDuration'] as const;
 
 export type MetricName = (typeof METRICS)[number];
 
