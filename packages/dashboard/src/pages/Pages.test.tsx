@@ -73,7 +73,10 @@ function serve(routes: Routes = {}): void {
                 dim: 'page',
                 rawOnly: true,
                 rows: [
-                  { key: '/read', avgTimeOnPageMs: 92_000, avgScrollDepth: 0.75, leaves: 40 },
+                  // A percentage, which is what the tracker reports and what
+                  // the store averages: the conformance fixture and the
+                  // server's own test both assert 75 here.
+                  { key: '/read', avgTimeOnPageMs: 92_000, avgScrollDepth: 75, leaves: 40 },
                 ],
               })))(),
         );
@@ -120,7 +123,40 @@ describe('Pages', () => {
     const engagement = await screen.findByRole('region', { name: 'How far people read' });
     await waitFor(() => expect(within(engagement).getByText('1m 32s')).toBeInTheDocument());
     expect(within(engagement).getByText('75%')).toBeInTheDocument();
+    // The bug this replaced: the fraction formatter multiplied by a hundred a
+    // second time, so a real install read 5,513% on the busiest page.
+    expect(within(engagement).queryByText('7,500%')).toBeNull();
+    expect(within(engagement).queryByText('7500%')).toBeNull();
     expect(within(engagement).getByText('40')).toBeInTheDocument();
+  });
+
+  // Three of four bars lit at 75, and four at 100. A fraction fed to the same
+  // component lights nothing, which is the other half of the unit bug: the
+  // picture and the number have to disagree loudly or neither is checkable.
+  it('lights a bar per quarter people reached', async () => {
+    serve({
+      engagement: () =>
+        ok({
+          dim: 'page',
+          rawOnly: true,
+          rows: [
+            { key: '/three', avgTimeOnPageMs: 60_000, avgScrollDepth: 75, leaves: 10 },
+            { key: '/all', avgTimeOnPageMs: 60_000, avgScrollDepth: 100, leaves: 10 },
+            { key: '/one', avgTimeOnPageMs: 60_000, avgScrollDepth: 25, leaves: 10 },
+          ],
+        }),
+    });
+    render(show());
+
+    const engagement = await screen.findByRole('region', { name: 'How far people read' });
+    await waitFor(() => expect(within(engagement).getByText('75%')).toBeInTheDocument());
+    const lit = (label: string): number => {
+      const row = within(engagement).getByText(label).closest('tr');
+      return row?.querySelectorAll('[class*="quarterOn"]').length ?? 0;
+    };
+    expect(lit('/three')).toBe(3);
+    expect(lit('/all')).toBe(4);
+    expect(lit('/one')).toBe(1);
   });
 
   // Nobody has closed this page yet. A zero here would be a measurement nobody

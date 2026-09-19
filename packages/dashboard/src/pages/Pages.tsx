@@ -2,7 +2,7 @@ import { useMemo, type JSX } from 'react';
 
 import { useApp } from '../app/context.js';
 import { useViewQuery } from '../app/useViewQuery.js';
-import { formatCount, formatDuration, formatRate } from '../lib/format.js';
+import { formatCount, formatDuration, formatPercentPoints } from '../lib/format.js';
 import { useBreakdown, useEngagement } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { DimensionCard } from '../reports/DimensionCard.js';
@@ -111,19 +111,32 @@ function Engagement(): JSX.Element {
 
 // Four quarters, filled to where people got. The number is beside it because a
 // picture of a quarter is not a measurement.
+//
+// The value is a percentage and not a fraction, all the way from the tracker:
+// it reports a quartile as 0, 25, 50, 75 or 100 and the store averages those
+// numbers, so the average of a 50 and a 100 is 75 and not 0.75. Rendering it
+// through the rate formatter multiplied it by a hundred again and put "5,513%"
+// on every row of a real install. This file has the same trap written down
+// once already, on a bounce rate that rounded to 1: assert a unit against the
+// source, not against what the number looks like.
+const QUARTERS = [25, 50, 75, 100];
+
+// Half a quarter, so a bar lights when the average has reached the middle of
+// the band it stands for.
+const QUARTER_TOLERANCE = 12.5;
+
 function Depth({ value }: { value: number }): JSX.Element {
-  const quarters = [0.25, 0.5, 0.75, 1];
   return (
     <span className={styles.depth}>
       <span className={styles.depthBars} aria-hidden="true">
-        {quarters.map((edge) => (
+        {QUARTERS.map((edge) => (
           <span
             key={edge}
-            className={value >= edge - 0.125 ? styles.quarterOn : styles.quarterOff}
+            className={value >= edge - QUARTER_TOLERANCE ? styles.quarterOn : styles.quarterOff}
           />
         ))}
       </span>
-      <span className={styles.mono}>{formatRate(value)}</span>
+      <span className={styles.mono}>{formatPercentPoints(value)}</span>
     </span>
   );
 }

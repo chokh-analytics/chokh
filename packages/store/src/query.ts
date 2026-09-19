@@ -223,6 +223,10 @@ export interface CountRow {
 export interface EngagementRow {
   key: string;
   avgTimeOnPageMs: number | null;
+  // A percentage and not a fraction: the tracker reports a quartile as 0, 25,
+  // 50, 75 or 100 and this is the mean of those numbers, so three quarters of
+  // a page is 75. Named here because a reader who guesses gets a report that
+  // is out by a hundred, which is exactly what shipped.
   avgScrollDepth: number | null;
   leaves: number;
 }

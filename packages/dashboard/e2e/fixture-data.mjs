@@ -188,15 +188,17 @@ export function breakdown(dim, limit = 10) {
   return { dim, rows };
 }
 
+// Scroll depth is a percentage, not a fraction: the tracker reports a quartile
+// as 0, 25, 50, 75 or 100 and the store averages those numbers.
 export const ENGAGEMENT = {
   dim: 'page',
   rawOnly: true,
   rows: [
-    { key: '/blog/why-we-built-chokh', avgTimeOnPageMs: 214_000, avgScrollDepth: 0.86, leaves: 412 },
-    { key: '/learn/c', avgTimeOnPageMs: 186_000, avgScrollDepth: 0.71, leaves: 388 },
-    { key: '/courses/competitive-programming', avgTimeOnPageMs: 96_000, avgScrollDepth: 0.54, leaves: 640 },
-    { key: '/pricing', avgTimeOnPageMs: 41_000, avgScrollDepth: 0.49, leaves: 512 },
-    { key: '/playground', avgTimeOnPageMs: 302_000, avgScrollDepth: 0.31, leaves: 260 },
+    { key: '/blog/why-we-built-chokh', avgTimeOnPageMs: 214_000, avgScrollDepth: 86, leaves: 412 },
+    { key: '/learn/c', avgTimeOnPageMs: 186_000, avgScrollDepth: 71, leaves: 388 },
+    { key: '/courses/competitive-programming', avgTimeOnPageMs: 96_000, avgScrollDepth: 54, leaves: 640 },
+    { key: '/pricing', avgTimeOnPageMs: 41_000, avgScrollDepth: 49, leaves: 512 },
+    { key: '/playground', avgTimeOnPageMs: 302_000, avgScrollDepth: 31, leaves: 260 },
     // Opened often, never closed yet: no number, and not a zero.
     { key: '/contests', avgTimeOnPageMs: null, avgScrollDepth: null, leaves: 0 },
   ],
