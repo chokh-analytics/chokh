@@ -1,22 +1,58 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from 'react';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Route, Switch, useLocation, useParams, useSearch } from 'wouter';
 
 import { createClient, type Client } from '../lib/client.js';
 import { createQueryClient, useMe } from '../lib/queries.js';
+import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
-import { Devices } from '../pages/Devices.js';
-import { Geo } from '../pages/Geo.js';
 import { Overview } from '../pages/Overview.js';
-import { People } from '../pages/People.js';
-import { Pages } from '../pages/Pages.js';
-import { Realtime } from '../pages/Realtime.js';
-import { Sources } from '../pages/Sources.js';
 import { SignIn } from '../pages/SignIn.js';
 import { Splash } from '../ui/Splash.js';
+import { Skeleton } from '../ui/State.js';
 import { Shell } from './Shell.js';
 import { useNow } from './useNow.js';
 import type { AppContextValue } from './context.js';
+
+// One chunk per report, and the Overview is not one of them.
+//
+// The Overview is the page every visit starts on, so lazily loading it would
+// buy a round trip and spend it immediately. Everything else is a page some
+// visits never open, and two of them carry the world map, which is forty
+// kilobytes of coastline that has no business reaching the sign-in screen.
+// Rollup puts the map in a chunk of its own because both of those import it,
+// so it is downloaded once by whichever is opened first and not at all by
+// somebody who opens neither.
+const Realtime = lazy(async () => ({ default: (await import('../pages/Realtime.js')).Realtime }));
+const Pages = lazy(async () => ({ default: (await import('../pages/Pages.js')).Pages }));
+const Sources = lazy(async () => ({ default: (await import('../pages/Sources.js')).Sources }));
+const Geo = lazy(async () => ({ default: (await import('../pages/Geo.js')).Geo }));
+const Devices = lazy(async () => ({ default: (await import('../pages/Devices.js')).Devices }));
+const People = lazy(async () => ({ default: (await import('../pages/People.js')).People }));
+
+// What is on screen while a report's chunk is on its way.
+//
+// A rectangle the height of a report rather than a spinner or a blank: the
+// navigation and the range bar are already drawn, so the only thing missing is
+// the report, and the shape that is coming is the honest thing to draw. Named
+// for a screen reader, because a silent swap is a page that changed without
+// saying so.
+function Loading(): JSX.Element {
+  return (
+    <div role="status" aria-label={messages.a11y.loadingRegion}>
+      <Skeleton height={420} />
+    </div>
+  );
+}
 
 // Boot, in the order a browser can actually do it.
 //
@@ -28,40 +64,42 @@ import type { AppContextValue } from './context.js';
 
 function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
   return (
-    <Switch>
-      <Route path="/:siteId" component={Overview} />
-      <Route path="/:siteId/realtime">
-        <Realtime />
-      </Route>
-      <Route path="/:siteId/pages">
-        <Pages />
-      </Route>
-      <Route path="/:siteId/sources">
-        <Sources />
-      </Route>
-      <Route path="/:siteId/geo">
-        <Geo />
-      </Route>
-      <Route path="/:siteId/devices">
-        <Devices />
-      </Route>
-      <Route path="/:siteId/people">
-        <People />
-      </Route>
-      {/*
-        Two segments, and both of them matter: a visitor id is a browser and a
-        user id is a person your application named, and the server treats the
-        two lookups differently.
-      */}
-      <Route path="/:siteId/people/:kind/:id">
-        <People />
-      </Route>
-      {/* Anything else under a site is a link somebody mistyped, and the
-          navigation is still there to get them out of it. */}
-      <Route>
-        <Redirect to={`/${value.site.id}`} replace />
-      </Route>
-    </Switch>
+    <Suspense fallback={<Loading />}>
+      <Switch>
+        <Route path="/:siteId" component={Overview} />
+        <Route path="/:siteId/realtime">
+          <Realtime />
+        </Route>
+        <Route path="/:siteId/pages">
+          <Pages />
+        </Route>
+        <Route path="/:siteId/sources">
+          <Sources />
+        </Route>
+        <Route path="/:siteId/geo">
+          <Geo />
+        </Route>
+        <Route path="/:siteId/devices">
+          <Devices />
+        </Route>
+        <Route path="/:siteId/people">
+          <People />
+        </Route>
+        {/*
+          Two segments, and both of them matter: a visitor id is a browser and
+          a user id is a person your application named, and the server treats
+          the two lookups differently.
+        */}
+        <Route path="/:siteId/people/:kind/:id">
+          <People />
+        </Route>
+        {/* Anything else under a site is a link somebody mistyped, and the
+            navigation is still there to get them out of it. */}
+        <Route>
+          <Redirect to={`/${value.site.id}`} replace />
+        </Route>
+      </Switch>
+    </Suspense>
   );
 }
 

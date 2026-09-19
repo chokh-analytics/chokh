@@ -35,6 +35,17 @@ export default defineConfig({
           if (id.includes('node_modules')) {
             return 'vendor';
           }
+          // The world outlines, in a chunk of their own.
+          //
+          // Realtime and Geo both draw them and nothing else does, so left
+          // alone Rollup would either duplicate them into both report chunks
+          // or hoist them into a shared one with an unpredictable name. Named
+          // here so the size gate can hold a budget for exactly this file: it
+          // is the largest thing in the application and the easiest to grow
+          // by accident.
+          if (id.includes('/src/map/')) {
+            return 'map';
+          }
           return undefined;
         },
       },

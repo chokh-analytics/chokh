@@ -1,9 +1,10 @@
 // The dashboard size gate, the tracker's gate applied to a bigger thing.
 //
 // A dashboard is the first screenshot a developer sees and the first thing they
-// wait for. The budgets below are per file and gzipped, and they are set from
-// what the build actually weighed rather than from a guess, so a number moving
-// means a decision was made rather than that something crept in.
+// wait for. The budgets below are per group of emitted files, gzipped where
+// gzip does anything, and they are set from what the build actually weighed
+// rather than from a guess, so a number moving means a decision was made rather
+// than that something crept in.
 //
 // Fonts count. They are woff2, which is already compressed, so what is on disk
 // is what goes down the wire, and a privacy product that self hosts its fonts
@@ -16,13 +17,29 @@ import { fileURLToPath } from 'node:url';
 // Matched against the emitted file name, first match wins. A file that matches
 // nothing falls into "other", which has a budget of its own so that nothing can
 // arrive unmeasured.
+//
+// One budget per group the build actually has, which is what code splitting
+// bought: before it, every line of every report sat in one "app" figure and a
+// map nobody had opened was part of what the sign-in page weighed. Now the
+// entry chunk is what a first paint costs, the routes are what opening a
+// report costs, and the map is its own line because it is the largest thing
+// here and the easiest to grow by accident.
 const BUDGETS = [
   // Measured 2026-09-19: 83,375 B, being React 19 and React DOM at 69 KB,
   // TanStack Query at about 12 and wouter at about 2. Raised from 72 KB in the
   // commit that added the last two, which is the rule: a budget moves in the
   // diff that spends it, never quietly.
   { name: 'vendor', pattern: /^vendor-.*\.js$/, bytes: 86 * 1024 },
-  { name: 'app', pattern: /\.js$/, bytes: 95 * 1024 },
+  // The entry chunk: the shell, the Overview and everything they share.
+  // Measured 2026-09-20 at 25,526 B, down from 74 KB when every report was in
+  // it.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 34 * 1024 },
+  // The world outlines, downloaded by Realtime and Geo and by nothing else.
+  // Measured 2026-09-20 at 39,923 B.
+  { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
+  // One chunk per report. Measured 2026-09-20 at 11,113 B for the six of them
+  // together, the largest being Realtime at 3.7 KB.
+  { name: 'routes', pattern: /\.js$/, bytes: 20 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
