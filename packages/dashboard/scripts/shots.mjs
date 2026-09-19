@@ -30,7 +30,10 @@ const README_SHOTS = new Map([
   ['02-realtime-dark', 'dashboard-realtime-dark.png'],
   ['05-geo-light', 'dashboard-geo-light.png'],
 ]);
-const port = Number(process.env.PORT ?? 4112);
+// A port of its own, so the frozen fixture and the real server the browser
+// suite drives never take each other's place: a screenshot of live data is a
+// picture nobody can review, and an audit of the fixture is an audit of a mock.
+const port = Number(process.env.PORT ?? 4113);
 const fixture = await startFixture(port);
 const base = fixture.base;
 

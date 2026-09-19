@@ -93,6 +93,20 @@ describe('who sees what', () => {
     expect(await screen.findByRole('button', { name: 'Sign in' })).toBeDefined();
   });
 
+  // And it lands on /login carrying where it was going, rather than drawing the
+  // form at the report's own URL. A form at /s_test/sources is a page nobody
+  // can link to, a reload that lands on the form again, and a sign-in that has
+  // to guess where to go next.
+  it('sends a deep link to the sign in page, carrying where it was going', async () => {
+    at('/s_test/sources?range=30d');
+    serve({ '/api/me': () => refusal(401, 'UNAUTHENTICATED') });
+    render(<App />);
+
+    await screen.findByRole('button', { name: 'Sign in' });
+    expect(window.location.pathname).toBe('/login');
+    expect(decodeURIComponent(window.location.search)).toBe('?next=/s_test/sources?range=30d');
+  });
+
   // An install that has just been started. Without this screen somebody signs
   // in and looks at nothing, with no way forward that is not the README.
   it('offers the first site to an account that can read none', async () => {

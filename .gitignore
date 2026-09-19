@@ -33,3 +33,6 @@ playwright/.cache/
 # fourteen megabytes of history for a picture anybody can regenerate.
 packages/dashboard/screenshots/
 packages/dashboard/lighthouse/
+
+# The session the browser suite signs in with once.
+packages/dashboard/e2e/.auth/

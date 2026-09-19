@@ -24,7 +24,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
-const port = Number(process.env.PORT ?? 4112);
+const port = Number(process.env.PORT ?? 4113);
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -104,6 +104,11 @@ function api(url, res) {
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
+
+  // Both servers answer this, so one helper can wait for either.
+  if (url.pathname === '/health') {
+    return ok(res, { status: 'ok' });
+  }
 
   if (url.pathname.startsWith('/api/')) {
     // A stream would keep the smoke test's browser open until it timed out, and

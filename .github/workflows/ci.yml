@@ -105,16 +105,22 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The suite runs against dist, not the dev server: what is proved is what
-      # a person is served. A bundle that splits wrongly, a font that does not
-      # load or a route a static server cannot answer are all invisible in
-      # development.
+      # The suite runs against dist and against the real server: what is proved
+      # is what a person is served, by the process that serves it. A bundle that
+      # splits wrongly, a font that does not load, a route the static host
+      # cannot answer, an envelope nobody parses the same way and a stream that
+      # never reaches the page are all invisible to a per-package test.
       - run: pnpm --filter @chokh/store run build
+
+      - run: pnpm --filter @chokh/server run build
 
       - run: pnpm --filter @chokh/dashboard run build
 
       - run: pnpm --filter @chokh/dashboard exec playwright install --with-deps chromium
 
+      # CI is set on every GitHub runner, and the Playwright config reads it:
+      # a server started here is never reused, so nothing stale is audited in
+      # place of this build.
       - run: pnpm --filter @chokh/dashboard run test:e2e
 
       # Accessibility is audited rather than asserted, on both reports in both

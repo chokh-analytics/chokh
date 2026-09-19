@@ -1,21 +1,55 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+
+import { OWNER } from './fixture-account.js';
 
 // The walk somebody takes the first time they open this thing, in a real
-// browser against the built files.
+// browser against the real server.
 //
-// The unit tests already assert what each page says. What only a browser can
-// answer is whether the bundle boots at all, whether the router serves a deep
-// link from a static tree, whether the fonts arrive, and whether a key pressed
-// on a page that is really rendered does what the table says. Every one of
-// those has shipped broken in a product whose component tests were green.
+// The unit tests already assert what each page says. What only this can answer
+// is whether the bundle boots at all, whether the router serves a deep link
+// from the static host, whether the session cookie works, where an
+// unauthenticated link lands, whether the stream carries a pageview that was
+// posted a second ago, and what the page does when that stream dies. Every one
+// of those is a seam between two packages, which is where every bug this
+// product has shipped has been.
 
 const SITE = 's_demo';
+const ORIGIN = `http://127.0.0.1:${process.env.PORT ?? 4112}`;
 
 async function boot(page: Page, path = `/${SITE}`): Promise<void> {
   await page.goto(path);
-  // The splash is on screen until GET /api/me answers, so waiting for a
-  // heading is waiting for the whole boot rather than for a paint.
+  // The splash is on screen until GET /api/me answers, so waiting for the
+  // navigation waits for the whole boot rather than for a paint.
   await expect(page.getByRole('navigation', { name: 'Report' })).toBeVisible();
+}
+
+// One pageview, posted the way the tracker posts one.
+//
+// The Origin header is explicit because the collector refuses a batch whose
+// origin is not a domain of the site, and Playwright's request context sends
+// none of its own. A browser always sends it; this is the same request.
+async function collect(request: APIRequestContext, visitorId: string): Promise<void> {
+  const answer = await request.post('/api/collect', {
+    headers: { 'content-type': 'text/plain', origin: ORIGIN },
+    data: JSON.stringify({
+      siteId: SITE,
+      sentAt: Date.now(),
+      hostname: '127.0.0.1',
+      visitorId,
+      lang: 'en',
+      screen: '1440x900',
+      events: [{ type: 'pageview', ts: Date.now(), path: '/pricing' }],
+    }),
+  });
+  expect(answer.status(), 'the collector refused the batch').toBeLessThan(300);
+}
+
+function onlineCount(page: Page): Promise<number> {
+  return page
+    .getByRole('status')
+    .first()
+    .textContent()
+    .then((text) => Number((text ?? '').replace(/[^0-9]/g, '')));
 }
 
 test('boots, and draws the overview with numbers in it', async ({ page }) => {
@@ -25,13 +59,17 @@ test('boots, and draws the overview with numbers in it', async ({ page }) => {
   await boot(page);
 
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeAttached();
-  await expect(page.getByText('15.2k')).toBeVisible();
-  // The comparison is on by default, which is the second of the five rules.
-  await expect(page.getByText('17%').first()).toBeVisible();
+  // Seeded traffic, so the totals are numbers rather than the empty state.
+  await expect(page.getByText('No data in this range.')).toHaveCount(0);
+  const visitors = page
+    .getByText('Visitors')
+    .first()
+    .locator('xpath=ancestor::*[contains(@class,"tile")][1]');
+  await expect(visitors).not.toHaveText(/not available/);
   expect(failures).toEqual([]);
 });
 
-test('serves a deep link from the static tree', async ({ page }) => {
+test('serves a deep link from the static host', async ({ page }) => {
   await boot(page, `/${SITE}/geo?range=30d`);
   await expect(page.getByRole('heading', { name: 'Geography', level: 1 })).toBeAttached();
   await expect(page.getByRole('region', { name: 'Visitors by country' })).toBeVisible();
@@ -61,7 +99,6 @@ test('filters the page from a row, and clears it again', async ({ page }) => {
   await boot(page, `/${SITE}/devices`);
   await page.getByRole('button', { name: /Mobile/ }).first().click();
   await expect(page).toHaveURL(/filters=/);
-  // The filter is on screen as a chip, and removing it puts the page back.
   await page.getByRole('button', { name: /Remove this filter/ }).click();
   await expect(page).not.toHaveURL(/filters=/);
 });
@@ -82,20 +119,11 @@ test('runs the keys on a page that is really rendered', async ({ page }) => {
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeHidden();
 });
 
-test('carries the live report without a stream', async ({ page }) => {
-  // The fixture serves no event stream, so this is the polled path: the page
-  // has to say which of the two it is running rather than claiming to be live.
-  await boot(page, `/${SITE}/realtime`);
-  await expect(page.getByText(/Updating every \d+s/)).toBeVisible();
-  await expect(page.getByRole('table', { name: /Everybody seen in the last half hour/ })).toBeVisible();
-  await expect(page.getByText('Addresses are hidden. They need the read:identity permission.')).toBeVisible();
-});
-
 test('says what it cannot see rather than nothing', async ({ page }) => {
   await boot(page, `/${SITE}/pages`);
   const engagement = page.getByRole('region', { name: 'How far people read' });
-  // A page nobody has closed yet has no number, and the row says so.
-  await expect(engagement.getByText('not available').first()).toBeVisible();
+  // Seeded leaves carry a quartile, so this is the percentage a tracker sends.
+  await expect(engagement.getByText(/^(25|50|75|100)%$/).first()).toBeVisible();
   await expect(page.getByRole('region', { name: 'Pages that were not found' })).toBeVisible();
 });
 
@@ -125,4 +153,55 @@ test('reads on a phone without a sideways scrollbar', async ({ page }) => {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+// A link somebody was sent, followed after a session expired. What matters is
+// that the deep link survives the sign-in: landing on the Overview afterwards
+// is the same as losing it.
+test.describe('signed out', () => {
+  // The only case that does not start from the shared session.
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('sends an unauthenticated deep link through sign in and back', async ({ page }) => {
+    await page.goto(`/${SITE}/sources?range=30d`);
+
+    await expect(page).toHaveURL(/\/login\?next=/);
+    expect(decodeURIComponent(page.url())).toContain(`/${SITE}/sources?range=30d`);
+
+    await page.getByLabel('Email').fill(OWNER.email);
+    await page.getByLabel('Password').fill(OWNER.password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/${SITE}/sources\\?range=30d$`));
+    await expect(page.getByRole('heading', { name: 'Sources', level: 1 })).toBeAttached();
+  });
+});
+
+// The stream, end to end: the collector writes presence, the bus wakes the
+// stream, the frame reaches the page and the number moves. Nothing in a
+// per-package test can say that sentence.
+test('moves the online count over the stream within two seconds', async ({ page }) => {
+  await boot(page, `/${SITE}/realtime`);
+  await expect(page.getByText('Live', { exact: true })).toBeVisible();
+  expect(await onlineCount(page)).toBe(0);
+
+  const started = Date.now();
+  await collect(page.request, `v_live_${started}`);
+
+  await expect
+    .poll(() => onlineCount(page), { timeout: 2_000, intervals: [100] })
+    .toBeGreaterThan(0);
+});
+
+// A stream that dies has to say so. Drawn as "Live" with a frozen number, a
+// dead stream is the most confident kind of wrong a live page can be.
+test('falls back to polling when the stream dies, and keeps counting', async ({ page }) => {
+  await page.route('**/realtime/stream', (route) => route.abort());
+  await boot(page, `/${SITE}/realtime`);
+
+  await expect(page.getByText(/Updating every \d+s/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Live', { exact: true })).toHaveCount(0);
+
+  await collect(page.request, `v_polled_${Date.now()}`);
+  await expect.poll(() => onlineCount(page), { timeout: 15_000 }).toBeGreaterThan(0);
 });

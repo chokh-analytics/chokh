@@ -146,6 +146,27 @@ function Authenticated({
     navigate('/login');
   }, [navigate, queryClient]);
 
+  // Where somebody with no session lands.
+  //
+  // At /login, carrying where they were going, and never at the report's own
+  // URL with a form drawn over it: that page cannot be linked to, a reload
+  // lands on the form again, and the sign-in afterwards has nothing to tell it
+  // where to go. The redirect replaces rather than pushes, because nobody
+  // wants to press back into a page they were never shown.
+  const unauthenticated = !me.isPending && (me.isError || me.data === undefined);
+  const onLogin = location === '/login';
+
+  useEffect(() => {
+    if (!unauthenticated || onLogin) {
+      return;
+    }
+    const here = `${location}${search === '' ? '' : `?${search}`}`;
+    const next = safeNext(here);
+    navigate(next === null || next === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`, {
+      replace: true,
+    });
+  }, [unauthenticated, onLogin, location, search, navigate]);
+
   const signedIn = useCallback(() => {
     const next = safeNext(new URLSearchParams(search).get('next'));
     void me.refetch();
@@ -158,8 +179,15 @@ function Authenticated({
     return <Splash />;
   }
 
-  if (me.isError || me.data === undefined) {
-    return <SignIn client={client} mode={mode} onModeChange={setMode} onSignedIn={signedIn} />;
+  if (unauthenticated) {
+    // The effect above is sending them to /login. Until the URL changes this
+    // renders the splash rather than the form, so the form is only ever drawn
+    // at the one address it can be linked to.
+    return onLogin ? (
+      <SignIn client={client} mode={mode} onModeChange={setMode} onSignedIn={signedIn} />
+    ) : (
+      <Splash />
+    );
   }
 
   const value = { client, me: me.data.data, now, sites: me.data.data.sites };

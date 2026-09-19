@@ -29,7 +29,9 @@ import { startFixture } from '../e2e/serve.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'lighthouse');
 const port = Number(process.env.PORT ?? 4112);
-const fixture = await startFixture(port);
+// The real server, not the screenshot fixture: an accessibility score over a
+// mock's markup is a score for the mock.
+const fixture = await startFixture(port, 'real');
 const base = fixture.base;
 const DEBUG_PORT = 9222;
 
@@ -45,6 +47,10 @@ const GUARD = 'nav[aria-label="Report"]';
 
 async function audit(browser, page, theme) {
   const tab = await browser.newPage();
+  // The real server needs a session before it serves anything but the shell.
+  await tab.request.post(`${base}/api/auth/login`, {
+    data: { email: 'owner@chokh.test', password: 'a-long-enough-password' },
+  });
   // The theme is a choice in localStorage that a script in index.html applies
   // before the first paint, so it is written on the origin and the page then
   // opened, exactly as a returning visitor arrives.

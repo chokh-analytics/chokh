@@ -45,6 +45,9 @@ importers:
         specifier: ^3.11.0
         version: 3.11.0(react@19.3.0)
     devDependencies:
+      '@chokh/server':
+        specifier: workspace:*
+        version: link:../server
       '@fontsource-variable/ibm-plex-sans':
         specifier: ^5.3.0
         version: 5.3.0
