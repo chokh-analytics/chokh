@@ -1,0 +1,88 @@
+.wrap {
+  position: relative;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - var(--gutter) * 2));
+  padding: var(--s2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-pop);
+  display: grid;
+  gap: var(--s1);
+  animation: arrive var(--slow) ease-out;
+}
+
+.left {
+  right: auto;
+  left: 0;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-radius: var(--r2);
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  font-size: var(--t-body);
+  transition: background var(--fast) ease-out;
+}
+
+.item:hover {
+  background: var(--soft);
+  text-decoration: none;
+}
+
+.itemCurrent {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.itemNote {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.itemCurrent .itemNote {
+  color: var(--accent-ink);
+}
+
+.heading {
+  padding: var(--s1) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.divider {
+  height: 1px;
+  margin: var(--s1) 0;
+  background: var(--line);
+}

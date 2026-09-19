@@ -1,0 +1,77 @@
+/*
+ * The first screen anybody ever sees of this product, including the developer
+ * deciding in ten seconds whether it looks real. So: the mark, one sentence,
+ * one card, and nothing else on the page.
+ */
+
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s5);
+  padding: var(--gutter);
+}
+
+.head {
+  display: grid;
+  justify-items: center;
+  gap: var(--s2);
+  text-align: center;
+}
+
+.lede {
+  color: var(--muted);
+  max-width: 38ch;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s5);
+  width: min(380px, 100%);
+  display: grid;
+  gap: var(--s4);
+}
+
+.title {
+  font-size: var(--t-h2);
+  font-weight: 600;
+}
+
+.actions {
+  display: grid;
+  gap: var(--s3);
+}
+
+.aside {
+  text-align: center;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+/*
+ * A refusal, in amber rather than red: a wrong password is not something that
+ * broke. It is a live region so a screen reader hears it without the focus
+ * having to move, and the focus stays in the form where the next attempt is.
+ */
+.notice {
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--t-label);
+  line-height: 1.45;
+}
+
+/* A word that acts, in a paragraph of words that do not. It is a button and not
+ * a link because it changes what this card is rather than where anybody goes. */
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-ink);
+  font: inherit;
+  text-decoration: underline;
+}

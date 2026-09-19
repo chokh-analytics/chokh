@@ -10,6 +10,14 @@ export default defineConfig({
     // loudly rather than quietly taking the next port up.
     port: 4120,
     strictPort: true,
+    // In production this dashboard is served by the collector and every request
+    // is same origin. In development it is a second process, so the API is
+    // proxied rather than pointed at by an absolute URL: the session cookie is
+    // httpOnly and SameSite=Lax, and a cross origin XHR would never carry it.
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:4100', changeOrigin: false },
+      '/a.js': { target: 'http://127.0.0.1:4100', changeOrigin: false },
+    },
   },
   build: {
     outDir: 'dist',
@@ -35,5 +43,6 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

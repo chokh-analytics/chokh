@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from './App.js';
+import { App } from './app/App.js';
 
 // Order matters, and it is the order a browser needs rather than the order that
 // reads best: the faces first so nothing has to reflow when they arrive, then

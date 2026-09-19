@@ -150,4 +150,59 @@ describe('the SSO exchange', () => {
       );
     }
   });
+
+  // A five minute token that has expired, or a jti a double click already
+  // burned, is the ordinary case rather than the strange one. The GET form is a
+  // top level navigation, so answering it with a JSON body leaves an error
+  // object in the address bar of what should have been a sign in page.
+  describe('a refusal a person can read', () => {
+    const html = { accept: 'text/html,application/xhtml+xml' };
+
+    it('sends a browser to the sign in page with the reason', async () => {
+      const expired = token({ now: NOW - 3_600_000 });
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sso?token=${expired}`,
+        headers: html,
+      });
+      expect(response.statusCode).toBe(303);
+      expect(response.headers.location).toBe('/login?sso=TOKEN_EXPIRED');
+      expect(response.cookies).toHaveLength(0);
+    });
+
+    it('sends a browser there for a token that was already used', async () => {
+      const one = token();
+      await harness.app.inject({ method: 'GET', url: `/api/sso?token=${one}` });
+      const again = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sso?token=${one}`,
+        headers: html,
+      });
+      expect(again.statusCode).toBe(303);
+      expect(again.headers.location).toMatch(/^\/login\?sso=/);
+    });
+
+    it('sends a browser there when the token is missing altogether', async () => {
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: '/api/sso',
+        headers: html,
+      });
+      expect(response.statusCode).toBe(303);
+      expect(response.headers.location).toBe('/login?sso=INVALID_QUERY');
+    });
+
+    // Rule 6 still holds for everything that is not a browser.
+    it('still answers a program with the envelope', async () => {
+      expectFailure(
+        await harness.app.inject({
+          method: 'GET',
+          url: `/api/sso?token=${token({ now: NOW - 3_600_000 })}`,
+          headers: { accept: 'application/json' },
+        }),
+        401,
+        'TOKEN_EXPIRED',
+      );
+    });
+  });
 });

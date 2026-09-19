@@ -17,10 +17,11 @@ import { fileURLToPath } from 'node:url';
 // nothing falls into "other", which has a budget of its own so that nothing can
 // arrive unmeasured.
 const BUDGETS = [
-  // Measured 2026-09-19: React 19 and React DOM are 69.2 KB gzipped between
-  // them, and that is the whole of vendor today. The budget is raised in the
-  // commit that adds a library, never quietly.
-  { name: 'vendor', pattern: /^vendor-.*\.js$/, bytes: 72 * 1024 },
+  // Measured 2026-09-19: 83,375 B, being React 19 and React DOM at 69 KB,
+  // TanStack Query at about 12 and wouter at about 2. Raised from 72 KB in the
+  // commit that added the last two, which is the rule: a budget moves in the
+  // diff that spends it, never quietly.
+  { name: 'vendor', pattern: /^vendor-.*\.js$/, bytes: 86 * 1024 },
   { name: 'app', pattern: /\.js$/, bytes: 95 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.

@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiDeps } from '../lib/api-deps.js';
 import { fail, ok } from '../lib/envelope.js';
 import { ssoBodySchema, ssoQuerySchema } from '../schemas/accounts.schema.js';
+import { wantsHtml } from '../lib/wants-html.js';
 import { SESSION_COOKIE } from '../services/auth.service.js';
 import { exchangeSsoToken } from '../services/sso.service.js';
 import { publicUser } from './accounts.controller.js';
@@ -59,18 +60,40 @@ export function createSsoPostController(deps: ApiDeps) {
   };
 }
 
+// A refusal a person can read.
+//
+// The GET form is a top level navigation: somebody pressed a button in another
+// application and their browser is pointed here. A five minute token that has
+// expired, or a jti already burned by a double click, is the ordinary case
+// rather than the strange one, and answering it with a JSON body leaves an
+// error object in the address bar of what should be a sign in page. So a
+// request that asked for HTML is sent to the sign in page with the reason in
+// the query string, and a program that asked for JSON still gets the envelope
+// rule 6 requires. One helper decides which, the same one the not found handler
+// uses.
+function refuseSsoGet(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  status: number,
+  code: string,
+  message: string,
+): FastifyReply {
+  request.log.warn({ code }, 'sso exchange refused');
+  if (wantsHtml(request.headers.accept)) {
+    return reply.code(303).redirect(`/login?sso=${encodeURIComponent(code)}`, 303);
+  }
+  return reply.code(status).send(fail(code, message));
+}
+
 export function createSsoGetController(deps: ApiDeps) {
   return async function ssoGetController(request: FastifyRequest, reply: FastifyReply) {
     const parsed = ssoQuerySchema.safeParse(request.query);
     if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(fail('INVALID_QUERY', 'A token is required', parsed.error.issues));
+      return refuseSsoGet(request, reply, 400, 'INVALID_QUERY', 'A token is required');
     }
     const result = await exchangeSsoToken(ssoDeps(deps), parsed.data.token);
     if (!result.ok) {
-      request.log.warn({ code: result.code }, 'sso exchange refused');
-      return reply.code(result.status).send(fail(result.code, result.message));
+      return refuseSsoGet(request, reply, result.status, result.code, result.message);
     }
     setSession(deps, reply, result.user.id);
     // 303, so the browser follows with a GET whatever it arrived with, and the

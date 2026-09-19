@@ -1,0 +1,75 @@
+/*
+ * Three buttons and no more: the one thing a screen is for, the ordinary
+ * controls beside it, and the ones that are only a word.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background var(--fast) ease-out, border-color var(--fast) ease-out;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--soft);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  /* Not var(--paper): this text sits on the accent in both themes, and the
+   * accent is dark in one and light in the other. */
+  color: #ffffff;
+}
+
+:global(:root[data-theme='dark']) .primary,
+:global(:root:not([data-theme='light'])) .primary {
+  color: #08201e;
+}
+
+@media (prefers-color-scheme: light) {
+  :global(:root:not([data-theme='dark'])) .primary {
+    color: #ffffff;
+  }
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.quiet:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.icon {
+  padding: var(--s2);
+  width: 32px;
+  height: 32px;
+}
+
+.block {
+  width: 100%;
+}

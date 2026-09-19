@@ -1,0 +1,39 @@
+.field {
+  display: grid;
+  gap: var(--s1);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.input {
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--t-body);
+  width: 100%;
+}
+
+.input:hover {
+  border-color: var(--muted);
+}
+
+.help {
+  font-size: var(--t-label);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* A refusal is amber rather than red. Red is for something that broke; a form
+ * telling somebody what it needs has not broken. */
+.problem {
+  font-size: var(--t-label);
+  color: var(--warn);
+}

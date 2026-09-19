@@ -1,0 +1,103 @@
+/*
+ * One top bar, no sidebar.
+ *
+ * There are seven destinations. A sidebar would take 240px from the chart,
+ * which is the product, in order to show seven words that fit in a row. Plausible
+ * and Fathom both go without one; PostHog has one and feels like a console
+ * because of it.
+ */
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.bar {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.barInner {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--s2) var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.navLink {
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out;
+}
+
+.navLink:hover {
+  background: var(--soft);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/*
+ * The current page, marked twice: the colour says it at a glance and the
+ * underline says it to anybody who cannot tell these two greens apart. A single
+ * cue that is only a colour is the most common way a navigation fails an
+ * accessibility review.
+ */
+.navLinkCurrent {
+  color: var(--ink);
+  background: var(--soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.main {
+  max-width: var(--page-max);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--s5) var(--gutter) var(--s7);
+  min-width: 0;
+}
+
+/* The two rows stack under a phone's width rather than scrolling sideways as a
+ * block: the mark and the tools stay together, the nav gets its own line. */
+@media (max-width: 720px) {
+  .barInner {
+    gap: var(--s2);
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    padding-bottom: var(--s1);
+  }
+}

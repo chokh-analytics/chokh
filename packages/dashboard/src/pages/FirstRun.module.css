@@ -1,0 +1,135 @@
+/*
+ * The first thirty seconds a self hoster has with this product.
+ *
+ * Without this page somebody who has just run docker compose up signs in and
+ * looks at nothing, with no way forward that is not the README. With it they
+ * add a site, copy a line, open their own page and watch the indicator turn
+ * green. That moment is worth more to this product than any report on it.
+ */
+
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s5);
+  padding: var(--gutter);
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s5);
+  width: min(520px, 100%);
+  display: grid;
+  gap: var(--s4);
+}
+
+.title {
+  font-size: var(--t-h1);
+  font-weight: 600;
+}
+
+.lede {
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.form {
+  display: grid;
+  gap: var(--s4);
+}
+
+.snippet {
+  display: grid;
+  gap: var(--s2);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  line-height: 1.6;
+  padding: var(--s3);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+}
+
+.secret {
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  padding: var(--s3);
+  border-radius: 0 var(--r2) var(--r2) 0;
+  display: grid;
+  gap: var(--s2);
+}
+
+.secretTitle {
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.secretLede {
+  font-size: var(--t-label);
+  color: var(--warn);
+  line-height: 1.5;
+}
+
+.secretValue {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  word-break: break-all;
+  color: var(--ink);
+}
+
+/*
+ * The indicator that flips when the first pageview lands. Muted while it waits
+ * and live once it arrives, which is the only place in this product where a
+ * green dot means "good" rather than "happening now": here the two are the same
+ * thing.
+ */
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.received {
+  color: var(--live);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.dotLive {
+  background: var(--live);
+  box-shadow: 0 0 0 3px var(--live-soft);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.problem {
+  font-size: var(--t-label);
+  color: var(--warn);
+}

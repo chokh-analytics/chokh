@@ -13,6 +13,7 @@ import { cookieSecure, env, resolveSessionSecret } from './config/env.js';
 import type { ApiDeps } from './lib/api-deps.js';
 import type { ClientIpOptions } from './lib/client-ip.js';
 import { fail } from './lib/envelope.js';
+import { wantsHtml } from './lib/wants-html.js';
 import { createWindowCounter } from './lib/window-counter.js';
 import { registerAuthDecorations } from './plugins/auth.js';
 import { openBus, openOnce } from './plugins/bus.js';
@@ -51,10 +52,6 @@ export interface AppOptions {
   // How a visitor's address is resolved. The environment decides it for a real
   // instance; a test hands one in to drive a mode this process did not boot in.
   ip?: ClientIpOptions;
-}
-
-function wantsHtml(accept: string | undefined): boolean {
-  return accept !== undefined && accept.includes('text/html');
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
