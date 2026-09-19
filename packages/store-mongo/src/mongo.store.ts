@@ -618,12 +618,16 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
           }
         };
 
+        // The interval is part of the plan, not a detail of the fold. An
+        // hourly or minute series reads raw rows for the whole range, because
+        // a rollup cannot say which hour of its day anything happened in.
         const plan = readPlan({
           from: range.from,
           to: range.to,
           todayStart: startOfDay(now(), timezone),
           timezone,
           filters: query.filters,
+          interval,
         });
         if (plan.days.length > 0) {
           const selector = rollupTotalSelector(query.filters);

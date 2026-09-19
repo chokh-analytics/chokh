@@ -218,6 +218,46 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(first?.metrics.pageviews).toBe(1);
       });
 
+      // The case that was missing, and the reason a whole day of production
+      // Yesterday charts were a spike at midnight.
+      //
+      // An hourly series over a day that is already rolled up has to read raw
+      // rows: a rollup holds one number for the whole day and nothing that says
+      // which hour any of it happened in. An adapter that plans once for the
+      // range and finds a whole rolled day folds that day's total into the
+      // bucket the day begins in, and the chart draws every visit of the 17th
+      // at midnight. The existing hourly case spans today only, where there is
+      // no rollup to fold, which is exactly why 909 tests never saw it.
+      it('reads hours out of raw rows even for a day that is already rolled up', async () => {
+        const result = await store.timeseries({
+          siteId: F.SITE_ID,
+          from: F.YESTERDAY_START,
+          to: F.NOW,
+          interval: 'hour',
+        });
+        const at = (ts: number): number | undefined =>
+          result.points.find((point) => point.start === ts)?.metrics.pageviews;
+
+        // Dhaka's 17th: v1 at 09:00, v3 twice inside 11:00. Nothing at all at
+        // midnight, which is where a folded rollup would put all three.
+        expect(at(F.YESTERDAY_START)).toBe(0);
+        expect(at(Date.UTC(2026, 8, 17, 3, 0, 0))).toBe(1);
+        expect(at(Date.UTC(2026, 8, 17, 5, 0, 0))).toBe(2);
+
+        // And the total is still the day's total, so reading raw has not
+        // changed the arithmetic, only where it lands.
+        const yesterdayHours = result.points.filter(
+          (point) => point.start >= F.YESTERDAY_START && point.start < F.TODAY_START,
+        );
+        expect(yesterdayHours).toHaveLength(24);
+        expect(
+          yesterdayHours.reduce((sum, point) => sum + point.metrics.pageviews, 0),
+        ).toBe(F.EXPECTED.yesterday.pageviews);
+        expect(result.points.reduce((sum, point) => sum + point.metrics.pageviews, 0)).toBe(
+          F.EXPECTED.yesterday.pageviews + F.EXPECTED.today.pageviews,
+        );
+      });
+
       // The live view: a point a minute over the last half hour. It reads raw
       // rows the way an hourly series does, which is why it is capped harder.
       it('gives one point per minute of the last half hour', async () => {

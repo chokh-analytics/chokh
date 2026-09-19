@@ -261,7 +261,16 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     );
   }
 
-  function metricsFor(query: Query, range: Range, site: Site): Metrics {
+  // interval is the bucket these totals are going to be folded into. It is
+  // passed to the plan rather than kept here, because a sub-day bucket cannot
+  // be answered from a rollup and that rule belongs in the contract where both
+  // adapters read it.
+  function metricsFor(
+    query: Query,
+    range: Range,
+    site: Site,
+    interval?: Interval,
+  ): Metrics {
     const timezone = site.settings.timezone;
     const plan = readPlan({
       from: range.from,
@@ -269,6 +278,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       todayStart: startOfDay(now(), timezone),
       timezone,
       filters: query.filters,
+      ...(interval === undefined ? {} : { interval }),
     });
     const totals = zeroTotals();
     const selector = rollupTotalSelector(query.filters);
@@ -604,7 +614,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
           const next = all[index + 1];
           const end = next ?? range.to;
           const clipped: Range = { from: Math.max(start, range.from), to: Math.min(end, range.to) };
-          return { start, end, metrics: metricsFor(query, clipped, site) };
+          return { start, end, metrics: metricsFor(query, clipped, site, interval) };
         });
 
       const range: Range = { from: query.from, to: query.to };

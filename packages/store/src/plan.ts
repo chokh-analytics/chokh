@@ -6,7 +6,7 @@ import {
   type Filter,
   type Range,
 } from './query.js';
-import { addDays, dayBounds, dayKey } from './time.js';
+import { addDays, dayBounds, dayKey, type Interval } from './time.js';
 
 // Where a read gets its rows. Whole days of the site's calendar that are
 // already behind us come from rollups_daily; the partial day at either edge,
@@ -27,6 +27,26 @@ export interface ReadPlan {
   raw: Range[];
 }
 
+// An interval finer than a day cannot be answered from a rollup.
+//
+// A daily rollup holds one number for a whole day and nothing that says which
+// hour any of it happened in. An adapter that plans a range without knowing the
+// interval, finds a whole rolled day and folds that day's total into the bucket
+// the day begins in draws every visit of the 17th at midnight: a Yesterday
+// chart that is a single spike, and a 7 day hourly chart whose first day is one.
+//
+// So the plan is the interval's business, and it is decided here rather than in
+// an adapter, because two adapters reaching different conclusions about where a
+// bucket's rows live is exactly how one of them draws a different chart from
+// the other. What this costs is raw rows for the whole range, which is what the
+// caps in query.ts are for: an hourly read is capped at 7 days and a minute one
+// at 3 hours, against a raw retention of 180.
+export const SUB_DAY_INTERVALS: readonly Interval[] = ['minute', 'hour'];
+
+export function needsRawForInterval(interval: Interval | undefined): boolean {
+  return interval !== undefined && SUB_DAY_INTERVALS.includes(interval);
+}
+
 export interface ReadPlanOptions {
   from: number;
   to: number;
@@ -34,6 +54,9 @@ export interface ReadPlanOptions {
   timezone: string;
   filters?: Filter[];
   dim?: Dimension;
+  // The bucket size the caller is going to fold these rows into. Omitted means
+  // a day or coarser, which a rollup can answer.
+  interval?: Interval;
 }
 
 export function readPlan(options: ReadPlanOptions): ReadPlan {
@@ -42,7 +65,7 @@ export function readPlan(options: ReadPlanOptions): ReadPlan {
     return { days: [], raw: [] };
   }
   const allRaw: ReadPlan = { days: [], raw: [{ from, to }] };
-  if (needsRawRows(options.filters, options.dim)) {
+  if (needsRawRows(options.filters, options.dim) || needsRawForInterval(options.interval)) {
     return allRaw;
   }
 
