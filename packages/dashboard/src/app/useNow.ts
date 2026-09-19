@@ -15,6 +15,10 @@ import { useEffect, useState } from 'react';
 // queries.ts was already asking for.
 export const NOW_TICK_MS = 60_000;
 
+// How often a duration on screen is refreshed. Ten seconds, because "online
+// for 3m" going stale for a minute is the thing this measures.
+export const WALL_TICK_MS = 10_000;
+
 // Up to the next tick, never down.
 //
 // Flooring looks like the obvious choice and it puts every report's `to` up to
@@ -41,6 +45,32 @@ export function useNow(everyMs = NOW_TICK_MS): number {
     const timer = setInterval(tick, everyMs);
     // Coming back to the tab is the moment the clock is most wrong, and the
     // interval above may be up to a whole tick away.
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [everyMs]);
+
+  return now;
+}
+
+// The clock a duration is measured against.
+//
+// Not the rounded one above: that is rounded up so a range never ends in the
+// past, and measuring "online for" against it added up to fifty nine seconds
+// to every stay in the visitor list. A range wants a stable key; a duration
+// wants the time.
+export function useWallClock(everyMs = WALL_TICK_MS): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const tick = (): void => {
+      if (!document.hidden) {
+        setNow(Date.now());
+      }
+    };
+    const timer = setInterval(tick, everyMs);
     document.addEventListener('visibilitychange', tick);
     return () => {
       clearInterval(timer);

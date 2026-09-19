@@ -6,8 +6,15 @@ import { useEffect, useRef, useState } from 'react';
 // server framed it that way: one parse for both. The connection state is on
 // screen rather than hidden, because somebody reading a page that says "live"
 // deserves to know whether it is.
+//
+// Four states and not three, because the interesting one is the middle.
+// EventSource reconnects on its own, about every three seconds, and a stream
+// that is retrying carries nothing: with no reconnecting state the page said
+// Live for nine seconds with no frame in it while the poll behind it was
+// switched off. A drop every forty five seconds never reached three inside the
+// window either, so a connection that failed all afternoon never fell back.
 
-export type StreamState = 'connecting' | 'live' | 'polling';
+export type StreamState = 'connecting' | 'live' | 'reconnecting' | 'polling';
 
 // How many failures before giving up on the stream for this visit. EventSource
 // reconnects on its own, so this counts its attempts rather than making any:
@@ -31,6 +38,10 @@ export function useEventStream<T>(url: string, options: StreamOptions = {}): Str
   const [data, setData] = useState<T | null>(null);
   const [state, setState] = useState<StreamState>('connecting');
   const failures = useRef<number[]>([]);
+  // A decision that lasts the visit. Without it, coming back to the tab
+  // restarted a stream that had already been given up on, and the pill went
+  // back to claiming a connection nobody had.
+  const gaveUp = useRef(false);
 
   useEffect(() => {
     const make = options.create ?? ((at: string) => new EventSource(at));
@@ -43,7 +54,7 @@ export function useEventStream<T>(url: string, options: StreamOptions = {}): Str
     let open = true;
 
     const start = (): void => {
-      if (!open) {
+      if (!open || gaveUp.current) {
         return;
       }
       // Same origin, so the session cookie goes on its own. EventSource could
@@ -60,6 +71,10 @@ export function useEventStream<T>(url: string, options: StreamOptions = {}): Str
           ) {
             setData((envelope as { data: T }).data);
             setState('live');
+            // A frame arrived, so whatever went wrong before it is history:
+            // the window counts the failures of one bad spell, not of one
+            // afternoon.
+            failures.current = [];
           }
         } catch {
           // A frame that is not JSON is a frame. The next one is a second away.
@@ -71,10 +86,15 @@ export function useEventStream<T>(url: string, options: StreamOptions = {}): Str
           (at) => at > now - GIVE_UP_WINDOW_MS,
         );
         if (failures.current.length >= GIVE_UP_AFTER) {
+          gaveUp.current = true;
           source?.close();
           source = null;
           setState('polling');
+          return;
         }
+        // Retrying, which is not connected. The page polls in the meantime
+        // rather than standing still behind a pill that says Live.
+        setState('reconnecting');
       };
     };
 
@@ -84,7 +104,7 @@ export function useEventStream<T>(url: string, options: StreamOptions = {}): Str
       if (document.hidden) {
         source?.close();
         source = null;
-      } else if (source === null && open) {
+      } else if (source === null && open && !gaveUp.current) {
         start();
       }
     };

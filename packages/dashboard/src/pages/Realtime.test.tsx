@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppContext, type AppContextValue } from '../app/context.js';
 import { createClient } from '../lib/client.js';
 import { createQueryClient } from '../lib/queries.js';
+import { roundedNow } from '../app/useNow.js';
 import { Realtime } from './Realtime.js';
 
 // Who is here now, and the four things this page can get wrong.
@@ -164,13 +165,13 @@ function fakeStream(): FakeStream {
   };
 }
 
-function show(stream?: FakeStream): JSX.Element {
+function show(stream?: FakeStream, clock: number = NOW): JSX.Element {
   const client = createClient({ fetch: globalThis.fetch });
   const value: AppContextValue = {
     client,
     me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] },
     site: SITE,
-    now: NOW,
+    now: clock,
   };
   return (
     <QueryClientProvider client={createQueryClient()}>
@@ -267,6 +268,31 @@ describe('Realtime', () => {
     ).toBeInTheDocument();
   });
 
+  // Nine seconds of "Live" with no frame in it is the most confident kind of
+  // wrong a live page can be. A stream that is retrying says so, and the poll
+  // behind it carries the page meanwhile.
+  it('says it is reconnecting while the stream retries, and polls meanwhile', async () => {
+    serve();
+    const stream = fakeStream();
+    render(show(stream));
+
+    stream.open();
+    stream.frame(snapshot());
+    expect(await screen.findByText('Live')).toBeInTheDocument();
+
+    stream.fail();
+    expect(await screen.findByText(/Reconnecting/)).toBeInTheDocument();
+    expect(screen.queryByText('Live')).toBeNull();
+    // The interval is in the line, because a page that says it is reconnecting
+    // and says nothing else looks stopped.
+    expect(screen.getByText(/Updating every 5s/)).toBeInTheDocument();
+
+    // A frame arriving is the connection coming back, and it also clears the
+    // count: a drop every few minutes must not add up to a give-up.
+    stream.frame(snapshot());
+    expect(await screen.findByText('Live')).toBeInTheDocument();
+  });
+
   it('says Live once the stream opens, and says polling when it gives up', async () => {
     serve();
     const stream = fakeStream();
@@ -281,6 +307,34 @@ describe('Realtime', () => {
     stream.fail();
     expect(await screen.findByText('Updating every 5s')).toBeInTheDocument();
     expect(screen.queryByText('Live')).toBeNull();
+  });
+
+  // The visitor list is the one place a duration is on screen, and the shell's
+  // clock is rounded up to the next minute so a range never ends in the past.
+  // Measured against that, a stay that began thirty seconds ago reads as a
+  // minute and a half old.
+  it('measures a stay against the wall clock and not the rounded one', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Half past the minute, which is where the rounding is worst: the shell's
+    // clock is already at the next minute, thirty seconds ahead of this.
+    vi.setSystemTime(NOW + 30_000);
+    serve({
+      realtime: () =>
+        ok(
+          snapshot({
+            visitors: [visitor({ since: NOW, lastSeenAt: NOW + 20_000 })],
+            recent: [],
+          }),
+        ),
+    });
+    // What useNow hands the shell at this instant.
+    render(show(undefined, roundedNow(NOW + 30_000)));
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    // Thirty seconds by the clock on the wall. A minute by the rounded one.
+    expect(within(list()).getByText('0m')).toBeInTheDocument();
+    expect(within(list()).queryByText('1m')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('says nobody is here rather than drawing an empty table', async () => {

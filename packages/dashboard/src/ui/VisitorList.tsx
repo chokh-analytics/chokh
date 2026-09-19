@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import type { RealtimeVisitor } from '@chokh/store/contract';
 
+import { useWallClock } from '../app/useNow.js';
 import { countryName, formatOnlineFor } from '../lib/format.js';
 import { messages } from '../messages/en.js';
 import { LiveDot } from './KpiTile.js';
@@ -24,7 +25,11 @@ export interface VisitorListProps {
   online: RealtimeVisitor[];
   recent: RealtimeVisitor[];
   identity: boolean;
-  now: number;
+  // The wall clock, for tests. The component reads its own otherwise, because
+  // the shell's clock is rounded up to the next minute so a range never ends
+  // in the past, and a stay measured against it reads up to fifty nine seconds
+  // long.
+  now?: number;
   // What a row does. A visitor id is a path into People.
   onSelect?: (visitor: RealtimeVisitor) => void;
 }
@@ -96,6 +101,9 @@ export function VisitorList({
   now,
   onSelect,
 }: VisitorListProps): JSX.Element {
+  const ticking = useWallClock();
+  const at = now ?? ticking;
+
   return (
     <table className={styles.table}>
       <caption className="sr-only">{messages.realtime.listCaption}</caption>
@@ -117,7 +125,7 @@ export function VisitorList({
             key={visitor.visitorId}
             visitor={visitor}
             identity={identity}
-            now={now}
+            now={at}
             muted={false}
             onSelect={onSelect}
           />
@@ -138,7 +146,7 @@ export function VisitorList({
             key={visitor.visitorId}
             visitor={visitor}
             identity={identity}
-            now={now}
+            now={at}
             muted
             onSelect={onSelect}
           />

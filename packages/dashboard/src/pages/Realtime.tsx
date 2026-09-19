@@ -127,15 +127,21 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
       <p className={styles.status}>
         <LiveDot on={stream.state === 'live' && !failed} />
         {/*
-          Two states on screen and not three. While the stream is connecting,
-          or reconnecting, or never going to connect at all, the poll behind it
-          is what is filling this page, so saying "connecting" would name the
-          thing that is not working instead of the thing that is. "Live" is
-          claimed only while frames are actually arriving.
+          What is actually filling this page. "Live" is claimed only while
+          frames are arriving; the rest of the time the poll behind the stream
+          is what is answering, and it says so with the interval in it. A
+          stream that is retrying gets its own line, because a page that says
+          nothing about a broken connection is a page that looks live while
+          standing still.
         */}
         {stream.state === 'live' && !failed
           ? messages.realtime.live
-          : format(messages.realtime.polling, { seconds: REALTIME_POLL_MS / 1000 })}
+          : format(
+              stream.state === 'reconnecting'
+                ? messages.realtime.reconnecting
+                : messages.realtime.polling,
+              { seconds: REALTIME_POLL_MS / 1000 },
+            )}
       </p>
 
       {failed ? (
@@ -224,7 +230,6 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
                   online={snapshot?.visitors ?? []}
                   recent={snapshot?.recent ?? []}
                   identity={identity}
-                  now={now}
                   onSelect={toPeople}
                 />
                 {/*
