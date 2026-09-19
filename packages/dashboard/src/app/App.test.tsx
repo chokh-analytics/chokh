@@ -290,3 +290,42 @@ describe('the clock', () => {
     }
   });
 });
+
+// Two promises the markup was making and could not keep.
+describe('what the controls claim to be', () => {
+  const ME = {
+    actor: { kind: 'session', id: 'u_1' },
+    user: { id: 'u_1', email: 'owner@chokh.test' },
+    sites: [SITE],
+  };
+
+  // aria-haspopup="menu" promises a menu widget with arrow key navigation, and
+  // a screen reader tells somebody to use keys that do nothing here: what opens
+  // is a group of buttons.
+  it('never calls a group of buttons a menu', async () => {
+    at('/s_test');
+    serve({ '/api/me': () => envelope(ME) });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Overview' });
+
+    const triggers = screen
+      .getAllByRole('button')
+      .filter((button) => button.hasAttribute('aria-haspopup'));
+    expect(triggers.length).toBeGreaterThan(0);
+    for (const trigger of triggers) {
+      expect(trigger.getAttribute('aria-haspopup')).toBe('true');
+    }
+  });
+
+  // The group holds Today, Yesterday, 7 days and 30 days, which is a date
+  // range. It was announced as "Interval", which is the bucket size and is a
+  // different control that does not exist yet.
+  it('calls the preset group what it is', async () => {
+    at('/s_test');
+    serve({ '/api/me': () => envelope(ME) });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Overview' });
+    expect(screen.getByRole('group', { name: 'Date range' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Interval' })).toBeNull();
+  });
+});

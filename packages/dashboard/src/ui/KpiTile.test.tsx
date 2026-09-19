@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { delta, deltaPoints, GOOD_WHEN } from '../lib/format.js';
-import { KpiTile } from './KpiTile.js';
+import { KpiTile, LiveValue } from './KpiTile.js';
 
 // The tile is where two of this product's rules are kept or broken: a number
 // that could not be computed must not be drawn as a zero, and a comparison
@@ -87,5 +87,19 @@ describe('KpiTile', () => {
     render(<KpiTile label="Visitors" value={null} loading />);
     expect(screen.getByText('Visitors')).toBeInTheDocument();
     expect(screen.queryByText('not available')).toBeNull();
+  });
+});
+
+// The one number on the page that changes while nobody touches anything.
+describe('LiveValue', () => {
+  it('announces a change nobody can see', () => {
+    render(<LiveValue count={37} note="12 signed in, 25 anonymous" />);
+    const region = screen.getByRole('status');
+    expect(region).toHaveTextContent('37 online now');
+    // Polite, so it waits for a gap rather than cutting across whatever is
+    // being read.
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    // Off screen, because the figure it is announcing is already on it.
+    expect(region.className).toBe('sr-only');
   });
 });

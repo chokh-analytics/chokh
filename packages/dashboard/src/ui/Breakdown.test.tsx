@@ -21,7 +21,17 @@ describe('Breakdown', () => {
   it('renders a real table, so a screen reader gets a table', () => {
     render(<Breakdown rows={rows()} dimensionLabel="Page" valueLabel="Visitors" caption="Top pages" />);
     expect(screen.getByRole('table', { name: 'Top pages' })).toBeInTheDocument();
-    expect(screen.getAllByRole('row')).toHaveLength(2);
+    // Two rows of data and the head above them.
+    expect(screen.getAllByRole('row')).toHaveLength(3);
+  });
+
+  // A card says its column names in its own header, so drawing them again above
+  // the rows is chrome. Leaving them out of the markup is a different thing: a
+  // screen reader then reads a column of numbers with nothing to call them.
+  it('names its columns to a screen reader even where it draws no head', () => {
+    render(<Breakdown rows={rows()} dimensionLabel="Page" valueLabel="Visitors" caption="Top pages" />);
+    expect(screen.getByRole('columnheader', { name: 'Page' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Visitors' })).toBeInTheDocument();
   });
 
   it('scales each bar against the biggest row on the card', () => {
@@ -83,11 +93,11 @@ describe('Breakdown', () => {
     expect(screen.getByTitle('12,834')).toHaveTextContent('12.8K');
   });
 
-  it('shows column names only where there is no card head to say them', () => {
-    const { rerender } = render(
+  it('draws that head only on a full report', () => {
+    const { container, rerender } = render(
       <Breakdown rows={rows()} dimensionLabel="Page" valueLabel="Visitors" caption="Top pages" />,
     );
-    expect(screen.queryByRole('columnheader')).toBeNull();
+    expect(container.querySelector('thead')?.className).toBe('sr-only');
 
     rerender(
       <Breakdown
@@ -98,6 +108,6 @@ describe('Breakdown', () => {
         showHead
       />,
     );
-    expect(screen.getByRole('columnheader', { name: 'Page' })).toBeInTheDocument();
+    expect(container.querySelector('thead')?.className).not.toBe('sr-only');
   });
 });

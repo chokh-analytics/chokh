@@ -104,7 +104,7 @@ export function RangeBar(): JSX.Element {
 
   return (
     <div className={styles.bar}>
-      <div className={styles.group} role="group" aria-label={messages.range.interval}>
+      <div className={styles.group} role="group" aria-label={messages.range.presets}>
         {PRESETS.map((preset) => (
           <button
             key={preset.id}

@@ -95,6 +95,9 @@ function ThemeToggle(): JSX.Element {
   );
 }
 
+// aria-haspopup is "true" and not "menu" on both triggers below. What opens is
+// a group of buttons, not a menu widget: naming a menu promises arrow key
+// navigation, and a screen reader tells somebody to use keys that do nothing.
 function SiteSwitcher({ value }: { value: AppContextValue }): JSX.Element {
   const [, navigate] = useLocation();
   const others = value.me.sites;
@@ -104,7 +107,7 @@ function SiteSwitcher({ value }: { value: AppContextValue }): JSX.Element {
       align="left"
       label={messages.nav.siteSwitcher}
       trigger={({ open, toggle }) => (
-        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="menu">
+        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="true">
           {value.site.name}
           <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
             <path d="M7 10l5 5 5-5z" />
@@ -156,7 +159,7 @@ function AccountMenu({ value, onSignedOut }: { value: AppContextValue; onSignedO
     <Popover
       label={messages.nav.account}
       trigger={({ open, toggle }) => (
-        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="menu">
+        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="true">
           {value.me.user?.name ?? value.me.user?.email ?? messages.nav.account}
         </Button>
       )}

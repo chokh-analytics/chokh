@@ -123,6 +123,15 @@ export function LiveValue({ count, note }: { count: number; note: string }): JSX
         {count}
       </span>
       <span className={styles.delta}>{note}</span>
+      {/*
+        The one number on this page that changes while nobody touches anything.
+        Polite, so it waits for a gap rather than interrupting, and off screen,
+        because the figure above it is already visible: without it the count
+        moves in silence for anybody who cannot see it.
+      */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {format(messages.a11y.liveCount, { count })} {note}
+      </span>
     </>
   );
 }

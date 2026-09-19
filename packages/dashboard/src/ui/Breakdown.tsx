@@ -55,15 +55,21 @@ export function Breakdown({
   return (
     <table className={styles.table}>
       <caption className="sr-only">{caption}</caption>
-      {showHead && (
-        <thead className={styles.head}>
-          <tr>
-            <th scope="col">{dimensionLabel}</th>
-            {secondaryLabel !== undefined && <th scope="col">{secondaryLabel}</th>}
-            <th scope="col">{valueLabel}</th>
-          </tr>
-        </thead>
-      )}
+      {/*
+        Always a head, drawn only on a full report.
+        //
+        A card says its two column names in its own header, so repeating them
+        above the rows is a line of chrome. Leaving them out of the markup as
+        well is a different thing: a screen reader then reads a column of
+        numbers with nothing to call them, on every card of the Overview.
+      */}
+      <thead className={showHead ? styles.head : 'sr-only'}>
+        <tr>
+          <th scope="col">{dimensionLabel}</th>
+          {secondaryLabel !== undefined && <th scope="col">{secondaryLabel}</th>}
+          <th scope="col">{valueLabel}</th>
+        </tr>
+      </thead>
       <tbody>
         {rows.map((row) => {
           const content = (
@@ -82,7 +88,7 @@ export function Breakdown({
 
           return (
             <tr key={row.key} className={styles.row}>
-              <td className={styles.cell} colSpan={secondaryLabel === undefined ? 1 : 1}>
+              <td className={styles.cell}>
                 <span
                   className={styles.bar}
                   style={{ width: `${Math.max(0, Math.min(1, row.share)) * 100}%` }}

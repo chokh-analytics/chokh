@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent, type JSX } from 'react';
 
 import { api, type CreatedSite } from '../lib/api.js';
 import { ChokhError, type Client } from '../lib/client.js';
-import { format, messages } from '../messages/en.js';
+import { messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
 import { Field } from '../ui/Field.js';
 import { Wordmark } from '../ui/Wordmark.js';
@@ -223,7 +223,7 @@ export function FirstRun({ client, onReady }: FirstRunProps): JSX.Element {
 
         {problem !== null && (
           <p className={styles.problem} role="alert">
-            {format(messages.states.errorCode, { code: problem })}
+            {problem}
           </p>
         )}
 
