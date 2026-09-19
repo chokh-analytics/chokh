@@ -1,0 +1,17 @@
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--ink);
+}
+
+.eye {
+  color: var(--accent);
+  flex: none;
+}
+
+.name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-size: var(--t-h2);
+}

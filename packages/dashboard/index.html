@@ -4,6 +4,34 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Chokh</title>
+    <meta name="description" content="Open source, first-party web analytics." />
+    <!-- Nothing here is indexable and nothing here belongs to anybody but the
+         person signed in, so no crawler is invited. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      /*
+       * The theme, before the first paint.
+       *
+       * Without this a person who chose dark sees a white page for as long as
+       * the bundle takes to parse, which on a slow connection is a second of
+       * flash on every navigation. Six lines inline is the whole fix, and it
+       * runs before the stylesheet has anything to apply.
+       *
+       * A choice of "system" takes the attribute off rather than writing the
+       * resolved name, so the media query keeps deciding and a machine that
+       * switches at sunset follows without a reload. The same rule is in
+       * src/theme/theme.ts, where the toggle and the tests read it.
+       */
+      try {
+        var choice = localStorage.getItem('chokh:theme');
+        if (choice === 'light' || choice === 'dark') {
+          document.documentElement.setAttribute('data-theme', choice);
+        }
+      } catch (error) {
+        /* A private window has no storage. The system preference still works. */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

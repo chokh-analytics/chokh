@@ -13,6 +13,14 @@
     "./conformance": {
       "types": "./src/conformance/index.ts",
       "default": "./dist/conformance/index.js"
+    },
+    "./time": {
+      "types": "./src/time.ts",
+      "default": "./dist/time.js"
+    },
+    "./contract": {
+      "types": "./src/query.ts",
+      "default": "./dist/query.js"
     }
   },
   "files": [
@@ -48,6 +56,14 @@
       "./conformance": {
         "types": "./dist/conformance/index.d.ts",
         "default": "./dist/conformance/index.js"
+      },
+      "./time": {
+        "types": "./dist/time.d.ts",
+        "default": "./dist/time.js"
+      },
+      "./contract": {
+        "types": "./dist/query.d.ts",
+        "default": "./dist/query.js"
       }
     }
   }

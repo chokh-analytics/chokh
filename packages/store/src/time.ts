@@ -2,6 +2,13 @@
 // date keys, the split between today's raw rows and the rolled up history, and
 // the buckets of a time series. One helper decides all of them, so an adapter
 // can never disagree with the suite about where a day ends.
+//
+// This file is also reachable on its own as @chokh/store/time, because the
+// dashboard has to draw the same boundaries in a browser and the barrel pulls
+// in node:crypto. A day in the dashboard and a day in the store being two
+// different instants is the bug that puts a truncated bucket on the left edge
+// of a chart and makes it read as a drop in traffic. There is one definition,
+// and both halves import it.
 
 export interface WallClock {
   year: number;

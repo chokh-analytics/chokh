@@ -1,0 +1,63 @@
+/*
+ * What is on screen between the first paint and the answer to GET /api/me.
+ *
+ * Deliberately not a skeleton of the dashboard. Until that request answers,
+ * nobody knows whether this person is signed in, which site they are looking at
+ * or whether there is a site at all, so a page of grey rectangles would be a
+ * guess at a layout that may never appear. The mark and a thread of progress
+ * say the honest thing: something is happening, and it has not decided yet.
+ */
+
+.splash {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s3);
+  padding: var(--gutter);
+  text-align: center;
+}
+
+.tagline {
+  color: var(--muted);
+  max-width: 34ch;
+}
+
+/* A thread rather than a spinner: it sits at the top of the viewport where a
+ * loading bar belongs, and it does not compete with the mark. */
+.thread {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 2px;
+  overflow: hidden;
+  background: var(--soft);
+}
+
+.thread::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(350%);
+  }
+}
+
+/* With motion off the thread is a still bar rather than nothing at all, so the
+ * page still says it is working. */
+@media (prefers-reduced-motion: reduce) {
+  .thread::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

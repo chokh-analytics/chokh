@@ -1,4 +1,10 @@
-import type { GeoLocation } from '@chokh/geo';
+import type { GeoLocation } from '@chokh/geo/types';
+
+// This file is also reachable on its own as @chokh/store/contract, because the
+// dashboard needs the shapes the API answers with and cannot have the barrel:
+// the barrel re-exports the session fold, which imports node:crypto. A browser
+// importing a type it cannot resolve is a build that fails for a reason nobody
+// can read, so the two consumers get two doors and one set of types.
 
 import { shiftYears, type Interval } from './time.js';
 import type { Attributes, EventType, StoredEvent, StoredSession, Touch } from './types.js';

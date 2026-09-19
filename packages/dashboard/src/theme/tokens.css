@@ -1,0 +1,137 @@
+/*
+ * The design system. Every colour, size and space in the dashboard comes from
+ * here, and the same table lives in tokens.ts where the contrast test reads it.
+ *
+ * Dark is the same system declared a second time, not a second drawing. It is
+ * written twice on purpose: once under prefers-color-scheme, guarded so a
+ * person who has chosen light keeps light, and once under an explicit
+ * data-theme, so a choice beats the system.
+ */
+
+:root {
+  /* Ground is the page, paper is a card, soft is a table head or a hovered row. */
+  --ground: #f6f7f4;
+  --paper: #ffffff;
+  --soft: #eef2ef;
+  --line: #d8dfdc;
+
+  --ink: #17222b;
+  --muted: #55656e;
+
+  /* One accent. Nothing on any page is a second hue except a status. */
+  --accent: #0e7c73;
+  --accent-ink: #0a5c55;
+  --accent-soft: #ddf0ec;
+
+  /* Status, and only status. Green never means "the second series". */
+  --live: #1b7a36;
+  --live-soft: #ddf2e1;
+  --dead: #a93d18;
+  --dead-soft: #f8e4da;
+  --warn: #7a5400;
+  --warn-soft: #f8efcf;
+
+  /* How much of the accent a chart fills under its line. Dark needs more of it
+   * to read as the same weight of tint. */
+  --chart-fill: 0.1;
+
+  --font-sans: 'IBM Plex Sans Variable', 'Hind Siliguri', system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', 'Consolas', monospace;
+
+  --t-kpi: 30px;
+  --t-kpi-sm: 22px;
+  --t-h1: 20px;
+  --t-h2: 15px;
+  --t-body: 14px;
+  --t-num: 13px;
+  --t-label: 11px;
+  --t-micro: 10px;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  --r1: 4px;
+  --r2: 6px;
+  --r3: 10px;
+  --r4: 999px;
+
+  /* The one shadow, for anything that floats above the page. A card uses a
+   * border instead, because a page of shadowed cards is a page of floating
+   * rectangles. */
+  --shadow-pop: 0 8px 24px rgb(23 34 43 / 12%), 0 1px 2px rgb(23 34 43 / 8%);
+
+  --page-max: 1280px;
+  --gutter: 24px;
+
+  --fast: 120ms;
+  --slow: 180ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --ground: #0e1417;
+    --paper: #141c20;
+    --soft: #1b2529;
+    --line: #2a363c;
+
+    --ink: #e4eae7;
+    --muted: #9aa8ae;
+
+    --accent: #3bc9b8;
+    --accent-ink: #7fe0d3;
+    --accent-soft: #12312f;
+
+    --live: #5bcf7a;
+    --live-soft: #15301d;
+    --dead: #f0855a;
+    --dead-soft: #3a2018;
+    --warn: #e5b54a;
+    --warn-soft: #3a2e10;
+
+    --chart-fill: 0.14;
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 2px rgb(0 0 0 / 30%);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --ground: #0e1417;
+  --paper: #141c20;
+  --soft: #1b2529;
+  --line: #2a363c;
+
+  --ink: #e4eae7;
+  --muted: #9aa8ae;
+
+  --accent: #3bc9b8;
+  --accent-ink: #7fe0d3;
+  --accent-soft: #12312f;
+
+  --live: #5bcf7a;
+  --live-soft: #15301d;
+  --dead: #f0855a;
+  --dead-soft: #3a2018;
+  --warn: #e5b54a;
+  --warn-soft: #3a2e10;
+
+  --chart-fill: 0.14;
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 2px rgb(0 0 0 / 30%);
+
+  color-scheme: dark;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: 16px;
+    --t-kpi: var(--t-kpi-sm);
+  }
+}

@@ -1,0 +1,46 @@
+/*
+ * Two families, self hosted, latin only.
+ *
+ * A privacy analytics product must not make every self hosted install call a
+ * font CDN on every page load. The files ship in the image; nothing leaves an
+ * install for a font, ever.
+ *
+ * The paths walk into node_modules on purpose. Fontsource ships a stylesheet
+ * per family that declares every subset it has, and importing it would make
+ * Vite copy cyrillic, greek and vietnamese into the image for the sake of
+ * unicode-range rules no browser here will ever match. Naming the two files
+ * keeps the image honest about what it carries.
+ *
+ * Measured 2026-09-19 from the installed packages: the variable sans is
+ * 45,712 bytes and the mono is 14,708, so 59 KB of font in total. woff2 is
+ * already compressed, so nothing further happens to them in transit.
+ */
+
+@font-face {
+  font-family: 'IBM Plex Sans Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 700;
+  src: url('../../node_modules/@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: u+0000-00ff, u+0131, u+0152-0153, u+02bb-02bc, u+02c6, u+02da, u+02dc,
+    u+0304, u+0308, u+0329, u+2000-206f, u+2074, u+20ac, u+2122, u+2191, u+2193, u+2212,
+    u+2215, u+feff, u+fffd;
+}
+
+/*
+ * One weight of mono, and every number on every page is in it. The hierarchy
+ * between a column of figures and a KPI value is size and colour rather than
+ * weight, which is a second file nobody has to download.
+ */
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2')
+    format('woff2');
+  unicode-range: u+0000-00ff, u+0131, u+0152-0153, u+02bb-02bc, u+02c6, u+02da, u+02dc,
+    u+0304, u+0308, u+0329, u+2000-206f, u+2074, u+20ac, u+2122, u+2191, u+2193, u+2212,
+    u+2215, u+feff, u+fffd;
+}

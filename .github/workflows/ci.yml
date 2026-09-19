@@ -63,6 +63,12 @@ jobs:
 
       - run: pnpm size:tracker
 
+      # The dashboard is the first screenshot a developer sees and the first
+      # thing they wait for. Its budgets are per file and gzipped, set from what
+      # the build weighed rather than from a guess, and the fonts count because
+      # a product that self hosts them has to be honest about carrying them.
+      - run: pnpm size:dashboard
+
   tracker-e2e:
     name: tracker smoke in a real browser
     runs-on: ubuntu-latest

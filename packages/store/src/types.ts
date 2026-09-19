@@ -1,4 +1,4 @@
-import type { GeoLocation, UserAgentInfo } from '@chokh/geo';
+import type { GeoLocation, UserAgentInfo } from '@chokh/geo/types';
 
 import type { Channel } from './channel.js';
 

@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "pnpm -r run test",
     "size:tracker": "node scripts/tracker-size.mjs",
+    "size:dashboard": "pnpm --filter @chokh/dashboard run size",
     "load:collect": "node scripts/load-collect.mjs"
   },
   "devDependencies": {
