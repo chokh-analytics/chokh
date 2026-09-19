@@ -478,6 +478,7 @@ function HereNow(): JSX.Element {
           online={snapshot.visitors}
           recent={snapshot.recent}
           identity={identity}
+          timezone={site.settings.timezone}
           onSelect={(visitor) =>
             navigate(`/${site.id}/people/v/${encodeURIComponent(visitor.visitorId)}`)
           }

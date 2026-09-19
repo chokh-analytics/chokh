@@ -111,10 +111,22 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname.startsWith('/api/')) {
-    // A stream would keep the smoke test's browser open until it timed out, and
-    // the page's own fallback to polling is what is being exercised anyway.
+    // One frame, then held open.
+    //
+    // A screenshot of Realtime has to show the page in the state it is in on a
+    // working install, and a fixture that refuses the stream photographs the
+    // reconnecting line instead. The browser suite drives the real server and
+    // proves the failure paths there; this one exists to be photographed.
     if (url.pathname.endsWith('/realtime/stream')) {
-      return refuse(res, 404, 'NOT_FOUND', 'No stream in the fixture');
+      res.writeHead(200, {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+      });
+      res.write(`data: ${JSON.stringify({ success: true, data: REALTIME })}
+
+`);
+      return undefined;
     }
     return api(url, res);
   }

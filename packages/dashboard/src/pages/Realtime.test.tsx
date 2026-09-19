@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { JSX } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -335,6 +336,56 @@ describe('Realtime', () => {
     expect(within(list()).getByText('0m')).toBeInTheDocument();
     expect(within(list()).queryByText('1m')).toBeNull();
     vi.useRealTimers();
+  });
+
+  // Every other report narrows by putting a filter in the URL. This one has no
+  // range and nothing to query: it picks those people out of the list that is
+  // already on screen.
+  it('narrows the visitor list to a page that was clicked, and back again', async () => {
+    serve({
+      realtime: () =>
+        ok(
+          snapshot({
+            online: 2,
+            anonymous: 2,
+            byPage: [
+              { key: '/pricing', visitors: 1 },
+              { key: '/docs', visitors: 1 },
+            ],
+            visitors: [
+              visitor({ path: '/pricing' }),
+              visitor({ visitorId: 'v_other', path: '/docs' }),
+            ],
+            recent: [],
+          }),
+        ),
+    });
+    render(show());
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    expect(within(list()).getByText('/docs')).toBeInTheDocument();
+
+    const pages = screen.getByRole('region', { name: 'On these pages' });
+    await userEvent.click(within(pages).getByRole('button', { name: /\/pricing/ }));
+
+    expect(within(list()).getByText('/pricing')).toBeInTheDocument();
+    expect(within(list()).queryByText('/docs')).toBeNull();
+    // And nothing was put in the URL, because there is nothing to link to: a
+    // snapshot of this second cannot be reproduced from one.
+    expect(window.location.search).toBe('');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show everybody' }));
+    expect(within(list()).getByText('/docs')).toBeInTheDocument();
+  });
+
+  // "Online for 4m" under a heading that says the same thing is a number about
+  // a visit that ended ten minutes ago.
+  it('says when a muted row was last seen rather than how long it lasted', async () => {
+    serve();
+    render(show());
+
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    expect(within(list()).getByText(/Last seen/)).toBeInTheDocument();
   });
 
   it('says nobody is here rather than drawing an empty table', async () => {

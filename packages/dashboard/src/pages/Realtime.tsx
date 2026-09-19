@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from 'react';
+import { useMemo, useState, type JSX } from 'react';
 import { useLocation } from 'wouter';
 import type { RealtimeSnapshot, RealtimeVisitor } from '@chokh/store/contract';
 
@@ -53,6 +53,7 @@ function minuteQuery(now: number): ViewQuery {
 function countRows(
   rows: { key: string; visitors: number }[],
   label: (key: string) => string,
+  onPick?: (key: string) => void,
 ): BreakdownRowView[] {
   const top = rows.reduce((best, row) => Math.max(best, row.visitors), 0);
   return rows.map((row) => ({
@@ -60,7 +61,28 @@ function countRows(
     label: label(row.key),
     value: formatCount(row.visitors),
     share: top === 0 ? 0 : row.visitors / top,
+    ...(onPick === undefined ? {} : { onClick: () => onPick(row.key) }),
   }));
+}
+
+// What the visitor list has been narrowed to, on this page and nowhere else.
+//
+// Every other report in this product narrows by putting a filter in the URL,
+// because a range report is a question about stored rows. This one is not: it
+// is a snapshot of who is here at this second, and there is nothing to query.
+// Clicking a page picks those people out of the list that is already on screen,
+// which is what a person clicking a row on a live page wants, and it lasts
+// exactly as long as they are looking at it.
+interface Focus {
+  kind: 'page' | 'country';
+  value: string;
+}
+
+function matches(visitor: RealtimeVisitor, focus: Focus | null): boolean {
+  if (focus === null) {
+    return true;
+  }
+  return focus.kind === 'page' ? visitor.path === focus.value : visitor.country === focus.value;
 }
 
 export interface RealtimeProps {
@@ -106,6 +128,10 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
       })),
     [snapshot],
   );
+
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const pick = (kind: Focus['kind']) => (value: string) =>
+    setFocus((was) => (was?.kind === kind && was.value === value ? null : { kind, value }));
 
   const toPeople = (visitor: RealtimeVisitor): void =>
     navigate(`/${site.id}/people/v/${encodeURIComponent(visitor.visitorId)}`);
@@ -200,7 +226,7 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
                   <EmptyState message={messages.realtime.nobodyOnPage} />
                 ) : (
                   <Breakdown
-                    rows={countRows(snapshot.byPage, (key) => key)}
+                    rows={countRows(snapshot.byPage, (key) => key, pick('page'))}
                     dimensionLabel={messages.dimensions.page}
                     valueLabel={messages.metrics.visitors}
                     caption={messages.realtime.onPages}
@@ -212,7 +238,11 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
                   <EmptyState message={messages.realtime.nobodyFromCountry} />
                 ) : (
                   <Breakdown
-                    rows={countRows(snapshot.byCountry, (key) => countryName(key) ?? key)}
+                    rows={countRows(
+                      snapshot.byCountry,
+                      (key) => countryName(key) ?? key,
+                      pick('country'),
+                    )}
                     dimensionLabel={messages.dimensions.country}
                     valueLabel={messages.metrics.visitors}
                     caption={messages.realtime.fromCountries}
@@ -229,10 +259,26 @@ export function Realtime({ stream: streamOptions }: RealtimeProps = {}): JSX.Ele
               <EmptyState message={messages.realtime.nobody} />
             ) : (
               <>
+                {focus !== null && (
+                  <p className={styles.focus}>
+                    <span>
+                      {format(messages.realtime.onlyThisPage, {
+                        value:
+                          focus.kind === 'country'
+                            ? (countryName(focus.value) ?? focus.value)
+                            : focus.value,
+                      })}
+                    </span>
+                    <button type="button" className={styles.focusClear} onClick={() => setFocus(null)}>
+                      {messages.realtime.showEverybody}
+                    </button>
+                  </p>
+                )}
                 <VisitorList
-                  online={snapshot?.visitors ?? []}
-                  recent={snapshot?.recent ?? []}
+                  online={(snapshot?.visitors ?? []).filter((one) => matches(one, focus))}
+                  recent={(snapshot?.recent ?? []).filter((one) => matches(one, focus))}
                   identity={identity}
+                  timezone={site.settings.timezone}
                   onSelect={toPeople}
                 />
                 {/*

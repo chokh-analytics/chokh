@@ -70,6 +70,7 @@ export function Sources(): JSX.Element {
         tabs={CHANNEL_TABS}
         param="channels"
         secondary="bounceRate"
+        note={messages.reports.channelsAiNote}
         help={
           <InfoDot label={messages.reports.channels} text={messages.reports.channelsHelp} />
         }
@@ -79,6 +80,7 @@ export function Sources(): JSX.Element {
         tabs={REFERRER_TABS}
         param="referrers"
         secondary="pageviews"
+        note={messages.reports.referrersNote}
       />
       <DimensionCard
         title={messages.reports.campaigns}

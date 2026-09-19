@@ -75,28 +75,32 @@ cross-origin request.
 
 ### What it costs to load
 
-Measured on 2026-09-20 with `pnpm size:dashboard`, which reads the build
-manifest and gzips each file:
+One run of `pnpm size:dashboard` on 2026-09-20, which walks `dist/` and gzips
+every file that gzip does anything to. Bytes, because a kilobyte means two
+things and half a table in each is how a figure stops being checkable:
 
-| | gzipped |
+| | bytes, gzipped |
 | --- | --- |
-| Application | 73.8 KB |
-| Libraries (React, the router, the query cache) | 84.6 KB |
-| Stylesheet | 7.3 KB |
-| Fonts (IBM Plex Sans and Mono, latin, woff2) | 59.0 KB |
+| The first paint: the shell, the Overview and what they share | 26,299 |
+| Libraries: React, the router, the query cache | 84,611 |
+| The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
+| The six other reports, one file each, loaded when opened | 12,585 |
+| Stylesheets | 9,664 |
+| Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
 that fetches a font from somebody else's CDN tells that CDN who is reading it,
-which is the thing this product exists not to do. The budgets are per file and
-CI fails a build that exceeds one.
+which is the thing this product exists not to do. The budgets are per group,
+and CI fails a build that puts any group over its own.
 
 ### Accessibility
 
 Lighthouse scores it 1 on the Overview and on Realtime, in both the light and
-the dark palette, over 25 and 28 applicable audits respectively. CI fails under
-1, and the run also asserts that the page it audited had the dashboard rendered
-in it, because Lighthouse scores a blank page 1. Every chart carries its numbers
-as a table for a screen reader, including the world map.
+the dark palette, over 25 and 23 applicable audits respectively, against the
+real server rather than a fixture. CI fails under 1, and the run also asserts
+that the page it audited had the dashboard rendered in it, because Lighthouse
+scores a blank page 1. Every chart carries its numbers as a table for a screen
+reader, including the world map.
 
 ### Keyboard
 
@@ -108,15 +112,18 @@ takes a key the browser already uses.
 ### Pictures and audits
 
 ```bash
-pnpm --filter @chokh/dashboard build
+pnpm build
 pnpm --filter @chokh/dashboard run shots   # fourteen screenshots, seven reports in two themes
 pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
 pnpm --filter @chokh/dashboard run test:e2e
 ```
 
-Each starts its own fixture install, so none of them needs a database, and the
-clock is frozen for the screenshots so the same command produces the same
-pictures.
+The browser suite and the audit run against the real server on an in-memory
+store, so neither needs MongoDB or Redis and both see the envelope, the session
+cookie and the stream a person gets. The screenshots run against a fixture with
+a frozen clock instead, so the same command produces the same pictures.
+
+![A profile on the People report](docs/images/dashboard-people-dark.png)
 
 ## One-line install
 

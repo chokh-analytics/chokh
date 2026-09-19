@@ -5,11 +5,21 @@
   padding: var(--s2) var(--s3);
 }
 
-.more {
+/* "Show up to 100" on the left, the download on the right, and the row is
+ * there even when there is nothing more to show: a card that grows a foot when
+ * a hundred rows arrive is a card that moved. */
+.foot {
   display: flex;
-  justify-content: center;
-  padding: var(--s2) 0 var(--s1);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3) var(--s1);
   border-top: 1px solid var(--line);
+}
+
+.download {
+  font-size: var(--t-label);
+  color: var(--accent-ink);
 }
 
 /* The sentence under a card whose rows cannot be clicked. */

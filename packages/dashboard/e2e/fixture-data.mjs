@@ -127,6 +127,18 @@ const ROWS = {
   city: ['Dhaka', 'Chattogram', 'Kolkata', 'Sylhet', 'Karachi', 'Dubai'],
   browser: ['Chrome', 'Safari', 'Edge', 'Firefox', 'Samsung Internet'],
   os: ['Android', 'Windows', 'iOS', 'macOS', 'Linux'],
+  // A browser with a system it actually ships on. The visitor list pairs them
+  // by index, and a screenshot that puts Safari on Windows and Samsung
+  // Internet on Linux is a picture a developer stops reading.
+  agent: [
+    { browser: 'Chrome', os: 'Android', device: 'mobile', screen: '360-767' },
+    { browser: 'Chrome', os: 'Windows', device: 'desktop', screen: '1440+' },
+    { browser: 'Safari', os: 'iOS', device: 'mobile', screen: '360-767' },
+    { browser: 'Safari', os: 'macOS', device: 'desktop', screen: '1024-1439' },
+    { browser: 'Edge', os: 'Windows', device: 'desktop', screen: '1024-1439' },
+    { browser: 'Firefox', os: 'Linux', device: 'desktop', screen: '1440+' },
+    { browser: 'Samsung Internet', os: 'Android', device: 'mobile', screen: '360-767' },
+  ],
   device: ['mobile', 'desktop', 'tablet'],
   screen: ['360-767', '768-1023', '1024-1439', '1440+'],
   lang: ['bn', 'en', 'hi', 'ur'],
@@ -229,9 +241,11 @@ function visitor(index, minutesAgo) {
     city: place.city,
     lat: place.lat,
     lon: place.lon,
-    browser: ROWS.browser[index % ROWS.browser.length],
-    os: ROWS.os[index % ROWS.os.length],
-    device: ROWS.device[index % ROWS.device.length],
+    // Only the three fields a presence entry carries: the screen bucket
+    // belongs to a stored event, not to this.
+    browser: ROWS.agent[index % ROWS.agent.length].browser,
+    os: ROWS.agent[index % ROWS.agent.length].os,
+    device: ROWS.agent[index % ROWS.agent.length].device,
   };
 }
 

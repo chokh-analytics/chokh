@@ -19,16 +19,17 @@ import { startFixture } from '../e2e/serve.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'screenshots');
-// The four the README carries. All fourteen are taken every run and none of
-// them are committed: these four are copied into the repository, because a
-// README picture has to be in the repository to be a README picture, and four
-// is what somebody looks at before deciding whether to install this.
+// The ones the README carries, and every one of them is embedded in it: a
+// picture committed and referenced from nowhere is a file nobody can find and
+// nobody can delete. All fourteen are taken every run and the rest are not
+// committed, because a README picture has to be in the repository to be a
+// README picture and the other ten are a regenerable command away.
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
-  ['01-overview-dark', 'dashboard-overview-dark.png'],
   ['02-realtime-dark', 'dashboard-realtime-dark.png'],
   ['05-geo-light', 'dashboard-geo-light.png'],
+  ['07-people-dark', 'dashboard-people-dark.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser
 // suite drives never take each other's place: a screenshot of live data is a
@@ -95,7 +96,9 @@ for (const theme of THEMES) {
     await page.waitForFunction(() => document.querySelectorAll('[class*="skeleton"]').length === 0, {
       timeout: 15_000,
     });
-    await page.waitForLoadState('networkidle');
+    // No networkidle here: Realtime holds an event stream open, so the
+    // network is never idle on that page and waiting for it is waiting for a
+    // timeout. The skeletons being gone is the real gate.
     const name = `${shot.name}-${theme}`;
     const file = join(OUT, `${name}.png`);
     await page.screenshot({ path: file });

@@ -2,8 +2,8 @@ import type { JSX } from 'react';
 import type { RealtimeVisitor } from '@chokh/store/contract';
 
 import { useWallClock } from '../app/useNow.js';
-import { countryName, formatOnlineFor } from '../lib/format.js';
-import { messages } from '../messages/en.js';
+import { countryName, formatOnlineFor, formatSince } from '../lib/format.js';
+import { format, messages } from '../messages/en.js';
 import { LiveDot } from './KpiTile.js';
 import styles from './VisitorList.module.css';
 
@@ -25,6 +25,9 @@ export interface VisitorListProps {
   online: RealtimeVisitor[];
   recent: RealtimeVisitor[];
   identity: boolean;
+  // Which clock a time is written in. The site's, like every other time in
+  // this product.
+  timezone: string;
   // The wall clock, for tests. The component reads its own otherwise, because
   // the shell's clock is rounded up to the next minute so a range never ends
   // in the past, and a stay measured against it reads up to fifty nine seconds
@@ -47,12 +50,14 @@ function Row({
   visitor,
   identity,
   now,
+  timezone,
   muted,
   onSelect,
 }: {
   visitor: RealtimeVisitor;
   identity: boolean;
   now: number;
+  timezone: string;
   muted: boolean;
   onSelect?: (visitor: RealtimeVisitor) => void;
 }): JSX.Element {
@@ -88,7 +93,16 @@ function Row({
       <td className={styles.cell}>{deviceOf(visitor)}</td>
       {identity && <td className={[styles.cell, styles.mono].join(' ')}>{visitor.ip ?? ''}</td>}
       <td className={[styles.cell, styles.mono, styles.right].join(' ')}>
-        {formatOnlineFor(visitor.since, now)}
+        {/*
+          A stay length for somebody who is here, and when they were last seen
+          for somebody who is not. "Online for 4m" under a heading that says
+          the same thing is a number about a visit that ended.
+        */}
+        {muted
+          ? format(messages.realtime.seenAgo, {
+              when: formatSince(visitor.lastSeenAt, now, timezone),
+            })
+          : formatOnlineFor(visitor.since, now)}
       </td>
     </tr>
   );
@@ -98,6 +112,7 @@ export function VisitorList({
   online,
   recent,
   identity,
+  timezone,
   now,
   onSelect,
 }: VisitorListProps): JSX.Element {
@@ -126,6 +141,7 @@ export function VisitorList({
             visitor={visitor}
             identity={identity}
             now={at}
+            timezone={timezone}
             muted={false}
             onSelect={onSelect}
           />
@@ -147,6 +163,7 @@ export function VisitorList({
             visitor={visitor}
             identity={identity}
             now={at}
+            timezone={timezone}
             muted
             onSelect={onSelect}
           />

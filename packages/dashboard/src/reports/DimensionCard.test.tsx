@@ -177,6 +177,33 @@ describe('DimensionCard', () => {
     ).toBeInTheDocument();
   });
 
+  // The URL carries the range and the filters on screen, so what a person
+  // downloads is what they were reading rather than the site's whole history.
+  it('offers the rows on screen as a file, for the range on screen', async () => {
+    serve();
+    window.history.replaceState(null, '', '/s_test/pages?range=30d');
+    render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />));
+
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    const download = within(card()).getByRole('link', { name: 'Download CSV' });
+    const href = download.getAttribute('href') ?? '';
+    expect(href).toContain('/export.csv');
+    expect(href).toContain('dim=page');
+    expect(download).toHaveAttribute('download');
+  });
+
+  it('carries a note where the card has one to make', async () => {
+    serve();
+    render(
+      show(
+        <DimensionCard title="Top pages" tabs={TABS} param="pages" note="A thing worth saying." />,
+      ),
+    );
+
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    expect(within(card()).getByText('A thing worth saying.')).toBeInTheDocument();
+  });
+
   // A raw event carries no entry page, so the store refuses that filter. A row
   // that cannot be filtered is not a button.
   it('makes a row pressable only when the store can filter by it', async () => {

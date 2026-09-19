@@ -205,6 +205,9 @@ export const messages = {
     place: 'Location',
     address: 'Address',
     onlineFor: 'Online for',
+    seenAgo: 'Last seen {when}',
+    onlyThisPage: 'Only {value}',
+    showEverybody: 'Show everybody',
     nobody: 'Nobody is on the site right now.',
     nobodyLede: 'The last half hour is empty too. The chart above still has its shape.',
   },
@@ -229,6 +232,13 @@ export const messages = {
     channels: 'Channels',
     channelsHelp:
       'Where a visit came from, worked out from the referrer and the campaign tags. A visit belongs to exactly one channel.',
+    channelsAiNote:
+      'AI assistants is a channel of its own here: a visit sent by ChatGPT, Perplexity, Claude or Copilot is not a search visit and not a referral, and counting it as either hides the thing everybody is trying to measure.',
+    aiPill: 'AI',
+    referrersNote:
+      'A visit with no referrer is not in this list. It is the Direct row in Channels above, which is where somebody typing the address, a bookmark and most application traffic end up.',
+    download: 'Download CSV',
+    downloadNote: 'This card, this range, these filters.',
     referrers: 'Referrers',
     campaigns: 'Campaigns',
     tabSource: 'Source',
