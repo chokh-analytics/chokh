@@ -1,15 +1,14 @@
-import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 
-import type { ApiDeps } from '@chokh/server/dist/index.js';
-import { extension } from './index.js';
+import { extension, PING_FEATURE } from './index.js';
 
-// The shape the core loads, asserted from this side of the seam.
+// What this package exports to the core, asserted from this side of the seam.
 //
 // packages/server proves that it can load an extension and what it does with
-// one. This proves that what this package exports is an extension: a name, a
-// register that runs, and a licence opinion. The two halves are built and
-// released together, so nothing else checks that they still agree.
+// one, and ee.routes.test.ts drives the gate over HTTP against a real server.
+// What is left for here is the module the loader actually imports: it is the
+// right shape, and on a machine with no CHOKH_LICENSE_KEY it says so rather
+// than throwing or claiming anything.
 
 describe('the extension this package exports', () => {
   it('is the shape the core loads', () => {
@@ -18,17 +17,11 @@ describe('the extension this package exports', () => {
     expect(typeof extension.license).toBe('function');
   });
 
-  it('registers against a real Fastify instance without throwing', async () => {
-    const app = Fastify({ logger: false });
-    await extension.register(app, {} as ApiDeps);
-    await app.ready();
-    await app.close();
-  });
-
-  // No key has been read yet, so the honest answer is no licence. When the
-  // verifier lands this becomes the answer for an install that has no key, and
-  // it stays the answer a core-only build gives for ever.
-  it('reports no licence until there is a key to read', () => {
+  // This process has no key, and this build has no issuer, so the honest answer
+  // is no licence and nothing else. The same answer a public image gives before
+  // anybody has bought anything.
+  it('reports no licence on an install with no key', () => {
+    expect(process.env['CHOKH_LICENSE_KEY']).toBeUndefined();
     expect(extension.license?.()).toEqual({
       licensed: false,
       plan: null,
@@ -36,5 +29,9 @@ describe('the extension this package exports', () => {
       expiresAt: null,
       features: [],
     });
+  });
+
+  it('names the feature the frame is verified against', () => {
+    expect(PING_FEATURE).toBe('ee.ping');
   });
 });
