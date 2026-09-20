@@ -3,8 +3,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 // The real signer and the real claim builder, so the token this suite presents
 // is the one an application would mint rather than a hand rolled lookalike that
 // can agree with a verifier they both got wrong.
-import { signHs256 } from '@chokh/server/dist/lib/jwt.js';
-import { ssoClaimsFor } from '@chokh/server/dist/services/sso.service.js';
+import { signHs256 } from '@chokh/server/jwt';
+import { ssoClaimsFor } from '@chokh/server/sso';
 
 import { OWNER, SSO_SECRET } from './fixture-account.js';
 

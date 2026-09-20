@@ -2,11 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    // On, because packages/ee is written against src/index.ts and imports it by
-    // its built path. Nothing else consumes this package as a library: the
-    // Docker image runs dist/server.js and the dashboard's browser fixture
-    // imports dist/app.js from JavaScript.
-    "declaration": true,
+    // Off. packages/ee is written against this package's source through the
+    // exports map, the way every other package here is consumed, so there is
+    // nothing for a .d.ts to tell anybody.
+    "declaration": false,
     "rootDir": "src",
     "outDir": "dist"
   },

@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
-import { fail } from '@chokh/server/dist/index.js';
+import { fail } from '@chokh/server';
 
 import type { LicenseReason, LicenseState } from './state.js';
 

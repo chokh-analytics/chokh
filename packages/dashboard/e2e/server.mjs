@@ -31,9 +31,9 @@ process.env.SSO_SECRET ??= 'chokh-e2e-sso-secret-not-for-production';
 process.env.LOG_LEVEL ??= 'error';
 process.env.PORT = String(port);
 
-const { buildApp } = await import('@chokh/server/dist/app.js');
+const { buildApp } = await import('@chokh/server/app');
 const { dayKey } = await import('@chokh/store/time');
-const { createMemoryStore } = await import('@chokh/server/dist/store/memory.store.js');
+const { createMemoryStore } = await import('@chokh/server/store/memory');
 
 export const OWNER = { email: 'owner@chokh.test', password: 'a-long-enough-password' };
 export const SITE_ID = 's_demo';

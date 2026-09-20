@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { ok, requireSiteScope, type ApiDeps } from '@chokh/server/dist/index.js';
+import { ok, requireSiteScope, type ApiDeps } from '@chokh/server';
 
 import { requireLicense } from '../license/guard.js';
 import type { LicenseState } from '../license/state.js';

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { ApiDeps, LicenseStatus, ServerExtension } from '@chokh/server/dist/index.js';
+import type { ApiDeps, LicenseStatus, ServerExtension } from '@chokh/server';
 
 import { createLicenseState, type LicenseState } from './license/state.js';
 import { registerEeRoutes } from './routes/ee.routes.js';

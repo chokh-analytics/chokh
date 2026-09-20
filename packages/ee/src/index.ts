@@ -1,4 +1,4 @@
-import type { ServerExtension } from '@chokh/server/dist/index.js';
+import type { ServerExtension } from '@chokh/server';
 
 import { buildExtension } from './extension.js';
 import { readLicenseKey } from './license/env.js';

@@ -6,9 +6,9 @@ import {
   requireSiteScope,
   type ApiDeps,
   type ServerExtension,
-} from '@chokh/server/dist/index.js';
-import { createMemoryStore } from '@chokh/server/dist/store/memory.store.js';
-import { defaultSiteSettings } from '@chokh/server/dist/store/AnalyticsStore.js';
+} from '@chokh/server';
+import { createMemoryStore } from '@chokh/server/store/memory';
+import { defaultSiteSettings } from '@chokh/server/store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildExtension } from '../extension.js';

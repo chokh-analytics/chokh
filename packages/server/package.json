@@ -5,7 +5,42 @@
   "description": "The Chokh collector, stats API, realtime stream and dashboard host.",
   "license": "MIT",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/index.js",
+  "types": "src/index.ts",
+  "//exports": [
+    "Types from src and code from dist, the way every other package here does",
+    "it. Without the types line a fresh clone cannot typecheck anything that",
+    "imports this package until it has been built, and CI typechecks before it",
+    "builds. The process entry is no longer reachable by specifier at all,",
+    "which is right: importing @chokh/server should hand you the library, not",
+    "open a store and start listening. The image runs dist/server.js by path."
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./app": {
+      "types": "./src/app.ts",
+      "default": "./dist/app.js"
+    },
+    "./store": {
+      "types": "./src/store/AnalyticsStore.ts",
+      "default": "./dist/store/AnalyticsStore.js"
+    },
+    "./store/memory": {
+      "types": "./src/store/memory.store.ts",
+      "default": "./dist/store/memory.store.js"
+    },
+    "./jwt": {
+      "types": "./src/lib/jwt.ts",
+      "default": "./dist/lib/jwt.js"
+    },
+    "./sso": {
+      "types": "./src/services/sso.service.ts",
+      "default": "./dist/services/sso.service.js"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",

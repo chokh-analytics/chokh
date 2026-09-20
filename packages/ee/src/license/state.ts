@@ -1,4 +1,4 @@
-import type { LicenseStatus } from '@chokh/server/dist/index.js';
+import type { LicenseStatus } from '@chokh/server';
 
 import { licenseAllows, type LicensePayload } from './payload.js';
 import { verifyLicense, type LicenseRefusal } from './verify.js';
