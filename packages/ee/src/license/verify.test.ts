@@ -106,11 +106,19 @@ describe('verifyLicense', () => {
     const issuer = pair();
     const key = signLicense(issuer.privateKey, payload());
     const [head, signature = ''] = key.split('.');
-    const flipped = `${signature.slice(0, -2)}${signature.slice(-2) === 'AA' ? 'AB' : 'AA'}`;
+    // One bit, in the middle, flipped on the decoded bytes. Editing the last
+    // base64url character instead would sometimes change nothing at all: the
+    // final character of a 64 byte signature carries two bits that decode to
+    // nowhere, and a test that passes at random is worse than no test.
+    const bytes = Buffer.from(signature, 'base64url');
+    bytes[32] = (bytes[32] ?? 0) ^ 0x01;
 
-    expect(verifyLicense(`${head}.${flipped}`, { now: NOW, publicKeys: [issuer.publicKey] })).toEqual(
-      { ok: false, reason: 'bad_signature' },
-    );
+    expect(
+      verifyLicense(`${head}.${bytes.toString('base64url')}`, {
+        now: NOW,
+        publicKeys: [issuer.publicKey],
+      }),
+    ).toEqual({ ok: false, reason: 'bad_signature' });
   });
 
   it('refuses a key that has run out', () => {

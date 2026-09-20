@@ -7,6 +7,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "chokh-license": "dist/cli/chokh-license.js"
+  },
   "files": [
     "dist",
     "LICENSE",
