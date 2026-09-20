@@ -81,11 +81,11 @@ things and half a table in each is how a figure stops being checkable:
 
 | | bytes, gzipped |
 | --- | --- |
-| The first paint: the shell, the Overview and what they share | 26,299 |
+| The first paint: the shell, the Overview and what they share | 26,709 |
 | Libraries: React, the router, the query cache | 84,611 |
 | The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
-| The six other reports, one file each, loaded when opened | 12,585 |
-| Stylesheets | 9,664 |
+| The six other reports, one file each, loaded when opened | 12,591 |
+| Stylesheets | 9,800 |
 | Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
@@ -172,6 +172,7 @@ the image itself.
 | `packages/store-mongo` | The MongoDB storage adapter |
 | `packages/geo` | IP to location and user agent parsing, offline |
 | `packages/sdk-node` | Server-side `track` and `identify`, and the identify signature |
+| `packages/ee` | Chokh Pro. Not MIT: see [its own licence](packages/ee/LICENSE) |
 
 Storage sits behind one `AnalyticsStore` interface, so an adapter can be
 swapped without touching a report.

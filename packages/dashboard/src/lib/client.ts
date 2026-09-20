@@ -149,6 +149,31 @@ export function createClient(options: ClientOptions = {}): Client {
   };
 }
 
+// A paid route, refused. The server answers one status for every reason so that
+// a stranger learns nothing from the door; the dashboard is where the
+// difference is explained, to somebody who is signed in.
+//
+// Read as a shape rather than switched on by string at the call site, because
+// what a page does with it is always the same: draw the feature, labelled, with
+// the reason underneath.
+export const LICENSE_REQUIRED_CODE = 'LICENSE_REQUIRED';
+
+export interface LicenseRefusal {
+  feature: string;
+  reason: string;
+}
+
+export function licenseRefusal(error: unknown): LicenseRefusal | null {
+  if (!(error instanceof ChokhError) || error.code !== LICENSE_REQUIRED_CODE) {
+    return null;
+  }
+  const details = error.details as { feature?: unknown; reason?: unknown } | null;
+  if (typeof details?.feature !== 'string' || typeof details.reason !== 'string') {
+    return null;
+  }
+  return { feature: details.feature, reason: details.reason };
+}
+
 // Whether a failure is worth asking about a second time. A 4xx is an answer and
 // will be the same answer next time; a network fault or a 5xx might not be.
 export function isRetryable(error: unknown): boolean {

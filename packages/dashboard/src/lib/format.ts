@@ -210,6 +210,13 @@ export function formatDate(ts: number, timeZone: string): string {
   return timeFormatter(timeZone, { day: 'numeric', month: 'short' }).format(ts);
 }
 
+// With the year, because the only dates that need one here are a year or two
+// out: a licence expiry, where "20 Sep" and "20 September 2027" are the
+// difference between a date and a guess.
+export function formatDateLong(ts: number, timeZone: string): string {
+  return timeFormatter(timeZone, { day: 'numeric', month: 'long', year: 'numeric' }).format(ts);
+}
+
 export function formatDateTime(ts: number, timeZone: string): string {
   return `${formatDate(ts, timeZone)}, ${formatClock(ts, timeZone)}`;
 }

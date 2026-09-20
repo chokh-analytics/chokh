@@ -54,6 +54,19 @@ export interface MyTeam {
   role: 'owner' | 'editor' | 'viewer';
 }
 
+// What this install may run. Never the key itself, and the route needs a
+// session: the licensee's name and the expiry say who runs this install and
+// when they last paid.
+export interface LicenseStatus {
+  licensed: boolean;
+  plan: string | null;
+  licensee: string | null;
+  // Unix milliseconds. Kept after a key runs out, so the dashboard can say
+  // "expired on" rather than only "not licensed".
+  expiresAt: number | null;
+  features: string[];
+}
+
 export interface Me {
   actor: { kind: 'session' | 'key'; id: string };
   user: PublicUser | null;
@@ -78,6 +91,9 @@ function statsQuery(params: StatsParams): Params {
 
 export const api = {
   me: (client: Client): Promise<Answer<Me>> => client.get<Me>('/api/me'),
+
+  license: (client: Client): Promise<Answer<LicenseStatus>> =>
+    client.get<LicenseStatus>('/api/license'),
 
   signIn: (client: Client, email: string, password: string): Promise<Answer<{ user: PublicUser }>> =>
     client.post<{ user: PublicUser }>('/api/auth/login', { email, password }),

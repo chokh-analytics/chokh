@@ -1,0 +1,81 @@
+/*
+ * A gated feature is described, never simulated and never hidden.
+ *
+ * So there is nothing in here that blurs anything, nothing that lays a lock
+ * over a picture of numbers somebody does not have, and nothing that sells. A
+ * badge that names the tier, and a control that is visibly not going to do
+ * anything yet with a sentence saying why. Somebody reading their own dashboard
+ * can see the shape of the product they have not bought and then get on with
+ * their day.
+ */
+
+.badge {
+  flex: none;
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/*
+ * The feature itself, present and inert. Dimmed rather than removed, because a
+ * control that disappears teaches nothing and a control that is drawn at full
+ * strength and does nothing is a bug.
+ */
+.gated {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  padding: var(--s3) var(--s2);
+  color: var(--muted);
+  font-size: var(--t-body);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.title {
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.why {
+  margin: 0;
+  max-width: 52ch;
+}
+
+.reason {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--dead);
+}
+
+/*
+ * The line in the account menu. Two rows, because the tier and the date are
+ * different facts and a renewal is a different conversation from a purchase.
+ */
+.status {
+  display: grid;
+  gap: 2px;
+  padding: var(--s2) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.statusTier {
+  color: var(--ink);
+}
+
+.statusExpired {
+  color: var(--dead);
+}

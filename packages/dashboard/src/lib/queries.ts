@@ -1,7 +1,7 @@
 import { QueryClient, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { Dimension } from '@chokh/store/contract';
 
-import { api, type Me } from './api.js';
+import { api, type LicenseStatus, type Me } from './api.js';
 import { isRetryable, type Answer, type Client } from './client.js';
 import { cacheKey, toStatsParams, type ViewQuery } from './query.js';
 import { isLive } from './range.js';
@@ -73,6 +73,26 @@ export function useMe(client: Client): UseQueryResult<Answer<Me>> {
     // not "never": a membership or a new site should arrive without a reload,
     // and an infinite staleTime also means this query never re-renders the
     // component that holds the clock every range is resolved against.
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
+// What this install may run.
+//
+// One read for the whole session. A licence does not change while somebody
+// reads a chart, and the answer decides whether a feature is drawn with its
+// "part of Chokh Pro" label or drawn for real, which is a decision every page
+// that has a paid feature on it needs and none of them should ask for twice.
+//
+// A failure is not an error anybody has to see. The worst case is a label that
+// is shown when it did not need to be, and a card that says a feature is part
+// of Chokh Pro on an install that has bought it is a great deal better than a
+// page that refuses to draw because one small read failed.
+export function useLicense(client: Client): UseQueryResult<Answer<LicenseStatus>> {
+  return useQuery({
+    queryKey: ['license'],
+    queryFn: () => api.license(client),
     staleTime: ME_STALE_MS,
     retry: false,
   });

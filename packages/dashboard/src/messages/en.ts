@@ -350,6 +350,37 @@ export const messages = {
     unknownHelp: 'The browser sent nothing for this one.',
   },
 
+  // A gated feature is described, never simulated and never hidden (AGENTS.md
+  // rule 10). Everything in here is a sentence about what something does and
+  // where it lives, and nothing in here is a sales page: somebody reading their
+  // own numbers should be able to see the shape of the product they have and
+  // the shape of the one they have not, and then get on with their day.
+  license: {
+    pro: 'Chokh Pro',
+    badge: 'Part of Chokh Pro',
+    // On a control that is there and will not do anything yet. The feature is
+    // named first, because what it does matters more than what it costs.
+    gatedHelp: '{feature} is part of Chokh Pro. It is here, and a licence key turns it on.',
+    learnMore: 'What is in Chokh Pro',
+    licensedTo: 'Chokh Pro, licensed to {licensee}',
+    until: 'Until {date}',
+    expired: 'Chokh Pro expired on {date}',
+    // Said to a signed-in person on an install that has never had a key. Not an
+    // apology and not an advertisement: the core is the whole product for most
+    // people, and this line should read that way.
+    none: 'No licence key. Everything you can see is free to self-host, for ever.',
+    // What the server refused with, in words a person can act on. One line each,
+    // because the difference between these is the difference between buying
+    // something, renewing something and emailing somebody.
+    reasonMissing: 'This install has no licence key.',
+    reasonExpired: 'The licence key on this install has expired.',
+    reasonNotLicensed: 'The licence key on this install does not include this feature.',
+    reasonBadSignature: 'The licence key on this install was not issued for Chokh.',
+    reasonMalformed: 'CHOKH_LICENSE_KEY on this install is not a Chokh licence key.',
+    reasonNoIssuer: 'This build carries no licence issuer, so no key can be used with it.',
+    reasonUnknownVersion: 'The licence key on this install is newer than this build understands.',
+  },
+
   sites: {
     addTitle: 'Add a site',
     addLede:

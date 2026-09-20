@@ -141,6 +141,64 @@ describe('who sees what', () => {
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page');
   });
 
+  // A gated feature is described, never simulated and never hidden, and the
+  // licence itself is said out loud in the one menu that is about this install
+  // rather than about the numbers. Both states, because the line an install
+  // with no key reads is the one that matters most: the core is the whole
+  // product for most people and the menu should say so.
+  it('says in the account menu what this install is running', async () => {
+    at('/s_test');
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test', name: 'Abu Jafar' },
+          sites: [SITE],
+          teams: [],
+        }),
+      '/api/license': () =>
+        envelope({
+          licensed: true,
+          plan: 'pro',
+          licensee: 'Progsity, BWJ Tech Ltd.',
+          expiresAt: Date.UTC(2028, 8, 20),
+          features: ['*'],
+        }),
+    });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Abu Jafar' }));
+    expect(
+      await screen.findByText('Chokh Pro, licensed to Progsity, BWJ Tech Ltd.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Until 20 September 2028')).toBeInTheDocument();
+  });
+
+  it('tells an install with no licence that what it has is free for ever', async () => {
+    at('/s_test');
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test', name: 'Abu Jafar' },
+          sites: [SITE],
+          teams: [],
+        }),
+      '/api/license': () =>
+        envelope({
+          licensed: false,
+          plan: null,
+          licensee: null,
+          expiresAt: null,
+          features: [],
+        }),
+    });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Abu Jafar' }));
+    expect(await screen.findByText(/free to self-host, for ever/)).toBeInTheDocument();
+  });
+
   // The failure that has no symptom: the page stays blank and nothing is
   // logged, because a redirect to the current path is not an error.
   it('never redirects the site root to itself', async () => {

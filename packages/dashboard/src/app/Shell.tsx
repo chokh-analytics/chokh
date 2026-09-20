@@ -9,10 +9,11 @@ import {
   nextChoice,
   type ThemeChoice,
 } from '../theme/theme.js';
-import { useSiteCounts } from '../lib/queries.js';
+import { useLicense, useSiteCounts } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
 import { Popover } from '../ui/Popover.js';
+import { LicenseLine } from '../ui/Pro.js';
 import popover from '../ui/Popover.module.css';
 import { Wordmark } from '../ui/Wordmark.js';
 import { AppContext, type AppContextValue } from './context.js';
@@ -188,6 +189,10 @@ function SiteList({
 
 function AccountMenu({ value, onSignedOut }: { value: AppContextValue; onSignedOut: () => void }) {
   const [copied, setCopied] = useState(false);
+  // One read for the session, and it costs nothing on a page where the menu is
+  // never opened: this component is mounted with the shell, and the query is
+  // cached beside the one the rest of the dashboard shares.
+  const license = useLicense(value.client);
 
   useEffect(() => {
     if (!copied) {
@@ -209,6 +214,14 @@ function AccountMenu({ value, onSignedOut }: { value: AppContextValue; onSignedO
       {({ close }) => (
         <>
           <p className={popover.heading}>{value.me.user?.email}</p>
+          {/*
+            What this install is running, said to somebody signed in and to
+            nobody else. Never hidden when there is no licence: "everything you
+            can see is free to self-host, for ever" is the truest line on this
+            menu and the one a new self-hoster most needs to read.
+          */}
+          <LicenseLine license={license.data?.data ?? null} timeZone={value.site.settings.timezone} />
+          <div className={popover.divider} />
           <button
             type="button"
             className={popover.item}

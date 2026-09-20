@@ -31,14 +31,15 @@ const BUDGETS = [
   // diff that spends it, never quietly.
   { name: 'vendor', pattern: /^vendor-.*\.js$/, bytes: 86 * 1024 },
   // The entry chunk: the shell, the Overview and everything they share.
-  // Measured 2026-09-20 at 26,299 B, down from 74 KB when every report was in
-  // it.
+  // Measured 2026-09-20 at 26,709 B, down from 74 KB when every report was in
+  // it. The last 410 B are the licence read and the "part of Chokh Pro" label,
+  // which live in the shell because the account menu names the licence.
   { name: 'app', pattern: /^index-.*\.js$/, bytes: 34 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
   // One chunk per report, plus the two pieces more than one report shares.
-  // Measured 2026-09-20 at 12,585 B for the eight together, the largest being
+  // Measured 2026-09-20 at 12,591 B for the eight together, the largest being
   // Realtime at 3,256 B.
   { name: 'routes', pattern: /\.js$/, bytes: 20 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
