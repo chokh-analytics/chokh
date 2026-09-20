@@ -22,9 +22,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    // The size gate reads this to know what each file weighs, so the budgets in
-    // scripts/size.mjs are measured rather than estimated.
-    manifest: true,
+    // No manifest. It was here for the size gate, which turned out not to want
+    // one: scripts/size.mjs walks dist and weighs the files themselves, so the
+    // budgets are measured whatever the build called things. Emitting it put a
+    // description of the build graph into the directory the server hosts, for
+    // nobody to read.
     rollupOptions: {
       output: {
         // React and the libraries around it change on their own schedule and

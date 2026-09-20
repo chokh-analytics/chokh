@@ -204,6 +204,50 @@ describe('DimensionCard', () => {
     expect(within(card()).getByText('A thing worth saying.')).toBeInTheDocument();
   });
 
+  // Every other analytics tool files a visit sent by ChatGPT under referral or
+  // under search. Filing it as neither is this product's own reading of the
+  // web, and a claim like that gets a mark on the row that makes it rather than
+  // a line in a changelog nobody reads.
+  it('marks the AI channel and marks nothing else', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          ok({
+            dim: 'channel',
+            rows: [
+              { key: 'ai', metrics: metrics(400) },
+              { key: 'organic', metrics: metrics(300) },
+              { key: '', metrics: metrics(50) },
+            ],
+          }),
+        ),
+      ),
+    );
+    render(
+      show(
+        <DimensionCard
+          title="Channels"
+          tabs={[{ id: 'channel', dim: 'channel' as const, label: 'Channel' }]}
+          param="channels"
+        />,
+      ),
+    );
+
+    const channels = (): HTMLElement => screen.getByRole('region', { name: 'Channels' });
+    await waitFor(() => expect(within(channels()).getByText('AI assistants')).toBeInTheDocument());
+    const rowFor = (label: string): HTMLElement => {
+      const row = within(channels()).getByText(label).closest('tr');
+      if (row === null) {
+        throw new Error(`No row around ${label}`);
+      }
+      return row;
+    };
+    expect(within(rowFor('AI assistants')).getByText('AI')).toBeInTheDocument();
+    expect(within(rowFor('Organic search')).queryByText('AI')).toBeNull();
+    expect(within(rowFor('Unknown')).queryByText('AI')).toBeNull();
+  });
+
   // A raw event carries no entry page, so the store refuses that filter. A row
   // that cannot be filtered is not a button.
   it('makes a row pressable only when the store can filter by it', async () => {

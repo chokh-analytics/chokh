@@ -30,7 +30,18 @@ async function answers(base) {
 export async function startFixture(port, which = 'fixture') {
   const file = which === 'real' ? 'server.mjs' : 'fixture-server.mjs';
   const base = `http://127.0.0.1:${port}`;
-  if (await answers(base)) {
+  const alreadyUp = await answers(base);
+  if (alreadyUp && process.env.CI !== undefined) {
+    // Never in CI, the same rule the Playwright config keeps. A stray process
+    // left on this port would be audited and photographed in place of the
+    // build, and a green run would be a green run of something else. Loud,
+    // because the alternative is a score nobody can trace.
+    console.error(
+      `Something is already answering on ${base}. In CI that is never this build, so nothing was audited.`,
+    );
+    process.exit(1);
+  }
+  if (alreadyUp) {
     // Somebody already has one up, which is what happens while the suite is
     // being written. Leave it alone, and leave it running afterwards.
     return { base, stop: () => undefined };

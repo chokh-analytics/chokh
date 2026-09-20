@@ -1,6 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-import { OWNER } from './fixture-account.js';
+// The real signer and the real claim builder, so the token this suite presents
+// is the one an application would mint rather than a hand rolled lookalike that
+// can agree with a verifier they both got wrong.
+import { signHs256 } from '@chokh/server/dist/lib/jwt.js';
+import { ssoClaimsFor } from '@chokh/server/dist/services/sso.service.js';
+
+import { OWNER, SSO_SECRET } from './fixture-account.js';
 
 // The walk somebody takes the first time they open this thing, in a real
 // browser against the real server.
@@ -174,6 +180,46 @@ test.describe('signed out', () => {
 
     await expect(page).toHaveURL(new RegExp(`/${SITE}/sources\\?range=30d$`));
     await expect(page.getByRole('heading', { name: 'Sources', level: 1 })).toBeAttached();
+  });
+
+  // Somebody presses "open the full dashboard" in another application's admin
+  // panel and is simply already signed in here. That is a top level navigation
+  // carrying a five minute token, a 303, a cookie set on the redirect and an
+  // account provisioned on first arrival, and no per-package test sees any of
+  // it: the service test never meets a browser, and the browser never meets the
+  // service anywhere but here.
+  test('signs a person in from another application and lands them on the report', async ({
+    page,
+  }) => {
+    const token = signHs256(
+      SSO_SECRET,
+      ssoClaimsFor({
+        sub: 'staff_7',
+        email: 'staff@chokh.test',
+        name: 'Staff Seven',
+        role: 'viewer',
+        now: Date.now(),
+        lifetimeSeconds: 120,
+      }),
+    );
+
+    await page.goto(`/api/sso?token=${encodeURIComponent(token)}&next=/${SITE}/sources`);
+
+    await expect(page).toHaveURL(new RegExp(`/${SITE}/sources$`));
+    await expect(page.getByRole('heading', { name: 'Sources', level: 1 })).toBeAttached();
+    // Signed in as the person the token named, not as the fixture owner.
+    const me = await page.request.get('/api/me');
+    expect(me.ok(), 'the SSO session did not reach /api/me').toBe(true);
+    expect(JSON.stringify(await me.json())).toContain('staff@chokh.test');
+
+    // Single use. The same link read out of a history entry, a proxy log or a
+    // Referer header and presented again is a token already burned, and the
+    // refusal is one a person can read rather than an error object in the
+    // address bar. The cookie goes first, because a browser that still has the
+    // session never reaches the exchange: /login sends it straight back.
+    await page.context().clearCookies();
+    await page.goto(`/api/sso?token=${encodeURIComponent(token)}&next=/${SITE}/sources`);
+    await expect(page).toHaveURL(/\/login\?sso=TOKEN_ALREADY_USED$/);
   });
 });
 

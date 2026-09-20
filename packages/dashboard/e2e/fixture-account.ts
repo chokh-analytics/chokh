@@ -7,3 +7,9 @@
 export const OWNER = { email: 'owner@chokh.test', password: 'a-long-enough-password' };
 
 export const STATE = 'e2e/.auth/owner.json';
+
+// The same string server.mjs pins, written twice for the same reason the
+// account is: that file is a .mjs and cannot import this one. The SSO case
+// signs a token with it and the server verifies against it, which is the whole
+// exchange.
+export const SSO_SECRET = 'chokh-e2e-sso-secret-not-for-production';

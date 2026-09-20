@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSX } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -133,6 +133,9 @@ interface FakeStream {
   open: () => void;
   frame: (data: unknown) => void;
   fail: () => void;
+  // How many connections the hook has asked for. The give-up is a decision
+  // meant to last the visit, and the only way to see it held is to count.
+  connections: () => number;
 }
 
 // A stream a test drives by hand. EventSource is not in jsdom, so without this
@@ -155,15 +158,30 @@ function fakeStream(): FakeStream {
     },
     close: () => undefined,
   } as unknown as EventSource;
+  let connections = 0;
   return {
-    create: () => source,
+    create: () => {
+      connections += 1;
+      return source;
+    },
     open: () => handlers.onopen?.(),
     frame: (data: unknown) =>
       handlers.onmessage?.({
         data: JSON.stringify({ success: true, data }),
       } as MessageEvent<string>),
     fail: () => handlers.onerror?.(),
+    connections: () => connections,
   };
+}
+
+// Leaving the tab, and coming back to it. document.hidden is read only in
+// jsdom, so it is redefined rather than assigned, and the event is the one the
+// browser fires.
+async function hidden(away: boolean): Promise<void> {
+  Object.defineProperty(document, 'hidden', { configurable: true, value: away });
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
 }
 
 function show(stream?: FakeStream, clock: number = NOW): JSX.Element {
@@ -310,6 +328,34 @@ describe('Realtime', () => {
     expect(screen.queryByText('Live')).toBeNull();
   });
 
+  // The stream is closed behind a hidden tab and opened again on return, which
+  // is right while it works and wrong once it has been given up on: coming back
+  // to the tab used to restart a connection nobody had, and the pill went back
+  // to claiming Live over a proxy that had already refused three times. The
+  // give-up lasts the visit.
+  it('does not reopen a stream it gave up on when the tab comes back', async () => {
+    serve();
+    const stream = fakeStream();
+    render(show(stream));
+
+    stream.open();
+    stream.frame(snapshot());
+    expect(await screen.findByText('Live')).toBeInTheDocument();
+
+    stream.fail();
+    stream.fail();
+    stream.fail();
+    expect(await screen.findByText('Updating every 5s')).toBeInTheDocument();
+    expect(stream.connections()).toBe(1);
+
+    await hidden(true);
+    await hidden(false);
+
+    expect(stream.connections()).toBe(1);
+    expect(screen.getByText('Updating every 5s')).toBeInTheDocument();
+    expect(screen.queryByText('Live')).toBeNull();
+  });
+
   // The visitor list is the one place a duration is on screen, and the shell's
   // clock is rounded up to the next minute so a range never ends in the past.
   // Measured against that, a stay that began thirty seconds ago reads as a
@@ -409,5 +455,24 @@ describe('Realtime', () => {
     expect(
       screen.queryByRole('table', { name: 'Everybody seen in the last half hour.' }),
     ).toBeNull();
+  });
+
+  // The two breakdowns beside the map empty on their own, while somebody is
+  // still on the site: a visitor the geo database could not place, or a
+  // pageview the exclusions dropped. This page has no range, so each card says
+  // why it is empty in its own words rather than borrowing "No data in this
+  // range" from a report that has one.
+  it('says why each breakdown is empty rather than borrowing a range it has not got', async () => {
+    serve({
+      realtime: () => ok(snapshot({ byPage: [], byCountry: [], byCity: [] })),
+    });
+    render(show());
+
+    // Somebody is here, so the list below is still a list.
+    await waitFor(() => expect(within(list()).getByText('/pricing')).toBeInTheDocument());
+    expect(screen.getByText('Nobody is on a page right now.')).toBeInTheDocument();
+    expect(screen.getByText('Nobody is online right now.')).toBeInTheDocument();
+    expect(screen.queryByText('Nobody is on the site right now.')).toBeNull();
+    expect(screen.queryByText('No data in this range.')).toBeNull();
   });
 });

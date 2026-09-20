@@ -23,6 +23,11 @@ process.env.DASHBOARD_DIR = resolve(HERE, '..', 'dist');
 // same suite sign the same cookie. A test secret in a test fixture on a test
 // port, and the server refuses to boot in production without a real one.
 process.env.SESSION_SECRET ??= 'chokh-e2e-session-secret-not-for-production';
+// Pinned for the same reason, and mirrored in fixture-account.ts because a
+// .mjs cannot import a .ts: the SSO case mints a token with this string and
+// the server has to verify with it. An install that sets none refuses every
+// exchange, so without this the SSO landing has no browser case at all.
+process.env.SSO_SECRET ??= 'chokh-e2e-sso-secret-not-for-production';
 process.env.LOG_LEVEL ??= 'error';
 process.env.PORT = String(port);
 

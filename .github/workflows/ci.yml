@@ -64,9 +64,11 @@ jobs:
       - run: pnpm size:tracker
 
       # The dashboard is the first screenshot a developer sees and the first
-      # thing they wait for. Its budgets are per file and gzipped, set from what
-      # the build weighed rather than from a guess, and the fonts count because
-      # a product that self hosts them has to be honest about carrying them.
+      # thing they wait for. Its budgets are one per group of emitted files
+      # (the entry chunk, the vendor chunk, the map, the routes together) and
+      # gzipped, set from what the build weighed rather than from a guess, and
+      # the fonts count because a product that self hosts them has to be honest
+      # about carrying them.
       - run: pnpm size:dashboard
 
   tracker-e2e:
