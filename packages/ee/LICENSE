@@ -1,0 +1,72 @@
+The Chokh Enterprise Licence
+
+Version 1.0, 20 September 2026
+Copyright (c) 2026 BWJ Tech Ltd.
+
+This licence governs the software in this directory and its subdirectories
+(the "Enterprise Software"). Everything else in the Chokh repository is
+licensed under the MIT licence in the LICENSE file at the root of the
+repository, and nothing here changes that.
+
+1. Definitions
+
+"Licensor" is BWJ Tech Ltd. "You" is the individual or the legal entity
+exercising the rights granted here. A "Licence Key" is a signed token issued
+by the Licensor that names You, the features You may run and the date the key
+expires. "Internal Use" is use by You and by Your employees and contractors,
+for Your own purposes, and not on behalf of a third party.
+
+2. What You may do without a Licence Key
+
+You may read, copy, compile and modify the Enterprise Software for the
+purposes of inspecting it, auditing it, testing it and contributing to it. The
+source is here to be read. Nothing in this section permits running the
+Enterprise Software in production.
+
+3. What a Licence Key permits
+
+While You hold a valid Licence Key that has not expired, You may run the
+Enterprise Software in production for Internal Use, for the features the key
+names, and You may modify it for Internal Use. There is no limit on the number
+of websites You measure or the number of people who use the dashboard, unless
+the key itself names one.
+
+4. What You may not do
+
+You may not distribute, sublicense, sell, rent, lease or otherwise make the
+Enterprise Software available to any third party, in source or in compiled
+form. You may not operate the Enterprise Software as a service for any third
+party. You may not remove, disable, circumvent or reimplement the licence
+check, and You may not remove or alter any copyright or licence notice. You
+may not use the Enterprise Software to build a product that competes with
+Chokh.
+
+5. Contributions
+
+A contribution You make to the Enterprise Software is governed by the
+contributor licence agreement in CLA.md at the root of the repository. It does
+not grant You any right to run the Enterprise Software beyond this licence.
+
+6. Term and termination
+
+This licence runs for as long as Your Licence Key is valid. It terminates
+immediately if You breach any term of section 4, and on the expiry of Your
+Licence Key. On termination You must stop running the Enterprise Software in
+production. Section 2 survives termination, and so does Your licence to every
+other part of the Chokh repository, which is MIT and is not affected by
+anything here.
+
+7. No warranty
+
+THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE ENTERPRISE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ENTERPRISE SOFTWARE.
+
+8. Asking
+
+A use this licence does not permit may still be one the Licensor is happy to
+allow. Ask: support@progsity.io.

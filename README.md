@@ -186,8 +186,41 @@ pnpm test
 
 Requires Node 22 and pnpm 10.
 
+## What is free and what is not
+
+Chokh is open core.
+
+| Core, MIT, free to self-host | `packages/ee/`, commercial licence, needs a key |
+| --- | --- |
+| The tracker, the collector, the store and both adapters, the dashboard and every report | Hosted Chokh Cloud |
+| Events, goals, funnels, filters, segments, annotations | Alerts by email, Telegram and webhook |
+| CSV and JSON exports, the public share page and the embed | Scheduled email and PDF digests |
+| The stats API, the SSE stream, the SDKs, one team with owner, editor and viewer | Multi-team and OIDC single sign-on |
+| Retention up to 400 days, the audit log | Retention beyond 400 days, white-label, priority support |
+| Vitals, errors, retention cohorts, journeys | Session replay, heatmaps, surveys, experiments, flags |
+
+Everything in the left column is MIT and free to self-host in full: no key, no
+seat count, no limit on how much it measures, and no feature held back to make
+a point. Everything in the right column lives in `packages/ee/` under the
+[Chokh Enterprise Licence](packages/ee/LICENSE), ships in the same image, and
+runs only with a licence key.
+
+The key is an Ed25519 token verified offline against a public key compiled into
+the build. **Nothing phones home, with a key or without one.** An install with
+no key is a complete install: the paid features are still there, still
+readable, and the dashboard names them and says they are part of Chokh Pro
+rather than pretending they do not exist. Chokh Pro is one tier, per install,
+with as many sites and as many people on it as you like.
+
+Patches are welcome on either side of that line. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first: there is a contributor licence
+agreement, and the line has a rule.
+
 ## License
 
-MIT. Copyright (c) 2026 BWJ Tech Ltd. See [LICENSE](LICENSE).
+MIT for the core. Copyright (c) 2026 BWJ Tech Ltd. See [LICENSE](LICENSE).
+
+`packages/ee/` is under the Chokh Enterprise Licence. See
+[packages/ee/LICENSE](packages/ee/LICENSE).
 
 Progsity (progsity.io) is its first user.
