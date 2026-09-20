@@ -23,9 +23,17 @@ COPY packages/store/package.json ./packages/store/
 COPY packages/store-mongo/package.json ./packages/store-mongo/
 COPY packages/geo/package.json ./packages/geo/
 COPY packages/sdk-node/package.json ./packages/sdk-node/
-RUN pnpm install --frozen-lockfile --prod --filter @chokh/server...
+COPY packages/ee/package.json ./packages/ee/
+# Both filters, because the image carries the paid half too. It ships disabled
+# and refuses every one of its routes without a licence key, which is what makes
+# one image a complete install and what the licence enforces rather than
+# obscurity. An install that wants nothing but the free product deletes
+# packages/ee and the server carries on.
+RUN pnpm install --frozen-lockfile --prod --filter @chokh/server... --filter @chokh/ee...
 
 COPY --from=build /app/packages/server/dist ./packages/server/dist
+COPY --from=build /app/packages/ee/dist ./packages/ee/dist
+COPY packages/ee/LICENSE ./packages/ee/LICENSE
 COPY --from=build /app/packages/geo/dist ./packages/geo/dist
 COPY --from=build /app/packages/store/dist ./packages/store/dist
 COPY --from=build /app/packages/store-mongo/dist ./packages/store-mongo/dist

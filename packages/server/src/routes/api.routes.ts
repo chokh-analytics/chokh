@@ -8,6 +8,7 @@ import {
   createSetMemberController,
 } from '../controllers/accounts.controller.js';
 import { createServerEventsController } from '../controllers/events.controller.js';
+import { createLicenseController } from '../controllers/license.controller.js';
 import {
   createUserController,
   createUserPresenceController,
@@ -85,6 +86,11 @@ export async function registerApiRoutes(
   app.get('/api/me', { preHandler: signedIn }, createMeController(deps));
   app.post('/api/sso', { preHandler: attempts }, createSsoPostController(deps));
   app.get('/api/sso', { preHandler: attempts }, createSsoGetController(deps));
+
+  // What this install may run, for the dashboard. Signed in and not public: the
+  // licensee's name and the expiry date say who runs this install and when they
+  // last paid, and a stranger has no business with either.
+  app.get('/api/license', { preHandler: signedIn }, createLicenseController(deps.license));
 
   // Teams. One route; AN-TEAM01 owns the rest.
   app.put(

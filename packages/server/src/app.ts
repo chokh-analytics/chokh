@@ -18,6 +18,11 @@ import { createWindowCounter } from './lib/window-counter.js';
 import { registerAuthDecorations } from './plugins/auth.js';
 import { openBus, openOnce } from './plugins/bus.js';
 import { registerDashboard } from './plugins/dashboard.js';
+import {
+  unlicensed,
+  type LicenseStatusProvider,
+  type ServerExtension,
+} from './plugins/extensions.js';
 import { registerApiRoutes } from './routes/api.routes.js';
 import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
@@ -32,6 +37,20 @@ import { createMemoryStore } from './store/memory.store.js';
 const MINUTE_MS = 60_000;
 
 const HOUR_MS = 60 * 60 * 1000;
+
+// The last extension that offers a licence status wins, and with none the core
+// answers "no licence" for ever. That default is not a placeholder: it is what a
+// build with packages/ee deleted answers, and it is what lets the dashboard draw
+// the "part of Chokh Pro" label on a feature this install does not have.
+function resolveLicense(extensions: readonly ServerExtension[]): LicenseStatusProvider {
+  for (let index = extensions.length - 1; index >= 0; index -= 1) {
+    const offered = extensions[index]?.license;
+    if (offered !== undefined) {
+      return offered;
+    }
+  }
+  return unlicensed;
+}
 
 export interface AppOptions {
   // server.ts chooses the adapter from the environment. Without one, a test
@@ -52,6 +71,9 @@ export interface AppOptions {
   // How a visitor's address is resolved. The environment decides it for a real
   // instance; a test hands one in to drive a mode this process did not boot in.
   ip?: ClientIpOptions;
+  // What packages/ee added, when it is there. server.ts loads it; nothing in
+  // this package imports it, and an empty list is a complete free install.
+  extensions?: ServerExtension[];
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
@@ -61,6 +83,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
 
   const now = options.now ?? ((): number => Date.now());
+  const extensions = options.extensions ?? [];
   const store =
     options.store ??
     createMemoryStore([], options.presence === undefined ? {} : { presence: options.presence });
@@ -154,9 +177,17 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     limits: { authAttempts: env.AUTH_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },
+    license: resolveLicense(extensions),
     now,
   };
   await registerApiRoutes(app, apiDeps, ipOptions);
+
+  // Everything packages/ee adds, after every core route and before the not
+  // found handler below, which would otherwise answer these paths itself.
+  for (const extension of extensions) {
+    await extension.register(app, apiDeps);
+    app.log.info({ extension: extension.name }, 'extension registered');
+  }
 
   const dashboardRoot = await registerDashboard(app);
 

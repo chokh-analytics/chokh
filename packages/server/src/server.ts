@@ -4,6 +4,7 @@ import { DATABASE_FILE, openReader, startGeoRefresh } from '@chokh/geo';
 
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { loadExtensions } from './lib/load-extensions.js';
 import { openBus, openOnce } from './plugins/bus.js';
 import { createSwappableGeoReader } from './plugins/geo.js';
 import { openPresence } from './plugins/presence.js';
@@ -15,8 +16,19 @@ const { presence, kind: presenceKind } = openPresence();
 const { store, kind } = await openStore(presence);
 const { bus, kind: busKind } = openBus();
 const { once } = openOnce(() => Date.now());
-const app = await buildApp({ geo: geo.reader, store, bus, once });
+const loaded = await loadExtensions();
+const app = await buildApp({ geo: geo.reader, store, bus, once, extensions: loaded.extensions });
 app.log.info({ store: kind, presence: presenceKind, bus: busKind }, 'storage adapter opened');
+if (loaded.reason === 'failed') {
+  // Present and broken. The process carries on serving the free product rather
+  // than refusing to boot, and says loudly what it is missing.
+  app.log.error({ err: loaded.error }, 'the paid extension failed to load, running the core only');
+} else {
+  // "absent" is a complete install of the free product, so this is info and
+  // never a warning: nobody should read a line about a licence they did not buy
+  // and wonder what they did wrong.
+  app.log.info({ extensions: loaded.reason }, 'extensions');
+}
 
 // The three background jobs. The rollup and the retention purge run on one
 // hourly tick; the geo refresh checks daily and downloads when the database is

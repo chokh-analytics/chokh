@@ -4,6 +4,7 @@ import { buildApp } from '../app.js';
 import { createApiKey } from '../services/keys.service.js';
 import { createMemoryBus, type Bus } from '../services/bus.js';
 import { createMemoryOnce, type OnceOnly } from '../services/once.js';
+import type { ServerExtension } from '../plugins/extensions.js';
 import { createMemoryStore, type MemoryStore } from '../store/memory.store.js';
 import { defaultSiteSettings, type Role, type Scope, type Site } from '../store/AnalyticsStore.js';
 
@@ -55,7 +56,9 @@ export function testSite(overrides: Partial<Site> = {}): Site {
 
 // An app with nothing in it: no site, no account, no team. What a fresh install is,
 // for the tests about the very first registration.
-export async function createBareApp(options: { bus?: Bus; once?: OnceOnly } = {}): Promise<{
+export async function createBareApp(
+  options: { bus?: Bus; once?: OnceOnly; extensions?: ServerExtension[] } = {},
+): Promise<{
   app: FastifyInstance;
   store: MemoryStore;
   bus: Bus;
@@ -71,7 +74,13 @@ export async function createBareApp(options: { bus?: Bus; once?: OnceOnly } = {}
   // would publish on one bus and watch another.
   const bus = options.bus ?? createMemoryBus();
   const once = options.once ?? createMemoryOnce(now);
-  const app = await buildApp({ store, bus, once, now });
+  const app = await buildApp({
+    store,
+    bus,
+    once,
+    now,
+    ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
+  });
   await app.ready();
   return {
     app,
@@ -94,8 +103,12 @@ function cookieHeader(response: { cookies: { name: string; value: string }[] }):
   return `${cookie.name}=${cookie.value}`;
 }
 
-export async function createHarness(options: { sites?: Site[] } = {}): Promise<Harness> {
-  const bare = await createBareApp();
+export async function createHarness(
+  options: { sites?: Site[]; extensions?: ServerExtension[] } = {},
+): Promise<Harness> {
+  const bare = await createBareApp(
+    options.extensions === undefined ? {} : { extensions: options.extensions },
+  );
   const { app, store, bus, once } = bare;
 
   for (const site of options.sites ?? [testSite()]) {

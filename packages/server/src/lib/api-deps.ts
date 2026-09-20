@@ -1,3 +1,4 @@
+import type { LicenseStatusProvider } from '../plugins/extensions.js';
 import type { Bus } from '../services/bus.js';
 import type { OnceOnly } from '../services/once.js';
 import type { SessionCodec } from '../services/auth.service.js';
@@ -19,5 +20,8 @@ export interface ApiDeps {
   limits: { authAttempts: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };
+  // What GET /api/license answers. The extension's when packages/ee is loaded,
+  // and "no licence" when it is not. The core never reads a key to build it.
+  license: LicenseStatusProvider;
   now(): number;
 }
