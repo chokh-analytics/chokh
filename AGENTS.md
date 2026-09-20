@@ -9,12 +9,21 @@
 
 ## 1. What this repository is
 
-Chokh is a standalone, MIT licensed, first-party web analytics product: a
-tracker script, a collector, a stats API, a realtime stream and a dashboard, in
-one process and one Docker image. It is built to be dropped into anybody's
-project. It has two masters: the site owner running it, and the open source
-audience on GitHub. A change that helps one consumer but breaks the product for
-everybody else is refused in review.
+Chokh is a standalone, first-party web analytics product: a tracker script, a
+collector, a stats API, a realtime stream and a dashboard, in one process and
+one Docker image. It is built to be dropped into anybody's project. It has two
+masters: the site owner running it, and the open source audience on GitHub. A
+change that helps one consumer but breaks the product for everybody else is
+refused in review.
+
+It is **open core** (ADR-0073). Everything outside `packages/ee` is MIT and free
+to self-host in full, with no key and no limit. `packages/ee` is Chokh Pro,
+under the Chokh Enterprise Licence in that directory, and runs only with a
+`CHOKH_LICENSE_KEY` verified offline against a public key compiled into the
+build. Nothing phones home, with a key or without one, and the published image
+carries both halves so that one image is a complete install. Rules 10 to 12
+below are how that line is kept, and `CONTRIBUTING.md` is where an outside
+contributor reads it.
 
 Progsity is a user of this product, never its owner in the code.
 
@@ -55,6 +64,32 @@ If a ticket and this file disagree, stop and report. Do not pick one.
    other languages can follow without hunting through components.
 9. **No em dashes anywhere**: code, comments, docs, commit messages, UI copy.
    Use commas, colons, parentheses or hyphens.
+10. **A gated feature is described, never simulated and never hidden.** A
+    feature this install has not licensed is drawn where it would be, named,
+    with one sentence saying it is part of Chokh Pro and that a key turns it on.
+    Not removed from the navigation, not a locked rectangle over a screenshot of
+    numbers that are not yours, not a modal. Three reasons: somebody deciding
+    whether to self-host needs the whole shape of the product before they
+    install it rather than after; an install with a licence and a misconfigured
+    key looks identical to one that never bought anything if the feature simply
+    is not there, and the person who has to fix that is reading this dashboard;
+    and a blurred picture of invented numbers is a lie on a page whose whole
+    promise is that it draws no number nobody measured. There is a test that
+    fails when a gated control is removed rather than labelled.
+11. **The paid half lands nowhere but `packages/ee`, and the core never reads
+    the licence key.** One file in the core knows `packages/ee` exists,
+    `packages/server/src/lib/load-extensions.ts`, and its whole job is to load
+    it if it is there and carry on if it is not. `scripts/ee-boundary.mjs` and
+    an ESLint rule refuse a crossing in either direction, and CI injects both
+    crossings on every push to prove the check still bites. It matters because
+    it cannot be undone: a feature released under MIT is free for ever, so a
+    paid one that lands in `packages/server` by accident is not a bug to fix
+    next week, it is a feature given away.
+12. **Each package validates its own environment with Zod.**
+    `packages/server/src/config/env.ts` is the only reader in the core;
+    `packages/ee/src/license/env.ts` is the only reader of `CHOKH_LICENSE_KEY`
+    anywhere. "No raw `process.env`" still holds everywhere, and so does "one
+    reader per package".
 
 ## 4. Stack (no substitutions)
 
@@ -76,6 +111,9 @@ If a ticket and this file disagree, stop and report. Do not pick one.
   signs an identify. It is not imported by the server: a product does not depend on
   its own client SDK, so the collector keeps its own copy of that line and a shared
   test vector in both packages is what stops the two drifting
+- `packages/ee`: Chokh Pro. Not MIT. It depends on `packages/server` and nothing
+  in the core depends on it, so deleting the directory leaves a product that
+  builds and boots; CI proves that on every push rather than asserting it
 - Redis is optional everywhere. Presence and the live feed use it when it is
   configured and fall back to memory when it is not, so one image is a complete
   install.
@@ -145,17 +183,31 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `pnpm test` | Vitest in every package that has tests |
 | `pnpm size:tracker` | Assert the built tracker is at most 3 KB gzipped |
 | `pnpm --filter @chokh/tracker test:e2e` | The Playwright smoke against a fixture page |
+| `node scripts/ee-boundary.mjs` | Assert the line between the MIT core and `packages/ee` |
+| `node scripts/cla-check.mjs --dry-run` | Assert the CLA check accepts a signed author and refuses an unsigned one |
+| `node packages/ee/dist/cli/chokh-license.js` | Mint and read a licence key. `keygen` is run once, by the founder, on their own machine |
 | `node packages/store-mongo/dist/migrate.js --apply` | Create the declared collections and indexes |
 | `node packages/store-mongo/dist/migrate.js --verify-only` | Report them, exit 1 unless `missing: 0` |
 | `docker compose up` | Server, MongoDB and Redis for local development |
 
-CI runs three jobs on every push: build, typecheck, lint, test and the tracker
+CI runs five jobs on every push: build, typecheck, lint, test and the tracker
 size gate, with a `redis` service beside it so the Redis presence backend is
 proved against a real Redis; a browser job that loads the fixture page in
 Chromium and asserts the collect payloads; and a job that brings the stack up
 with `docker compose up --build -d`, asserts `GET /health` answers with
 `"success":true` and runs both migrate commands against the real MongoDB, so the
-image, the compose file and the index migration are never unproven.
+image, the compose file and the index migration are never unproven. A fifth job
+deletes `packages/ee`, installs, builds, runs the server suite and boots the
+result, so "the core is free to self-host in full" is checked rather than
+claimed; and on a pull request a sixth reads `CLA-SIGNATURES.md` and refuses a
+contributor who has not signed. That one runs on `pull_request` and never on
+`pull_request_target`: a fork's pull request has to run with a read-only token
+and no secrets.
+
+The gates run in CI's order on CI's state. `pnpm typecheck` comes before
+`pnpm build`, and `packages/ee` is written against `packages/server`, so a stale
+`dist` on a laptop hides a break that a fresh clone finds. Delete every `dist`
+before a run that is meant to prove anything.
 
 The store conformance suite runs on `mongodb-memory-server`, a downloaded
 `mongod`, locally and in CI. No machine needs Docker to prove an adapter;
