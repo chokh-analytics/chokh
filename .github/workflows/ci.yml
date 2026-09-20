@@ -71,6 +71,135 @@ jobs:
       # about carrying them.
       - run: pnpm size:dashboard
 
+      # The line between the MIT core and packages/ee. ESLint already refuses a
+      # core file that imports the paid half; this also covers the licence key
+      # and the dependency direction, and runs even when lint did not.
+      - run: node scripts/ee-boundary.mjs
+
+      # A check that has never refused anything is a check nobody knows the
+      # shape of. Both crossings are injected here and the script has to fail on
+      # each, because the day it stops working is the day a paid feature is
+      # given away under MIT and nobody notices for a release.
+      - name: The boundary check refuses a crossing
+        run: |
+          set -e
+          echo "const key = process.env.CHOKH_LICENSE_KEY;" >> packages/server/src/app.ts
+          if node scripts/ee-boundary.mjs; then
+            echo "the boundary check passed a core file reading the licence key"
+            exit 1
+          fi
+          git checkout -- packages/server/src/app.ts
+
+          printf "import { extension } from '@chokh/ee';\nexport const crossing = extension;\n" \
+            > packages/server/src/crossing-probe.ts
+          if node scripts/ee-boundary.mjs; then
+            echo "the boundary check passed a core file importing packages/ee"
+            exit 1
+          fi
+          rm packages/server/src/crossing-probe.ts
+
+          node scripts/ee-boundary.mjs
+
+      # The same, for the CLA. It runs here on every push rather than only on
+      # the day a stranger opens a pull request, so the check is known to work
+      # before anybody's patch is waiting on it.
+      - run: node scripts/cla-check.mjs --dry-run
+
+      # The shipped binary, not the function behind it. A pair is generated in
+      # the runner and thrown away with it: the product's own private key exists
+      # on the founder's machine and in no repository, image or CI secret.
+      - name: chokh-license mints a key its own verifier accepts
+        run: |
+          set -e
+          node packages/ee/dist/cli/chokh-license.js keygen --out "${RUNNER_TEMP}/pair"
+          public="$(node packages/ee/dist/cli/chokh-license.js keygen --out "${RUNNER_TEMP}/second" | sed -n "s/^  '\(.*\)',$/\1/p")"
+          key="$(node packages/ee/dist/cli/chokh-license.js mint \
+            --key "${RUNNER_TEMP}/second/chokh-license.key" \
+            --licensee "A CI Pair, Thrown Away" --features '*' --days 1)"
+          node packages/ee/dist/cli/chokh-license.js verify "${key}" --public-key "${public}"
+          # And the same key against a public key it was not signed for.
+          stranger="$(node packages/ee/dist/cli/chokh-license.js keygen --out "${RUNNER_TEMP}/third" | sed -n "s/^  '\(.*\)',$/\1/p")"
+          if node packages/ee/dist/cli/chokh-license.js verify "${key}" --public-key "${stranger}"; then
+            echo "a key verified against an issuer that did not sign it"
+            exit 1
+          fi
+
+  core-only:
+    name: the core builds and boots with packages/ee deleted
+    runs-on: ubuntu-latest
+
+    # "The core is MIT and free to self-host in full" is a promise, and this is
+    # the only thing that makes it checkable. Delete the paid directory, drop
+    # nothing else, install, build, boot, and read the two answers that say the
+    # product is whole: health, and a licence route that admits there is no
+    # licence.
+    #
+    # It is a job of its own because it mutates the checkout, and because when
+    # it fails the answer is never "add a flag": it means the core grew a
+    # dependency on the half that is not free.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Delete the paid half
+        run: rm -rf packages/ee
+
+      - run: pnpm install --no-frozen-lockfile
+
+      - run: pnpm build
+
+      - run: pnpm --filter @chokh/server test
+
+      - name: Boot it, and read what it says about a licence it does not have
+        run: |
+          set -e
+          SESSION_SECRET=a-secret-long-enough-for-a-ci-run-0000 \
+          LOG_LEVEL=error PORT=4177 \
+            node packages/server/dist/server.js &
+          server=$!
+          for attempt in $(seq 1 60); do
+            if curl -fs http://127.0.0.1:4177/health > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fs http://127.0.0.1:4177/health | tee /dev/stderr | grep -q '"success":true'
+          # Unauthenticated, so this is the 401 ruling 1 asks for rather than the
+          # status itself. The licensee and the expiry are not for strangers.
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4177/api/license)"
+          echo "GET /api/license without a session: ${code}"
+          [ "${code}" = "401" ]
+          kill "${server}"
+
+  cla:
+    name: every contributor has signed the CLA
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    # pull_request and never pull_request_target. A fork's pull request has to
+    # run with a read-only token and no secrets: pull_request_target on
+    # unreviewed code from a stranger is how a repository gets taken over, and a
+    # small trusted job like this one is exactly what somebody would reach for it
+    # to write.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: node scripts/cla-check.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   tracker-e2e:
     name: tracker smoke in a real browser
     runs-on: ubuntu-latest
