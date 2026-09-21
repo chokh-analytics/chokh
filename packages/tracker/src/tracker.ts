@@ -67,6 +67,17 @@ function boot(win: Window, doc: Document, config: Config): void {
   function pageview(): void {
     path = pagePath(loc, config.hashRouting);
     const event: TrackedEvent = { type: 'pageview', ts: Date.now(), path, title: doc.title };
+    // What this page answered, which nothing in a browser can see: the page
+    // says so by setting window.paStatus before this script runs. Read once and
+    // cleared, so a route change in a single page app cannot inherit the status
+    // of the page before it, and anything that is not a status is ignored
+    // rather than sent, because a batch refused at the collector would take the
+    // rest of the page's events down with it.
+    const status = Number(win.paStatus);
+    delete win.paStatus;
+    if (Number.isInteger(status) && status >= 100 && status <= 599) {
+      event.status = String(status);
+    }
     const utm = readUtm(loc.search);
     if (utm !== undefined) {
       event.utm = utm;

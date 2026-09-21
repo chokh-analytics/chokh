@@ -10,6 +10,8 @@ export interface TrackedEvent {
   referrer?: string;
   utm?: Props;
   name?: string;
+  // What the page says it answered, on a pageview and nowhere else.
+  status?: string;
   props?: Props;
   userId?: string;
   traits?: Props;
@@ -57,5 +59,10 @@ export type Pa = ((command: string, ...args: unknown[]) => void) & {
 declare global {
   interface Window {
     pa?: Pa;
+    // The one value a page hands this script rather than calling it with: a
+    // browser cannot read the response code its own page came back with, so a
+    // not-found page declares it. Read by the pageview that follows and then
+    // cleared.
+    paStatus?: string | number;
   }
 }

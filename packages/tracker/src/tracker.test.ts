@@ -92,6 +92,38 @@ function lastBatch(): Batch | undefined {
   return all[all.length - 1];
 }
 
+describe('the status a page declares', () => {
+  it('puts it on the pageview that follows and on no later one', () => {
+    window.paStatus = 404;
+    window.history.pushState({}, '', '/gone');
+    settle();
+
+    const events = collected();
+    const notFound = events[events.length - 1];
+    expect(notFound?.path).toBe('/gone');
+    expect(notFound?.status).toBe('404');
+
+    // Cleared on the way past, so the next page is not a 404 as well. This is
+    // the whole failure mode of a global: a single page app that sets it once
+    // would otherwise report every page after it as not found.
+    window.history.pushState({}, '', '/found');
+    settle();
+    const after = collected();
+    expect(after[after.length - 1]?.path).toBe('/found');
+    expect(after[after.length - 1]?.status).toBeUndefined();
+  });
+
+  it('ignores anything that is not a status, rather than sending it', () => {
+    window.paStatus = 'not found';
+    window.history.pushState({}, '', '/junk');
+    settle();
+
+    const events = collected();
+    expect(events[events.length - 1]?.path).toBe('/junk');
+    expect(events[events.length - 1]?.status).toBeUndefined();
+  });
+});
+
 describe('identify, and the proof a site can put behind it', () => {
   it('sends the user and the signature the site issued, on that batch and the next', () => {
     window.pa?.('identify', 'user_42', { plan: 'pro' }, 'sig-issued-by-the-server');
