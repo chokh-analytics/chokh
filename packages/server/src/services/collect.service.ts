@@ -110,6 +110,10 @@ function toStoredEvent(
   if (event.title !== undefined) stored.title = event.title;
   if (event.referrer !== undefined) stored.referrer = event.referrer;
   if (event.name !== undefined) stored.name = event.name;
+  // Only a pageview answers with a status. A heartbeat or an event carrying
+  // one would put a beat in the status report, which is a dimension of what
+  // pages answered and nothing else.
+  if (event.type === 'pageview' && event.status !== undefined) stored.status = event.status;
   if (event.duration !== undefined) stored.duration = event.duration;
   if (event.scrollDepth !== undefined) stored.scrollDepth = event.scrollDepth;
   if (event.value !== undefined) stored.value = event.value;

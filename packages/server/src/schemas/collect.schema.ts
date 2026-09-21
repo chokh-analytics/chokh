@@ -12,6 +12,13 @@ const eventSchema = z.object({
   referrer: z.string().max(2048).optional(),
   utm: attributes.optional(),
   name: z.string().max(200).optional(),
+  // What the page says it answered, on a pageview and nowhere else. Three
+  // digits and nothing else, because this becomes a rollup key and a key space
+  // a page could fill with free text is one nobody can take back.
+  status: z
+    .string()
+    .regex(/^[1-5][0-9]{2}$/)
+    .optional(),
   props: attributes.optional(),
   userId: z.string().max(200).optional(),
   traits: attributes.optional(),

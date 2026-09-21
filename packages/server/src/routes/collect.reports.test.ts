@@ -165,6 +165,41 @@ describe('a collected batch reaches a report', () => {
     expect(profile?.firstTouch?.channel).toBe('organic');
   });
 
+  it('reads back the status a page declared, and calls an unlabelled pageview nothing', async () => {
+    const at = Date.now() - 60_000;
+    expect(
+      await post({
+        ...(readmeBatch() as object),
+        events: [
+          { type: 'pageview', ts: at, path: '/courses/gone', status: '404' },
+          { type: 'pageview', ts: at + 1000, path: '/courses/cp-beginners' },
+        ],
+      }),
+    ).toBe(202);
+
+    const status = await store.breakdown({ ...today(), dim: 'status' });
+    expect(status.rows).toEqual([
+      { key: '404', metrics: expect.objectContaining({ visitors: 1, pageviews: 1 }) },
+    ]);
+
+    // The page that said nothing is in no row here, and the pages report still
+    // has both of them: a status is a label on a pageview, not a filter of it.
+    const page = await store.breakdown({ ...today(), dim: 'page' });
+    expect(page.rows.map((row) => row.key).sort()).toEqual([
+      '/courses/cp-beginners',
+      '/courses/gone',
+    ]);
+  });
+
+  it('refuses a status that is not one, rather than filing it as a rollup key', async () => {
+    expect(
+      await post({
+        ...(readmeBatch() as object),
+        events: [{ type: 'pageview', ts: Date.now(), path: '/x', status: 'not found' }],
+      }),
+    ).toBe(400);
+  });
+
   it('leaves no heartbeat behind, in the rows or in the timeline', async () => {
     // A visible tab beats three times a minute for as long as it is open. The
     // beat moves the stay and the presence entry, and that is all it is for:
