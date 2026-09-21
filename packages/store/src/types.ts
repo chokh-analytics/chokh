@@ -106,6 +106,11 @@ export interface StoredEvent {
   bot: boolean;
   source?: EventSource;
   name?: string;
+  // What the page said it answered, as three digits. Only a pageview carries
+  // one, and only when the page declared it: a browser cannot read a response
+  // code, so a pageview without this is a pageview nobody labelled and never a
+  // 200.
+  status?: string;
   props?: Attributes;
   traits?: Attributes;
   duration?: number;

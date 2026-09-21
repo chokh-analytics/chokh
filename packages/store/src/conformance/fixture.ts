@@ -38,6 +38,14 @@ export const RETENTION_DAYS = 30;
 // The person v1 turns out to be, once the identify lands.
 export const USER_ID = 'u_rafi';
 
+// The one page in this world that answered something, and what it answered.
+// Two of its views carry the status, one on a day that is rolled up and one on
+// the raw day, so both halves of a read are proved; every other pageview here
+// declares nothing, which is what an unlabelled pageview looks like and is not
+// a 200.
+export const NOT_FOUND_STATUS = '404';
+export const NOT_FOUND_PATH = '/docs';
+
 export function fixtureSite(): Site {
   return {
     id: SITE_ID,
@@ -83,6 +91,7 @@ interface Draft {
   userId?: string;
   duration?: number;
   scrollDepth?: number;
+  status?: string;
 }
 
 const PROFILES = {
@@ -114,6 +123,7 @@ const DRAFTS: Draft[] = [
     visitor: 'v3',
     path: '/docs',
     referrer: 'https://www.google.com/',
+    status: NOT_FOUND_STATUS,
   },
   { ts: Date.UTC(2026, 8, 17, 5, 10, 0), type: 'pageview', visitor: 'v3', path: '/home' },
 
@@ -122,7 +132,13 @@ const DRAFTS: Draft[] = [
   { ts: BOUNDARY_TS, type: 'pageview', visitor: 'v1', path: '/home' },
   { ts: Date.UTC(2026, 8, 18, 3, 0, 0), type: 'identify', visitor: 'v1', userId: USER_ID },
   { ts: NOW - 600_000, type: 'pageview', visitor: 'v2', path: '/pricing' },
-  { ts: Date.UTC(2026, 8, 18, 3, 30, 0), type: 'pageview', visitor: 'v3', path: '/docs' },
+  {
+    ts: Date.UTC(2026, 8, 18, 3, 30, 0),
+    type: 'pageview',
+    visitor: 'v3',
+    path: '/docs',
+    status: NOT_FOUND_STATUS,
+  },
   { ts: Date.UTC(2026, 8, 18, 3, 35, 0), type: 'pageview', visitor: 'v3', path: '/pricing' },
   { ts: Date.UTC(2026, 8, 18, 3, 45, 0), type: 'pageview', visitor: 'bot', path: '/home' },
   { ts: Date.UTC(2026, 8, 18, 3, 50, 0), type: 'event', visitor: 'v1', name: 'signup', userId: USER_ID },
@@ -166,6 +182,7 @@ function build(draft: Draft): StoredEvent {
   if (draft.utm !== undefined) event.utm = { ...draft.utm };
   if (draft.duration !== undefined) event.duration = draft.duration;
   if (draft.scrollDepth !== undefined) event.scrollDepth = draft.scrollDepth;
+  if (draft.status !== undefined) event.status = draft.status;
   if (draft.type === 'identify') event.traits = { plan: 'pro' };
   return event;
 }

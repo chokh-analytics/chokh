@@ -464,6 +464,40 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(rows.get('/home')?.bounceRate).toBeNull();
         expect(rows.get('/home')?.avgDurationMs).toBeNull();
       });
+
+      it('breaks down by the status a page declared, raw today and rolled up before', async () => {
+        const raw = rowsByKey(await store.breakdown({ ...today, dim: 'status' }));
+        expect(raw.get(F.NOT_FOUND_STATUS)).toMatchObject({ visitors: 1, pageviews: 1 });
+
+        // Yesterday is answered from the daily rollup, so this is also the
+        // proof that rollupDay files the new dimension.
+        const rolled = rowsByKey(await store.breakdown({ ...yesterday, dim: 'status' }));
+        expect(rolled.get(F.NOT_FOUND_STATUS)).toMatchObject({ visitors: 1, pageviews: 1 });
+
+        const both = rowsByKey(await store.breakdown({ ...wholeRange, dim: 'status' }));
+        expect(both.get(F.NOT_FOUND_STATUS)).toMatchObject({ visitors: 2, pageviews: 2 });
+      });
+
+      // The whole reason this dimension is optional. A browser cannot read a
+      // response code, so a pageview nobody labelled is unknown, and filing it
+      // under 200 would be a number nobody measured on every page of every
+      // install that never adds the line.
+      it('leaves a pageview nobody labelled out of the status report', async () => {
+        const result = await store.breakdown({ ...wholeRange, dim: 'status' });
+        expect(result.rows.map((row) => row.key)).toEqual([F.NOT_FOUND_STATUS]);
+      });
+
+      it('narrows the pages report to the ones that answered a status', async () => {
+        const rows = rowsByKey(
+          await store.breakdown({
+            ...wholeRange,
+            dim: 'page',
+            filters: [{ dim: 'status', op: 'is', value: F.NOT_FOUND_STATUS }],
+          }),
+        );
+        expect([...rows.keys()]).toEqual([F.NOT_FOUND_PATH]);
+        expect(rows.get(F.NOT_FOUND_PATH)?.pageviews).toBe(2);
+      });
     });
 
     // Time on page and scroll depth, read from leave beacons and from nothing

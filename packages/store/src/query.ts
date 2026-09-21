@@ -51,6 +51,10 @@ export type Dimension =
   | 'screen'
   | 'lang'
   | 'event'
+  // What the page answered, when the page says so. A browser cannot see a
+  // response code, so this is absent unless a page declares it, and absent is
+  // not 200: a pageview nobody labelled is a pageview nobody labelled.
+  | 'status'
   | 'bot';
 
 export const DIMENSIONS: readonly Dimension[] = [
@@ -73,6 +77,7 @@ export const DIMENSIONS: readonly Dimension[] = [
   'screen',
   'lang',
   'event',
+  'status',
   'bot',
 ];
 
@@ -103,6 +108,11 @@ export const ROLLED_DIMENSIONS: readonly Dimension[] = [
   'screen',
   'lang',
   'event',
+  // Every value of this widens the rollup key space for good: one more row per
+  // site, per day, per status a page declared. Three digits and nothing else
+  // is what keeps that bounded, which is why the collect schema refuses
+  // anything that is not one.
+  'status',
 ];
 
 // A read excludes bots unless the query asks for them by name. This is why
@@ -450,14 +460,15 @@ export const EVENT_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>
   screen: 'screen',
   lang: 'lang',
   event: 'name',
+  status: 'status',
   bot: 'bot',
 };
 
 // Where the same dimension lives on a session row. A session is where a visit,
 // a bounce and a duration come from, so every dimension a visit can be
-// attributed to has to be findable here. The four that are missing are the
-// four a stay spans rather than has: a visit is not one page, one screen size,
-// one language or one custom event.
+// attributed to has to be findable here. The five that are missing are the
+// five a stay spans rather than has: a visit is not one page, one screen size,
+// one language, one custom event or one status.
 export const SESSION_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>>> = {
   entry: 'entryPath',
   exit: 'exitPath',
