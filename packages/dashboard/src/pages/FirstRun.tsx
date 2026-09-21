@@ -204,6 +204,17 @@ export function FirstRun({ client, teams, onReady }: FirstRunProps): JSX.Element
           </div>
 
           {/*
+            A browser cannot read the status code its own page came back with,
+            so the Pages report has a 404 card and nothing to put in it until a
+            site says what it answered. This is the one line that fills it, and
+            here is the one moment somebody is looking at where their tag goes.
+          */}
+          <p className={styles.lede}>{messages.sites.statusLede}</p>
+          <pre className={styles.code}>
+            <code>{messages.sites.statusSnippet}</code>
+          </pre>
+
+          {/*
             The identify secret leaves the server exactly twice: here, and when
             it is rotated. It is never in a GET, so this is the only chance
             anybody has to keep it, and the card says so rather than letting

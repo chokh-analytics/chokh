@@ -408,6 +408,9 @@ export const messages = {
     snippetTitle: 'Put this in your pages',
     snippetLede: 'One line, before the closing body tag, on every page you want measured.',
     copySnippet: 'Copy',
+    statusLede:
+      'Your not-found page can say so, and then 404s are counted for you. One line above the tag, on that page only.',
+    statusSnippet: 'window.paStatus = 404;',
     copySecret: 'Copy the secret',
     snippetCopied: 'Copied.',
     secretTitle: 'Your identify secret',

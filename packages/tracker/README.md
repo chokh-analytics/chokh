@@ -32,6 +32,39 @@ every site.
 - A click on any element carrying `data-pa-event`, with every
   `data-pa-prop-<name>` attribute as a property
 - `outbound_link` and `file_download` clicks, each with the `url` property
+- The status a page declared in `window.paStatus`, on the pageview that follows
+
+## Telling Chokh what a page answered
+
+A browser cannot read the status code its own page came back with, so nothing in
+this script can tell a 404 from anything else: a not-found page is a pageview of
+a page that happens to say "not found". The page is the only thing that knows,
+so the page says so.
+
+Set `window.paStatus` above the tag. The pageview that follows carries it.
+
+```html
+<script>
+  window.paStatus = 404;
+</script>
+<script defer data-site="YOUR_SITE_KEY" src="https://analytics.example.com/a.js"></script>
+```
+
+Render it the way you render the page itself: the not-found template sets 404,
+an error page sets 500, every other page sets nothing at all. A pageview with no
+status is a pageview nobody labelled, and it is counted as exactly that and
+never as a 200, so the Pages report's count of 404s is a number your site
+reported rather than a guess this script made from your paths.
+
+The value is read once and then cleared. In a single page app that means the
+route change has to set it before it navigates, not from inside the component
+that renders: a pageview goes as soon as the history entry changes, which is
+before an effect runs. Clearing it is what stops one route setting it and every
+route after that reporting itself as not found.
+
+Only a whole number between 100 and 599 is sent, and only on a pageview.
+Anything else is ignored here rather than posted, because the collector refuses
+a batch carrying a status that is not one.
 
 ## Commands
 
@@ -156,6 +189,7 @@ header says.
 ```
 
 `type` is one of `pageview`, `event`, `heartbeat`, `leave`, `identify` or
-`vital`. The collector enriches each event with IP, geo, user agent and bot
+`vital`. A pageview also carries `status` when the page declared one, as a
+string of three digits. The collector enriches each event with IP, geo, user agent and bot
 flags, applies the site's IP mode, exclusions and retention, and cuts the
 visitor's events into sessions under a thirty minute gap rule.
