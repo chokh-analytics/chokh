@@ -15,6 +15,7 @@ import {
   engagementPipeline,
   rawBreakdownPipeline,
   rawTotalsByBucketPipeline,
+  rollupBreakdownPipeline,
   rollupTotalsByDatePipeline,
   sessionBreakdownPipeline,
   sessionSourcedBreakdownPipeline,
@@ -164,6 +165,22 @@ describe('bucketed series pipelines', () => {
         false,
         undefined,
       ),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  // The new dimension of AN-PAG01 reads its history the same way every other
+  // rolled dimension does, so the one thing worth proving separately is that
+  // the rollup read still leads with an index now that the key space is wider.
+  it('scans an index for a rollup breakdown by status', async () => {
+    await (await createMongoStore({ client, now: () => fixture.NOW })).rollupDay(
+      fixture.SITE_ID,
+      fixture.YESTERDAY,
+    );
+    const stages = await explain(
+      'rollups_daily',
+      rollupBreakdownPipeline(fixture.SITE_ID, [fixture.DAY_BEFORE, fixture.YESTERDAY], 'status'),
     );
     expect(stages).toContain('IXSCAN');
     expect(stages).not.toContain('COLLSCAN');
