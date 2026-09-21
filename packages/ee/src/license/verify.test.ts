@@ -58,9 +58,8 @@ describe('verifyLicense', () => {
     expect(result.ok && result.license.sites).toBeNull();
   });
 
-  // The build ships with no issuer, so an unbuilt install believes nobody. This
-  // is what stops a stranger's key working on a public image before the founder
-  // has put their own public key in the source.
+  // A build with no public key in it believes nobody, and says so rather than
+  // reporting a bad signature.
   it('believes nobody when the build has no public key in it', () => {
     const issuer = pair();
     const key = signLicense(issuer.privateKey, payload());
@@ -69,9 +68,21 @@ describe('verifyLicense', () => {
       ok: false,
       reason: 'no_issuer',
     });
-    // And that is the state of this build today, said out loud so that a commit
-    // which quietly adds a key to the source has to change this line.
-    expect(PUBLIC_KEYS).toEqual([]);
+  });
+
+  // The state of this build, said out loud so that a commit which adds or
+  // removes an issuer has to change this test: one public key, the founder's,
+  // and a key from anybody else is refused against it. This is what stops a
+  // stranger's own pair working on the public image.
+  it('carries exactly one issuer, and refuses a key from any other pair', () => {
+    expect(PUBLIC_KEYS).toHaveLength(1);
+    const stranger = pair();
+    const key = signLicense(stranger.privateKey, payload());
+
+    expect(verifyLicense(key, { now: NOW, publicKeys: PUBLIC_KEYS })).toEqual({
+      ok: false,
+      reason: 'bad_signature',
+    });
   });
 
   it('refuses a key signed by somebody else', () => {

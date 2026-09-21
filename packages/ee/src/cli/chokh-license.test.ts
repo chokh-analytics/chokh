@@ -240,13 +240,14 @@ describe('show and verify', () => {
     rmSync(other, { recursive: true, force: true });
   });
 
-  // The state of this build: no public key in the source, so it believes
-  // nobody, and it says that rather than reporting a bad signature.
-  it('says this build has no issuer when no public key is given', () => {
+  // Against this build's own issuer, a key from a throwaway pair is somebody
+  // else's key, and it is refused for that. The no-issuer message is reached
+  // only by a build with an empty list, which verify.test.ts covers.
+  it('refuses a key from a pair that is not the issuer of this build', () => {
     call('verify', key);
 
     expect(exited).toBe(1);
-    expect(stderr.join('')).toContain('believes nobody');
+    expect(stderr.join('')).toContain('Refused: bad_signature');
   });
 });
 
