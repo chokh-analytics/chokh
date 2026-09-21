@@ -8,7 +8,6 @@ import { format, messages } from '../messages/en.js';
 import { DimensionCard } from '../reports/DimensionCard.js';
 import { ReportPage } from '../reports/ReportPage.js';
 import { Card } from '../ui/Card.js';
-import { Code } from '../ui/Breakdown.js';
 import { InfoDot } from '../ui/InfoDot.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/State.js';
 import styles from './Pages.module.css';
@@ -141,30 +140,56 @@ function Depth({ value }: { value: number }): JSX.Element {
   );
 }
 
-// The card about the thing Chokh cannot see.
+// The card about the one thing only the page itself knows.
 //
-// A tracker in a page has no idea what status code the server sent: a 404 page
-// is a pageview of a page that happens to say "not found". Rather than guessing
-// from the path, or quietly not having the report at all, this says what the
-// convention is and counts it when somebody follows it.
+// A tracker in a browser cannot see the status code the page came back with: a
+// 404 page is a pageview of a page that happens to say "not found". So the page
+// says what it answered, in one line, and this counts it. An install that
+// predates that line, or cannot add it, sends an event named 404 instead and is
+// counted the same way, which is how this card read before the status existed
+// and how Umami answers the same question today.
+//
+// The status wins when there is one, rather than the two being added: a page
+// that does both would otherwise count every miss twice.
+const NOT_FOUND_ROWS = 50;
+const NOT_FOUND_KEY = '404';
+
+function hits(rows: { key: string; metrics: { pageviews: number } }[]): number {
+  return rows
+    .filter((row) => row.key === NOT_FOUND_KEY)
+    .reduce((sum, row) => sum + row.metrics.pageviews, 0);
+}
+
 function NotFound(): JSX.Element {
   const { client, site, now } = useApp();
   const { query } = useViewQuery();
-  const result = useBreakdown({ client, siteId: site.id, query, now }, 'event', 50);
-  const rows = useMemo(
-    () => (result.data?.data.rows ?? []).filter((row) => row.key === '404'),
-    [result.data],
-  );
-  const total = rows.reduce((sum, row) => sum + row.metrics.pageviews, 0);
+  const context = { client, siteId: site.id, query, now };
+  const declared = useBreakdown(context, 'status', NOT_FOUND_ROWS);
+  const events = useBreakdown(context, 'event', NOT_FOUND_ROWS);
+
+  const fromStatus = useMemo(() => hits(declared.data?.data.rows ?? []), [declared.data]);
+  const fromEvent = useMemo(() => hits(events.data?.data.rows ?? []), [events.data]);
+  const total = fromStatus > 0 ? fromStatus : fromEvent;
+
+  const pending = declared.isPending || events.isPending;
+  // One of the two failing still leaves an answer worth drawing, so this is
+  // red only when neither read came back.
+  const failed = declared.isError && events.isError;
 
   return (
     <Card
       title={messages.reports.notFound}
       help={<InfoDot label={messages.reports.notFound} text={messages.reports.notFoundHelp} />}
     >
-      {result.isError ? (
-        <ErrorState error={result.error} onRetry={() => result.refetch()} />
-      ) : result.isPending ? (
+      {failed ? (
+        <ErrorState
+          error={declared.error}
+          onRetry={() => {
+            void declared.refetch();
+            void events.refetch();
+          }}
+        />
+      ) : pending ? (
         <Skeleton height={64} />
       ) : total === 0 ? (
         <div className={styles.convention}>
@@ -172,12 +197,19 @@ function NotFound(): JSX.Element {
           <pre className={styles.snippet}>
             <code>{messages.reports.notFoundSnippet}</code>
           </pre>
+          <p>{messages.reports.notFoundSnippetNote}</p>
+          <p>{messages.reports.notFoundFallbackNote}</p>
+          <pre className={styles.snippet}>
+            <code>{messages.reports.notFoundFallbackSnippet}</code>
+          </pre>
         </div>
       ) : (
         <div className={styles.convention}>
           <p className={styles.bigNumber}>{formatCount(total)}</p>
           <p>
-            <Code>404</Code> {messages.reports.notFoundHelp}
+            {fromStatus > 0
+              ? messages.reports.notFoundFromStatus
+              : messages.reports.notFoundFromEvent}
           </p>
         </div>
       )}

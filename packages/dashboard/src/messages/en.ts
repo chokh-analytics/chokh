@@ -144,6 +144,7 @@ export const messages = {
     screen: 'Screen',
     lang: 'Language',
     event: 'Event',
+    status: 'Status',
     utm_source: 'Campaign source',
     utm_medium: 'Campaign medium',
     utm_campaign: 'Campaign',
@@ -225,9 +226,16 @@ export const messages = {
     engagementLeaves: 'Exits measured',
     notFound: 'Pages that were not found',
     notFoundHelp:
-      'Chokh does not see status codes: a 404 page is a pageview like any other. Send an event named 404 from your not-found page and it is counted here, with the path it happened on in the pages list above.',
-    notFoundEmpty: 'No 404 events in this range.',
-    notFoundSnippet: 'chokh.event("404")',
+      'A browser cannot see a status code, so a page has to say what it answered. A page that says it answered 404 is counted here, with the path it happened on in the pages list above.',
+    notFoundEmpty: 'Nothing in this range said it answered a 404.',
+    notFoundSnippet: 'window.paStatus = 404;',
+    notFoundSnippetNote: 'One line on your not-found page, above the tracker tag.',
+    notFoundFallbackNote:
+      'A page that cannot set it can send an event named 404 instead, which is counted here too.',
+    notFoundFallbackSnippet: "pa('event', '404');",
+    notFoundFromStatus: 'Counted from the status your pages reported.',
+    notFoundFromEvent:
+      'Counted from the 404 event. A page that reports its own status is counted here too.',
     sourcesTitle: 'Sources',
     channels: 'Channels',
     channelsHelp:

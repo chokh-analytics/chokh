@@ -58,6 +58,7 @@ function ok(data: unknown): Response {
 interface Routes {
   engagement?: () => Response;
   events?: () => Response;
+  status?: () => Response;
 }
 
 function serve(routes: Routes = {}): void {
@@ -84,6 +85,9 @@ function serve(routes: Routes = {}): void {
       const dim = url.searchParams.get('dim') ?? '';
       if (dim === 'event') {
         return Promise.resolve((routes.events ?? (() => ok({ dim, rows: [] })))());
+      }
+      if (dim === 'status') {
+        return Promise.resolve((routes.status ?? (() => ok({ dim, rows: [] })))());
       }
       return Promise.resolve(ok({ dim, rows: [{ key: '/read', metrics: metrics(100) }] }));
     }),
@@ -191,18 +195,45 @@ describe('Pages', () => {
     expect(within(engagement).getByText(/90 days/)).toBeInTheDocument();
   });
 
-  it('explains the 404 convention when nobody has sent the event', async () => {
+  it('shows the line to add when no page has said what it answered', async () => {
     serve();
     render(show());
 
     const notFound = await screen.findByRole('region', { name: 'Pages that were not found' });
     await waitFor(() =>
-      expect(within(notFound).getByText('No 404 events in this range.')).toBeInTheDocument(),
+      expect(
+        within(notFound).getByText('Nothing in this range said it answered a 404.'),
+      ).toBeInTheDocument(),
     );
-    expect(within(notFound).getByText(/chokh\.event\("404"/)).toBeInTheDocument();
+    expect(within(notFound).getByText(/window\.paStatus = 404/)).toBeInTheDocument();
+    // The older way still works and still says so, because an install that
+    // cannot add the line is not an install with no answer.
+    expect(within(notFound).getByText(/pa\('event', '404'\)/)).toBeInTheDocument();
   });
 
-  it('counts the 404 event when somebody has sent it', async () => {
+  it('counts the status a page reported', async () => {
+    serve({
+      status: () =>
+        ok({
+          dim: 'status',
+          rows: [
+            { key: '404', metrics: metrics(7) },
+            { key: '200', metrics: metrics(300) },
+          ],
+        }),
+    });
+    render(show());
+
+    const notFound = await screen.findByRole('region', { name: 'Pages that were not found' });
+    // Seven visitors, fourteen pageviews: a 404 is counted per hit, because
+    // three people hitting the same dead link three times is nine mistakes.
+    await waitFor(() => expect(within(notFound).getByText('14')).toBeInTheDocument());
+    expect(
+      within(notFound).getByText('Counted from the status your pages reported.'),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to the 404 event where no page reports a status', async () => {
     serve({
       events: () =>
         ok({
@@ -216,9 +247,22 @@ describe('Pages', () => {
     render(show());
 
     const notFound = await screen.findByRole('region', { name: 'Pages that were not found' });
-    // Seven visitors, fourteen pageviews: a 404 is counted per hit, because
-    // three people hitting the same dead link three times is nine mistakes.
     await waitFor(() => expect(within(notFound).getByText('14')).toBeInTheDocument());
-    expect(within(notFound).queryByText('No 404 events in this range.')).toBeNull();
+    expect(within(notFound).getByText(/Counted from the 404 event/)).toBeInTheDocument();
+    expect(within(notFound).queryByText(/window\.paStatus/)).toBeNull();
+  });
+
+  // A page that both sets the status and sends the event would otherwise count
+  // every miss twice.
+  it('does not add the event to the status when a page does both', async () => {
+    serve({
+      status: () => ok({ dim: 'status', rows: [{ key: '404', metrics: metrics(7) }] }),
+      events: () => ok({ dim: 'event', rows: [{ key: '404', metrics: metrics(7) }] }),
+    });
+    render(show());
+
+    const notFound = await screen.findByRole('region', { name: 'Pages that were not found' });
+    await waitFor(() => expect(within(notFound).getByText('14')).toBeInTheDocument());
+    expect(within(notFound).queryByText('28')).toBeNull();
   });
 });
