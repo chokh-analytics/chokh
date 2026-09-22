@@ -423,6 +423,29 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(events.size).toBe(1);
       });
 
+      // v2's LCP carries a name and is a page timing, not an event. Listing it
+      // beside signup would put every vital v.js reports into the events
+      // report and into every rollup of the dimension.
+      it('leaves a page timing out of the event dimension, in a breakdown and a filter', async () => {
+        const events = rowsByKey(await store.breakdown({ ...today, dim: 'event' }));
+        expect([...events.keys()]).toEqual(['signup']);
+
+        const named = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'event', op: 'is', value: 'LCP' }],
+        });
+        expect(named.metrics.visitors).toBe(0);
+
+        // "Not signup" is true of every row that is not the signup event, the
+        // timing included, in both adapters.
+        const others = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'event', op: 'is_not', value: 'signup' }],
+        });
+        expect(others.metrics.visitors).toBe(F.EXPECTED.today.visitors);
+        expect(others.metrics.pageviews).toBe(F.EXPECTED.today.pageviews);
+      });
+
       it('breaks down by where a stay came in and went out', async () => {
         const entry = rowsByKey(await store.breakdown({ ...wholeRange, dim: 'entry' }));
         expect(entry.get('/home')).toMatchObject({ visitors: 4, pageviews: 5, visits: 4, bounces: 3 });

@@ -1,6 +1,7 @@
 import {
   BOT_DIMENSION,
   EVENT_PATH_BY_DIMENSION,
+  EVENT_TYPE_BY_DIMENSION,
   SESSION_PATH_BY_DIMENSION,
   type Dimension,
   type Filter,
@@ -36,6 +37,10 @@ export function eventMatch(
     ts: { $gte: span.from, $lt: span.to },
     bot: wantsBots,
   };
+  // Conditions on a dimension that belongs to one type of row. They go in an
+  // $and rather than beside the fields, so a caller spreading this match and
+  // naming a type of its own cannot quietly replace them.
+  const typed: Document[] = [];
   for (const filter of filters ?? []) {
     if (filter.dim === BOT_DIMENSION) {
       continue;
@@ -47,13 +52,25 @@ export function eventMatch(
       // number; matching nothing is the belt to that pair of braces.
       return { siteId, ts: { $lt: 0 } };
     }
-    if (filter.op === 'is') {
-      match[path] = filter.value;
+    const condition =
+      filter.op === 'is'
+        ? filter.value
+        : filter.op === 'is_not'
+          ? { $ne: filter.value }
+          : { $regex: escapeRegex(filter.value) };
+    const type = EVENT_TYPE_BY_DIMENSION[filter.dim];
+    if (type === undefined) {
+      match[path] = condition;
     } else if (filter.op === 'is_not') {
-      match[path] = { $ne: filter.value };
+      // A row of another type has no value here, and "not signup" is true of
+      // it, the same answer dimensionValue gives the other adapter.
+      typed.push({ $or: [{ type: { $ne: type } }, { [path]: condition }] });
     } else {
-      match[path] = { $regex: escapeRegex(filter.value) };
+      typed.push({ type, [path]: condition });
     }
+  }
+  if (typed.length > 0) {
+    match.$and = typed;
   }
   return match;
 }
@@ -67,7 +84,11 @@ export function dimensionExpression(dim: Dimension): Document | string | null {
     return { $toString: '$bot' };
   }
   const path = EVENT_PATH_BY_DIMENSION[dim];
-  return path === undefined ? null : `$${path}`;
+  if (path === undefined) {
+    return null;
+  }
+  const type = EVENT_TYPE_BY_DIMENSION[dim];
+  return type === undefined ? `$${path}` : { $cond: [{ $eq: ['$type', type] }, `$${path}`, null] };
 }
 
 const IS_PAGEVIEW = { $cond: [{ $eq: ['$type', 'pageview'] }, 1, 0] };

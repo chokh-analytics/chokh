@@ -488,6 +488,19 @@ export const SESSION_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, strin
   bot: 'bot',
 };
 
+// The one type of row a dimension belongs to, where it belongs to one.
+//
+// A name is carried by two kinds of row: a custom event, and a page timing
+// v.js reports through the same queue as pa('vital', 'LCP'). An event
+// dimension that read the name off both would list LCP, CLS and INP beside
+// signup, and file them into every rollup of the dimension from the first day
+// a site loads v.js, which is history nobody can take back. So the event
+// dimension is the custom events and nothing else, a server's included,
+// because what a backend sends is type event too.
+export const EVENT_TYPE_BY_DIMENSION: Readonly<Partial<Record<Dimension, EventType>>> = {
+  event: 'event',
+};
+
 function readPath(row: object, path: string): string | undefined {
   let cursor: unknown = row;
   for (const step of path.split('.')) {
@@ -504,7 +517,14 @@ function readPath(row: object, path: string): string | undefined {
 
 export function dimensionValue(event: StoredEvent, dim: Dimension): string | undefined {
   const path = EVENT_PATH_BY_DIMENSION[dim];
-  return path === undefined ? undefined : readPath(event, path);
+  if (path === undefined) {
+    return undefined;
+  }
+  const type = EVENT_TYPE_BY_DIMENSION[dim];
+  if (type !== undefined && event.type !== type) {
+    return undefined;
+  }
+  return readPath(event, path);
 }
 
 export function sessionDimensionValue(

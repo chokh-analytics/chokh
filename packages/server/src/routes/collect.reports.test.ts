@@ -191,6 +191,26 @@ describe('a collected batch reaches a report', () => {
     ]);
   });
 
+  it('keeps a batch of page timings out of the event dimension', async () => {
+    // What v.js posts through a.js: a name and a number on a vital. The name
+    // is a timing and not something a visitor did, so the events report and
+    // every rollup of the dimension leave it out.
+    const at = Date.now() - 60_000;
+    expect(
+      await post({
+        ...(readmeBatch() as object),
+        events: [
+          { type: 'vital', ts: at, path: '/courses/cp-beginners', name: 'LCP', value: 1800 },
+          { type: 'vital', ts: at + 10, path: '/courses/cp-beginners', name: 'CLS', value: 0.02 },
+        ],
+      }),
+    ).toBe(202);
+
+    expect(store.stored().map((event) => event.type)).toEqual(['vital', 'vital']);
+    const events = await store.breakdown({ ...today(), dim: 'event' });
+    expect(events.rows).toEqual([]);
+  });
+
   it('refuses a status that is not one, rather than filing it as a rollup key', async () => {
     expect(
       await post({

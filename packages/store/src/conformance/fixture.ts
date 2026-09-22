@@ -92,6 +92,7 @@ interface Draft {
   duration?: number;
   scrollDepth?: number;
   status?: string;
+  value?: number;
 }
 
 const PROFILES = {
@@ -132,6 +133,10 @@ const DRAFTS: Draft[] = [
   { ts: BOUNDARY_TS, type: 'pageview', visitor: 'v1', path: '/home' },
   { ts: Date.UTC(2026, 8, 18, 3, 0, 0), type: 'identify', visitor: 'v1', userId: USER_ID },
   { ts: NOW - 600_000, type: 'pageview', visitor: 'v2', path: '/pricing' },
+  // A page timing, which carries a name the way a custom event does and is not
+  // one. Inside v2's stay and on the page already open, so no visit, entry or
+  // exit moves; what it proves is that the event dimension leaves it out.
+  { ts: NOW - 300_000, type: 'vital', visitor: 'v2', path: '/pricing', name: 'LCP', value: 1800 },
   {
     ts: Date.UTC(2026, 8, 18, 3, 30, 0),
     type: 'pageview',
@@ -183,6 +188,7 @@ function build(draft: Draft): StoredEvent {
   if (draft.duration !== undefined) event.duration = draft.duration;
   if (draft.scrollDepth !== undefined) event.scrollDepth = draft.scrollDepth;
   if (draft.status !== undefined) event.status = draft.status;
+  if (draft.value !== undefined) event.value = draft.value;
   if (draft.type === 'identify') event.traits = { plan: 'pro' };
   return event;
 }
