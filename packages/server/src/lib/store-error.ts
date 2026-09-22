@@ -24,18 +24,23 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   UNKNOWN_SITE: 404,
   UNKNOWN_USER: 404,
   UNKNOWN_TEAM: 404,
+  GOAL_NOT_FOUND: 404,
   // The caller named something that is already there.
   SITE_EXISTS: 409,
   TEAM_EXISTS: 409,
   EMAIL_EXISTS: 409,
   DOMAIN_TAKEN: 409,
   KEY_EXISTS: 409,
+  GOAL_EXISTS: 409,
+  // The site already has as many goals as one may.
+  GOAL_LIMIT: 409,
   // The caller asked for something the store cannot answer as asked.
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,
   UNSUPPORTED_FILTER: 400,
   UNSUPPORTED_DIMENSION: 400,
   MISSING_DIMENSION: 400,
+  UNSUPPORTED_GOAL: 400,
 };
 
 export function refusalOf(error: unknown): Refusal | null {

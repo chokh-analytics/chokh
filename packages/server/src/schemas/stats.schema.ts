@@ -187,9 +187,21 @@ export const statsQuerySchema = z.object({
   dim: dimension.optional(),
   metrics: metrics.optional(),
   limit: z.coerce.number().int().positive().max(1000).optional(),
+  // A goal's id. Resolved to the goal by the controller, against the site the
+  // route already read, so an id from another site is a goal that is not here.
+  goal: z.string().min(1).max(64).optional(),
 });
 
 export type StatsQueryInput = z.infer<typeof statsQuerySchema>;
+
+// The property breakdown: the report's query plus the event it is about and,
+// optionally, which of its properties. The limits are the collector's own.
+export const propertiesQuerySchema = statsQuerySchema.extend({
+  event: z.string().min(1).max(200),
+  property: z.string().min(1).max(100).optional(),
+});
+
+export type PropertiesQueryInput = z.infer<typeof propertiesQuerySchema>;
 
 // The store's query, built from the request and the site the route already
 // resolved. A range with to at or before from is refused here rather than

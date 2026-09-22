@@ -8,6 +8,11 @@ import {
   createSetMemberController,
 } from '../controllers/accounts.controller.js';
 import { createServerEventsController } from '../controllers/events.controller.js';
+import {
+  createCreateGoalController,
+  createDeleteGoalController,
+  createListGoalsController,
+} from '../controllers/goals.controller.js';
 import { createLicenseController } from '../controllers/license.controller.js';
 import {
   createUserController,
@@ -32,7 +37,10 @@ import {
   createAggregateController,
   createBreakdownController,
   createEngagementController,
+  createEventsController,
   createExportController,
+  createGoalStatsController,
+  createPropertiesController,
   createTimeseriesController,
 } from '../controllers/stats.controller.js';
 import {
@@ -53,8 +61,8 @@ import type { AuthDeps } from '../services/auth.service.js';
 //
 // The whole authorization model is readable here, which is the point of putting
 // them in one file: read:stats for the reports, read:identity for the two routes
-// that name a person, write:events for what a backend sends, admin for keys and
-// settings. A route with no hook is a route anybody may call, and there are four:
+// that name a person, write:events for what a backend sends, admin for keys,
+// settings and goals. A route with no hook is a route anybody may call, and there are four:
 // registration (open only while there is nobody), login, and the two SSO forms,
 // all four rate limited by address.
 //
@@ -150,6 +158,42 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/export.csv',
     { preHandler: scope('read:stats') },
     createExportController(deps),
+  );
+  // Raw rows only, all three: the custom events, one event by a property, and
+  // every goal's conversion.
+  app.get(
+    '/api/sites/:siteId/stats/events',
+    { preHandler: scope('read:stats') },
+    createEventsController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/properties',
+    { preHandler: scope('read:stats') },
+    createPropertiesController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/goals',
+    { preHandler: scope('read:stats') },
+    createGoalStatsController(deps),
+  );
+
+  // Goals. Reading the list is read:stats; adding and deleting are admin, the
+  // scope a site's settings need, because a goal changes what every report of
+  // the site says. Each hook is built for its own route.
+  app.get(
+    '/api/sites/:siteId/goals',
+    { preHandler: scope('read:stats') },
+    createListGoalsController(deps),
+  );
+  app.post(
+    '/api/sites/:siteId/goals',
+    { preHandler: scope('admin') },
+    createCreateGoalController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/goals/:goalId',
+    { preHandler: scope('admin') },
+    createDeleteGoalController(deps),
   );
 
   // Who is here now.
