@@ -13,12 +13,15 @@ import { startJobs } from './services/jobs.js';
 
 const geo = createSwappableGeoReader(await openReader(join(env.GEOIP_DIR, DATABASE_FILE)));
 const { presence, kind: presenceKind } = openPresence();
-const { store, kind } = await openStore(presence);
+const { store, kind, version } = await openStore(presence);
 const { bus, kind: busKind } = openBus();
 const { once } = openOnce(() => Date.now());
 const loaded = await loadExtensions();
 const app = await buildApp({ geo: geo.reader, store, bus, once, extensions: loaded.extensions });
-app.log.info({ store: kind, presence: presenceKind, bus: busKind }, 'storage adapter opened');
+app.log.info(
+  { store: kind, ...(version === undefined ? {} : { version }), presence: presenceKind, bus: busKind },
+  'storage adapter opened',
+);
 if (loaded.reason === 'failed') {
   // Present and broken. The process carries on serving the free product rather
   // than refusing to boot, and says loudly what it is missing.

@@ -49,6 +49,7 @@ export const NOT_FOUND_STATUS = '404';
 // no properties; v3 sends it on the 17th and again today, from /docs, with a
 // plan. So a goal on it has converters on a rolled day and on the raw one.
 export const SIGNUP = 'signup';
+export const DOTTED_PROPERTY = 'ab.test';
 export const NOT_FOUND_PATH = '/docs';
 
 export function fixtureSite(): Site {
@@ -162,14 +163,16 @@ const DRAFTS: Draft[] = [
     status: NOT_FOUND_STATUS,
   },
   // And another today, inside the same kind of stay, with a different plan so
-  // the property breakdown has two values to tell apart.
+  // the property breakdown has two values to tell apart, and a property whose
+  // name has a dot in it, which MongoDB would read as a nested path if the
+  // adapter ever asked for props.<name>.
   {
     ts: Date.UTC(2026, 8, 18, 3, 32, 0),
     type: 'event',
     visitor: 'v3',
     path: '/docs',
     name: SIGNUP,
-    props: { plan: 'pro' },
+    props: { plan: 'pro', [DOTTED_PROPERTY]: 'b' },
   },
   { ts: Date.UTC(2026, 8, 18, 3, 35, 0), type: 'pageview', visitor: 'v3', path: '/pricing' },
   { ts: Date.UTC(2026, 8, 18, 3, 45, 0), type: 'pageview', visitor: 'bot', path: '/home' },

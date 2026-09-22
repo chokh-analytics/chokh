@@ -2,6 +2,11 @@ import type {
   AggregateResult,
   BreakdownResult,
   EngagementResult,
+  EventsResult,
+  Goal,
+  GoalStatsResult,
+  PropertyQuery,
+  PropertyResult,
   PurgeSummary,
   Query,
   RealtimeSnapshot,
@@ -51,6 +56,17 @@ export interface AnalyticsStore {
   // carries is refused rather than answered empty, the way a filter naming one
   // is.
   engagement(query: Query): Promise<EngagementResult>;
+
+  // The custom events of the range, by name: how many people did each and how
+  // often. Raw rows only, and a page timing is not an event.
+  events(query: Query): Promise<EventsResult>;
+
+  // One custom event broken down by one of its properties. Raw rows only.
+  properties(query: PropertyQuery): Promise<PropertyResult>;
+
+  // Every goal handed in, one conversion each, in one read. Raw rows only, for
+  // the reason a goal read always is (see conversionMatcher).
+  goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult>;
 
   // Who is here now: online counts, the pages and countries they are on, the
   // visitors themselves, and the rest of the presence window beside them. Read

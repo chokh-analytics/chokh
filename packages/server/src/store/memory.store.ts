@@ -1,6 +1,7 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_GOALS_PER_SITE,
+  MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
@@ -24,6 +25,7 @@ import {
   dimensionValue,
   finishConversion,
   finishEngagement,
+  finishEventRow,
   finishMetrics,
   foldVisitor,
   groupForFold,
@@ -38,6 +40,8 @@ import {
   snapshotFrom,
   sortBreakdownRows,
   sortEngagementRows,
+  sortEventRows,
+  sortPropertyCounts,
   startOfDay,
   zeroEngagement,
   zeroTotals,
@@ -49,8 +53,13 @@ import {
   type Dimension,
   type EngagementResult,
   type EngagementTally,
+  type EventsResult,
   type Goal,
   type GoalRead,
+  type GoalStatsResult,
+  type PropertyCount,
+  type PropertyQuery,
+  type PropertyResult,
   type Interval,
   type Metrics,
   type Presence,
@@ -305,6 +314,24 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     return { visitors, completions };
   }
 
+  // The people a set of rows counts, per day.
+  function visitorsByDay(rows: StoredEvent[], timezone: string): Map<string, Set<string>> {
+    const counted = new Map<string, Set<string>>();
+    for (const event of rows) {
+      const day = dayKey(event.ts, timezone);
+      const seen = counted.get(day) ?? new Set<string>();
+      counted.set(day, seen);
+      seen.add(event.visitorId);
+    }
+    return counted;
+  }
+
+  function visitorDays(counted: Map<string, Set<string>>): number {
+    let total = 0;
+    for (const seen of counted.values()) total += seen.size;
+    return total;
+  }
+
   // A goal read is raw for the whole range, so this is one span.
   function conversionFor(
     query: Query,
@@ -314,15 +341,33 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     base: number,
   ): Conversion {
     const timezone = site.settings.timezone;
-    const counted = new Map<string, Set<string>>();
-    for (const event of rawRows(query, range)) {
-      const day = dayKey(event.ts, timezone);
-      const seen = counted.get(day) ?? new Set<string>();
-      counted.set(day, seen);
-      seen.add(event.visitorId);
-    }
+    const counted = visitorsByDay(rawRows(query, range), timezone);
     const converters = rawConverters(query, goal, range, timezone);
     return finishConversion(overlap(counted, converters), base, goal);
+  }
+
+  // Visitors, each day's added up, and how many rows, per key.
+  function tallyBy(
+    rows: StoredEvent[],
+    keyOf: (event: StoredEvent) => string,
+    timezone: string,
+  ): Map<string, { visitors: number; events: number }> {
+    const out = new Map<string, { visitors: number; events: number }>();
+    const seen = new Map<string, Set<string>>();
+    for (const event of rows) {
+      const key = keyOf(event);
+      const tally = out.get(key) ?? { visitors: 0, events: 0 };
+      out.set(key, tally);
+      tally.events += 1;
+      const mark = `${dayKey(event.ts, timezone)}\n${key}`;
+      const visitorsThatDay = seen.get(mark) ?? new Set<string>();
+      seen.set(mark, visitorsThatDay);
+      if (!visitorsThatDay.has(event.visitorId)) {
+        visitorsThatDay.add(event.visitorId);
+        tally.visitors += 1;
+      }
+    }
+    return out;
   }
 
   function rollupRows(siteId: string, days: string[], dim: RollupDim, key?: string): RollupRecord[] {
@@ -814,6 +859,88 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         [...tallies].map(([key, tally]) => finishEngagement(key, tally)),
       );
       return { dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT), rawOnly: true };
+    },
+
+    async events(query: Query): Promise<EventsResult> {
+      const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      assertNoGoal(query, 'events');
+      const timezone = site.settings.timezone;
+      const rows = rawRows(query, { from: query.from, to: query.to });
+      const base = visitorDays(visitorsByDay(rows, timezone));
+      const custom = rows.filter((event) => event.type === 'event' && event.name !== undefined);
+      const tallies = tallyBy(custom, (event) => event.name ?? '', timezone);
+      const answered = sortEventRows(
+        [...tallies].map(([key, tally]) => finishEventRow(key, tally, base)),
+      );
+      return {
+        visitors: base,
+        rows: answered.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT),
+        rawOnly: true,
+      };
+    },
+
+    async properties(query: PropertyQuery): Promise<PropertyResult> {
+      const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      assertNoGoal(query, 'properties');
+      const timezone = site.settings.timezone;
+      const rows = rawRows(query, { from: query.from, to: query.to });
+      const base = visitorDays(visitorsByDay(rows, timezone));
+      const mine = rows.filter((event) => event.type === 'event' && event.name === query.event);
+
+      const counts = new Map<string, number>();
+      for (const event of mine) {
+        for (const key of Object.keys(event.props ?? {})) {
+          counts.set(key, (counts.get(key) ?? 0) + 1);
+        }
+      }
+      const properties = sortPropertyCounts(
+        [...counts].map(([key, events]): PropertyCount => ({ key, events })),
+      ).slice(0, MAX_PROPERTY_KEYS);
+      const property = query.property ?? properties[0]?.key ?? null;
+      if (property === null) {
+        return { event: query.event, properties, property, visitors: base, rows: [], rawOnly: true };
+      }
+      // Own properties only: a name like constructor must read the page's
+      // value, not something every object has.
+      const valueOf = (event: StoredEvent): string =>
+        event.props !== undefined && Object.hasOwn(event.props, property)
+          ? (event.props[property] ?? '')
+          : '';
+      const tallies = tallyBy(mine, valueOf, timezone);
+      const answered = sortEventRows(
+        [...tallies].map(([key, tally]) => finishEventRow(key, tally, base)),
+      );
+      return {
+        event: query.event,
+        properties,
+        property,
+        visitors: base,
+        rows: answered.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT),
+        rawOnly: true,
+      };
+    },
+
+    async goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult> {
+      const site = siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      const timezone = site.settings.timezone;
+      const range: Range = { from: query.from, to: query.to };
+      const counted = visitorsByDay(rawRows(query, range), timezone);
+      const base = visitorDays(counted);
+      return {
+        visitors: base,
+        rows: goals.map((goal) => ({
+          goalId: goal.id,
+          conversion: finishConversion(
+            overlap(counted, rawConverters(query, goal, range, timezone)),
+            base,
+            goal,
+          ),
+        })),
+        rawOnly: true,
+      };
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {

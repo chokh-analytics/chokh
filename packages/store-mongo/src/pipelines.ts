@@ -3,10 +3,12 @@ import {
   EVENT_PATH_BY_DIMENSION,
   EVENT_TYPE_BY_DIMENSION,
   SESSION_PATH_BY_DIMENSION,
+  MAX_PROPERTY_KEYS,
   goalIsPattern,
   goalPattern,
   type Dimension,
   type Filter,
+  type Goal,
   type GoalMatch,
   type Interval,
   type Range,
@@ -613,5 +615,216 @@ export function sessionConversionBreakdownPipeline(
     { $match: { key: { $ne: null } } },
     { $group: { _id: { day: '$day', visitorId: '$visitorId' }, keys: { $addToSet: '$key' } } },
     ...conversionTail(siteId, span, timezone, wantsBots, goal),
+  ];
+}
+
+// The events report and the property breakdown. Custom events only, by type,
+// so a page timing never reaches either.
+
+function customEventMatch(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  name?: string,
+): Document {
+  return {
+    ...eventMatch(siteId, span, wantsBots, filters),
+    type: 'event',
+    name: name ?? { $exists: true },
+  };
+}
+
+// Visitors, each day's added up, and how many times, per event name.
+export function eventsPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+): Document[] {
+  return [
+    { $match: customEventMatch(siteId, span, wantsBots, filters) },
+    {
+      $group: {
+        _id: { day: dayExpression(timezone), key: '$name', visitorId: '$visitorId' },
+        events: { $sum: 1 },
+      },
+    },
+    {
+      $group: {
+        _id: { day: '$_id.day', key: '$_id.key' },
+        visitors: { $sum: 1 },
+        events: { $sum: '$events' },
+      },
+    },
+    { $group: { _id: '$_id.key', visitors: { $sum: '$visitors' }, events: { $sum: '$events' } } },
+  ];
+}
+
+// The property names one event carried, most used first.
+export function propertyKeysPipeline(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  event: string,
+): Document[] {
+  return [
+    { $match: customEventMatch(siteId, span, wantsBots, filters, event) },
+    { $project: { pair: { $objectToArray: { $ifNull: ['$props', {}] } } } },
+    { $unwind: '$pair' },
+    { $group: { _id: '$pair.k', events: { $sum: 1 } } },
+    { $sort: { events: -1, _id: 1 } },
+    { $limit: MAX_PROPERTY_KEYS },
+  ];
+}
+
+// One event broken down by one property. The value is read with $getField and
+// a literal name, never as a props.<name> path: a property is whatever a page
+// passed, and a name with a dot in it would otherwise become a nested path, and
+// one starting with a dollar an operator. $getField is MongoDB 5.0 and later,
+// which is why the adapter reads the server's version when it opens.
+export function propertyValuesPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  event: string,
+  property: string,
+): Document[] {
+  return [
+    { $match: customEventMatch(siteId, span, wantsBots, filters, event) },
+    {
+      $project: {
+        day: dayExpression(timezone),
+        visitorId: 1,
+        key: {
+          $ifNull: [
+            { $getField: { field: { $literal: property }, input: { $ifNull: ['$props', {}] } } },
+            '',
+          ],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: { day: '$day', key: '$key', visitorId: '$visitorId' },
+        events: { $sum: 1 },
+      },
+    },
+    {
+      $group: {
+        _id: { day: '$_id.day', key: '$_id.key' },
+        visitors: { $sum: 1 },
+        events: { $sum: '$events' },
+      },
+    },
+    { $group: { _id: '$_id.key', visitors: { $sum: '$visitors' }, events: { $sum: '$events' } } },
+  ];
+}
+
+// Whether a row reaches a goal, as an expression rather than a query, so one
+// pass can tag each row with every goal it reaches: a pattern goal and an
+// exact goal can both be reached by the same pageview.
+function goalExpression(goal: GoalMatch): Document {
+  if (goal.kind === 'event') {
+    return { $and: [{ $eq: ['$type', 'event'] }, { $eq: ['$name', goal.match] }] };
+  }
+  if (!goalIsPattern(goal)) {
+    return { $and: [{ $eq: ['$type', 'pageview'] }, { $eq: ['$path', goal.match] }] };
+  }
+  return {
+    $and: [
+      { $eq: ['$type', 'pageview'] },
+      { $regexMatch: { input: { $ifNull: ['$path', ''] }, regex: goalPattern(goal.match) } },
+    ],
+  };
+}
+
+// The same question as a query, for the $match that narrows the rows first.
+function goalCondition(goal: GoalMatch): Document {
+  if (goal.kind === 'event') {
+    return { type: 'event', name: goal.match };
+  }
+  return {
+    type: 'pageview',
+    path: goalIsPattern(goal) ? { $regex: goalPattern(goal.match) } : goal.match,
+  };
+}
+
+// Every goal's converted visitors and completions in one round trip, against
+// the people the read's own events counted.
+export function goalStatsPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  goals: Goal[],
+): Document[] {
+  const day = dayExpression(timezone);
+  return [
+    { $match: eventMatch(siteId, span, wantsBots, filters) },
+    { $group: { _id: { day, visitorId: '$visitorId' }, counted: { $max: 1 } } },
+    {
+      $unionWith: {
+        coll: EVENTS,
+        pipeline: [
+          {
+            $match: {
+              siteId,
+              ts: { $gte: span.from, $lt: span.to },
+              bot: wantsBots,
+              $or: goals.map(goalCondition),
+            },
+          },
+          {
+            $project: {
+              day,
+              visitorId: 1,
+              goals: {
+                $setDifference: [
+                  goals.map((goal) => ({ $cond: [goalExpression(goal), goal.id, null] })),
+                  [null],
+                ],
+              },
+            },
+          },
+          { $unwind: '$goals' },
+          {
+            $group: {
+              _id: { day: '$day', visitorId: '$visitorId', goal: '$goals' },
+              completions: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              _id: { day: '$_id.day', visitorId: '$_id.visitorId' },
+              goal: '$_id.goal',
+              completions: 1,
+            },
+          },
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: '$_id',
+        counted: { $max: '$counted' },
+        reached: { $push: { goal: '$goal', completions: '$completions' } },
+      },
+    },
+    { $match: { counted: 1 } },
+    { $unwind: '$reached' },
+    { $match: { 'reached.goal': { $type: 'string' } } },
+    {
+      $group: {
+        _id: '$reached.goal',
+        visitors: { $sum: 1 },
+        completions: { $sum: '$reached.completions' },
+      },
+    },
   ];
 }

@@ -508,13 +508,118 @@ export function finishConversion(
 // The two reads a goal cannot be asked of yet. Refused rather than ignored,
 // because a chart that silently dropped the goal would draw every visitor under
 // a heading that says conversions.
-export function assertNoGoal(query: Query, read: 'timeseries' | 'engagement'): void {
+const GOALLESS_READS = {
+  timeseries: 'A time series',
+  engagement: 'A time on page read',
+  events: 'The events report',
+  properties: 'A property breakdown',
+} as const;
+
+export function assertNoGoal(query: Query, read: keyof typeof GOALLESS_READS): void {
   if (query.goal !== undefined) {
     throw new StoreQueryError(
       'UNSUPPORTED_GOAL',
-      `A ${read === 'timeseries' ? 'time series' : 'time on page read'} cannot be counted against a goal yet`,
+      `${GOALLESS_READS[read]} cannot be counted against a goal yet`,
     );
   }
+}
+
+// The events report and a property breakdown. Both read raw rows only: a
+// rollup keeps visitors per event name and never how many times it happened,
+// and a property is not a dimension at all, so neither has any history to fall
+// back on and each sees back as far as the site keeps its events.
+//
+// visitors is the range's own, under the same filters, and a row's rate is its
+// visitors over it: the share of the people who were here that did this.
+export interface EventRow {
+  key: string;
+  visitors: number;
+  events: number;
+  rate: number | null;
+}
+
+export interface EventsResult {
+  visitors: number;
+  rows: EventRow[];
+  rawOnly: true;
+}
+
+// A property breakdown names one custom event and, optionally, one of its
+// properties. Without one it answers the most used, so a first look needs one
+// read and not two.
+export interface PropertyQuery extends Query {
+  event: string;
+  property?: string;
+}
+
+export interface PropertyCount {
+  key: string;
+  events: number;
+}
+
+// How many property names a breakdown lists. A property name is whatever a page
+// passed, so this bounds a list nobody chose the length of.
+export const MAX_PROPERTY_KEYS = 50;
+
+export interface PropertyResult {
+  event: string;
+  // Every property name the event carried in the range, most used first.
+  properties: PropertyCount[];
+  // The one the rows break down by: the one asked for, else the most used,
+  // else null when the event carried none.
+  property: string | null;
+  visitors: number;
+  // One row per value. An event that did not carry the property is the ''
+  // row, which is drawn as unknown rather than dropped: a breakdown whose rows
+  // do not add up to the event is a breakdown that hid something.
+  rows: EventRow[];
+  rawOnly: true;
+}
+
+export interface GoalStatsRow {
+  goalId: string;
+  conversion: Conversion;
+}
+
+// Every goal of a site at once, one conversion each, against the range's
+// visitors under the filters.
+export interface GoalStatsResult {
+  visitors: number;
+  rows: GoalStatsRow[];
+  rawOnly: true;
+}
+
+export function finishEventRow(
+  key: string,
+  tally: { visitors: number; events: number },
+  base: number,
+): EventRow {
+  return {
+    key,
+    visitors: tally.visitors,
+    events: tally.events,
+    rate: base === 0 ? null : tally.visitors / base,
+  };
+}
+
+// Most people first, then most often, then alphabetical, so a tie never
+// reorders itself between two reads or two adapters.
+export function sortEventRows(rows: EventRow[]): EventRow[] {
+  return rows.sort((left, right) => {
+    if (right.visitors !== left.visitors) {
+      return right.visitors - left.visitors;
+    }
+    if (right.events !== left.events) {
+      return right.events - left.events;
+    }
+    return left.key.localeCompare(right.key);
+  });
+}
+
+export function sortPropertyCounts(rows: PropertyCount[]): PropertyCount[] {
+  return rows.sort((left, right) =>
+    right.events !== left.events ? right.events - left.events : left.key.localeCompare(right.key),
+  );
 }
 
 export interface PurgeSummary {

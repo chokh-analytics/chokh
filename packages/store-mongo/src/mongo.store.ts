@@ -22,6 +22,7 @@ import {
   dayBounds,
   finishConversion,
   finishEngagement,
+  finishEventRow,
   finishMetrics,
   foldVisitor,
   groupForFold,
@@ -33,6 +34,7 @@ import {
   snapshotFrom,
   sortBreakdownRows,
   sortEngagementRows,
+  sortEventRows,
   startOfDay,
   zeroEngagement,
   zeroTotals,
@@ -44,8 +46,13 @@ import {
   type Dimension,
   type EngagementResult,
   type EngagementTally,
+  type EventsResult,
   type Goal,
   type GoalRead,
+  type GoalStatsResult,
+  type PropertyCount,
+  type PropertyQuery,
+  type PropertyResult,
   type Interval,
   type Metrics,
   type Presence,
@@ -89,6 +96,10 @@ import {
   conversionBreakdownPipeline,
   conversionTotalsPipeline,
   engagementPipeline,
+  eventsPipeline,
+  goalStatsPipeline,
+  propertyKeysPipeline,
+  propertyValuesPipeline,
   rawTotalsByBucketPipeline,
   rollupTotalsByDatePipeline,
   sessionTotalsByBucketPipeline,
@@ -126,6 +137,9 @@ const SITE_CACHE_MS = 60_000;
 
 export interface MongoStore extends AnalyticsStore, AccountStore {
   db: Db;
+  // The server's version, read once when the store opened, for the boot log.
+  // The property breakdown reads a value with $getField, which needs 5.0.
+  serverVersion: string;
 }
 
 // Why a site cannot have an empty domain list, said once because both writes
@@ -162,6 +176,10 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     await client.connect();
   }
   const db = client.db(options.dbName);
+  // buildInfo needs no role beyond a connection, so a user with no dbAdmin on
+  // a hosted cluster can still answer it.
+  const build = await db.command({ buildInfo: 1 });
+  const serverVersion = typeof build.version === 'string' ? build.version : 'unknown';
   const now = options.now ?? ((): number => Date.now());
   const presence: Presence = options.presence ?? createMemoryPresence();
 
@@ -428,8 +446,26 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     return { body: profileFrom(ordered, rows, exact), visitorIds };
   }
 
+  // The range's visitors under the filters, read raw: the denominator of every
+  // raw-only report below.
+  async function rawVisitors(query: Query, site: Site): Promise<number> {
+    const [row] = await events
+      .aggregate(
+        rawTotalsPipeline(
+          site.id,
+          { from: query.from, to: query.to },
+          site.settings.timezone,
+          botSelector(query.filters),
+          query.filters,
+        ),
+      )
+      .toArray();
+    return (row?.visitors as number | undefined) ?? 0;
+  }
+
   return {
     db,
+    serverVersion,
 
     async createSite(site: Site): Promise<void> {
       if (site.domains.length === 0) {
@@ -892,6 +928,124 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         [...tallies].map(([key, tally]) => finishEngagement(key, tally)),
       );
       return { dim, rows: rows.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT), rawOnly: true };
+    },
+
+    async events(query: Query): Promise<EventsResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      assertNoGoal(query, 'events');
+      const base = await rawVisitors(query, site);
+      const rows = await events
+        .aggregate(
+          eventsPipeline(
+            site.id,
+            { from: query.from, to: query.to },
+            site.settings.timezone,
+            botSelector(query.filters),
+            query.filters,
+          ),
+        )
+        .toArray();
+      const answered = sortEventRows(
+        rows.map((row) =>
+          finishEventRow(
+            String(row._id),
+            { visitors: row.visitors as number, events: row.events as number },
+            base,
+          ),
+        ),
+      );
+      return {
+        visitors: base,
+        rows: answered.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT),
+        rawOnly: true,
+      };
+    },
+
+    async properties(query: PropertyQuery): Promise<PropertyResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      assertNoGoal(query, 'properties');
+      const span: Range = { from: query.from, to: query.to };
+      const wantsBots = botSelector(query.filters);
+      const base = await rawVisitors(query, site);
+      const properties = (
+        await events
+          .aggregate(propertyKeysPipeline(site.id, span, wantsBots, query.filters, query.event))
+          .toArray()
+      ).map((row): PropertyCount => ({ key: String(row._id), events: row.events as number }));
+      const property = query.property ?? properties[0]?.key ?? null;
+      if (property === null) {
+        return { event: query.event, properties, property, visitors: base, rows: [], rawOnly: true };
+      }
+      const rows = await events
+        .aggregate(
+          propertyValuesPipeline(
+            site.id,
+            span,
+            site.settings.timezone,
+            wantsBots,
+            query.filters,
+            query.event,
+            property,
+          ),
+        )
+        .toArray();
+      const answered = sortEventRows(
+        rows.map((row) =>
+          finishEventRow(
+            String(row._id),
+            { visitors: row.visitors as number, events: row.events as number },
+            base,
+          ),
+        ),
+      );
+      return {
+        event: query.event,
+        properties,
+        property,
+        visitors: base,
+        rows: answered.slice(0, query.limit ?? DEFAULT_BREAKDOWN_LIMIT),
+        rawOnly: true,
+      };
+    },
+
+    async goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertFilterable(query.filters);
+      const base = await rawVisitors(query, site);
+      const reached = new Map<string, { visitors: number; completions: number }>();
+      if (goals.length > 0) {
+        for (const row of await events
+          .aggregate(
+            goalStatsPipeline(
+              site.id,
+              { from: query.from, to: query.to },
+              site.settings.timezone,
+              botSelector(query.filters),
+              query.filters,
+              goals,
+            ),
+          )
+          .toArray()) {
+          reached.set(String(row._id), {
+            visitors: row.visitors as number,
+            completions: row.completions as number,
+          });
+        }
+      }
+      return {
+        visitors: base,
+        rows: goals.map((goal) => ({
+          goalId: goal.id,
+          conversion: finishConversion(
+            reached.get(goal.id) ?? { visitors: 0, completions: 0 },
+            base,
+            goal,
+          ),
+        })),
+        rawOnly: true,
+      };
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {

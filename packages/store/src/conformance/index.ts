@@ -9,6 +9,7 @@ import {
   StoreQueryError,
   type BreakdownResult,
   type Conversion,
+  type Goal,
   type GoalRead,
   type Metrics,
 } from '../query.js';
@@ -818,6 +819,142 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         await expect(
           store.engagement({ ...today, dim: 'page', goal: SIGNUP_GOAL }),
         ).rejects.toMatchObject({ code: 'UNSUPPORTED_GOAL' });
+        await expect(store.events({ ...today, goal: SIGNUP_GOAL })).rejects.toMatchObject({
+          code: 'UNSUPPORTED_GOAL',
+        });
+        await expect(
+          store.properties({ ...today, event: F.SIGNUP, goal: SIGNUP_GOAL }),
+        ).rejects.toMatchObject({ code: 'UNSUPPORTED_GOAL' });
+      });
+    });
+
+    // The events report: custom events by name, raw rows only. The fixture's
+    // one custom event is signup; v2's LCP is a page timing and not in it.
+    describe('events', () => {
+      it('lists the custom events of the range with visitors, counts and a share', async () => {
+        const result = await store.events(today);
+        expect(result.rawOnly).toBe(true);
+        expect(result.visitors).toBe(F.EXPECTED.today.visitors);
+        expect(result.rows).toEqual([
+          { key: F.SIGNUP, visitors: 2, events: 2, rate: 2 / F.EXPECTED.today.visitors },
+        ]);
+      });
+
+      it('reads a rolled day raw as well', async () => {
+        const result = await store.events(wholeRange);
+        expect(result.visitors).toBe(F.EXPECTED_RANGE.visitors);
+        expect(result.rows).toEqual([
+          { key: F.SIGNUP, visitors: 3, events: 3, rate: 3 / F.EXPECTED_RANGE.visitors },
+        ]);
+      });
+
+      it('narrows with a filter, the share included', async () => {
+        const india = await store.events({
+          ...wholeRange,
+          filters: [{ dim: 'country', op: 'is', value: 'IN' }],
+        });
+        expect(india.rows).toEqual([]);
+        expect(india.visitors).toBe(2);
+      });
+    });
+
+    describe('properties', () => {
+      it('lists the property names an event carried and breaks down by the most used', async () => {
+        const result = await store.properties({ ...wholeRange, event: F.SIGNUP });
+        expect(result.rawOnly).toBe(true);
+        expect(result.event).toBe(F.SIGNUP);
+        expect(result.properties).toEqual([
+          { key: 'plan', events: 2 },
+          { key: F.DOTTED_PROPERTY, events: 1 },
+        ]);
+        expect(result.property).toBe('plan');
+        const base = F.EXPECTED_RANGE.visitors;
+        // v1's signup carried no plan, and is the unknown row rather than
+        // missing from a breakdown that would then not add up to the event.
+        expect(result.rows).toEqual([
+          { key: '', visitors: 1, events: 1, rate: 1 / base },
+          { key: 'free', visitors: 1, events: 1, rate: 1 / base },
+          { key: 'pro', visitors: 1, events: 1, rate: 1 / base },
+        ]);
+      });
+
+      it('reads a property with a dot in its name as a name, not a path', async () => {
+        const result = await store.properties({
+          ...wholeRange,
+          event: F.SIGNUP,
+          property: F.DOTTED_PROPERTY,
+        });
+        expect(result.property).toBe(F.DOTTED_PROPERTY);
+        expect(result.rows.map((row) => [row.key, row.events])).toEqual([
+          ['', 2],
+          ['b', 1],
+        ]);
+      });
+
+      it('answers a property nobody sent with every event under unknown', async () => {
+        const result = await store.properties({ ...wholeRange, event: F.SIGNUP, property: 'nothing' });
+        expect(result.rows).toEqual([
+          { key: '', visitors: 3, events: 3, rate: 3 / F.EXPECTED_RANGE.visitors },
+        ]);
+      });
+
+      it('answers an event nobody sent with no properties and no rows', async () => {
+        const result = await store.properties({ ...wholeRange, event: 'nobody_did_this' });
+        expect(result.properties).toEqual([]);
+        expect(result.property).toBeNull();
+        expect(result.rows).toEqual([]);
+      });
+    });
+
+    describe('goalStats', () => {
+      const goal = (id: string, over: Partial<Goal>): Goal => ({
+        siteId: F.SITE_ID,
+        id,
+        name: id,
+        kind: 'event',
+        match: F.SIGNUP,
+        createdBy: 'u_1',
+        createdAt: 0,
+        ...over,
+      });
+
+      it('answers every goal in one read, the way the aggregate answers each', async () => {
+        const goals = [
+          goal('g_signup', { value: 10 }),
+          goal('g_pricing', { kind: 'page', match: '/pricing' }),
+          // A pattern that reaches the same pageviews as the exact goal: both
+          // count them, because one pageview can reach two goals.
+          goal('g_pric', { kind: 'page', match: '/pric*' }),
+        ];
+        const result = await store.goalStats(wholeRange, goals);
+        expect(result.rawOnly).toBe(true);
+        expect(result.visitors).toBe(F.EXPECTED_RANGE.visitors);
+        const byId = new Map(result.rows.map((row) => [row.goalId, row.conversion]));
+        expect(result.rows.map((row) => row.goalId)).toEqual(['g_signup', 'g_pricing', 'g_pric']);
+        expect(byId.get('g_signup')).toEqual({
+          visitors: 3,
+          completions: 3,
+          rate: 3 / F.EXPECTED_RANGE.visitors,
+          value: 30,
+        });
+        expect(byId.get('g_pricing')).toEqual({
+          visitors: 3,
+          completions: 3,
+          rate: 3 / F.EXPECTED_RANGE.visitors,
+          value: null,
+        });
+        expect(byId.get('g_pric')).toEqual(byId.get('g_pricing'));
+
+        for (const each of goals) {
+          const alone = await store.aggregate({ ...wholeRange, goal: each });
+          expect(byId.get(each.id)).toEqual(alone.conversion);
+        }
+      });
+
+      it('answers no rows for no goals', async () => {
+        const result = await store.goalStats(today, []);
+        expect(result.rows).toEqual([]);
+        expect(result.visitors).toBe(F.EXPECTED.today.visitors);
       });
     });
 

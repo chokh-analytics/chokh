@@ -15,6 +15,10 @@ import {
   conversionBreakdownPipeline,
   conversionTotalsPipeline,
   engagementPipeline,
+  eventsPipeline,
+  goalStatsPipeline,
+  propertyKeysPipeline,
+  propertyValuesPipeline,
   rawBreakdownPipeline,
   rawTotalsByBucketPipeline,
   rollupBreakdownPipeline,
@@ -339,6 +343,77 @@ describe('conversion pipelines', () => {
       );
     },
   );
+});
+
+// The events report and the property breakdown are raw rows only, so these are
+// on the same footing as the engagement read.
+describe('events and property pipelines', () => {
+  const span = { from: fixture.DAY_BEFORE_START, to: fixture.NOW };
+
+  async function stagesOf(pipeline: Document[]): Promise<string[]> {
+    const explained = (await db
+      .collection('events')
+      .aggregate(pipeline)
+      .explain('queryPlanner')) as unknown as Document;
+    return scanStages(explained);
+  }
+
+  it('scans an index for the events report', async () => {
+    const stages = await stagesOf(eventsPipeline(fixture.SITE_ID, span, fixture.TIMEZONE, false, undefined));
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  it('scans an index for the property names of an event', async () => {
+    const stages = await stagesOf(
+      propertyKeysPipeline(fixture.SITE_ID, span, false, undefined, fixture.SIGNUP),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  it('scans an index for the values of one property', async () => {
+    const stages = await stagesOf(
+      propertyValuesPipeline(
+        fixture.SITE_ID,
+        span,
+        fixture.TIMEZONE,
+        false,
+        undefined,
+        fixture.SIGNUP,
+        fixture.DOTTED_PROPERTY,
+      ),
+    );
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+  });
+
+  it('scans an index on both halves of every goal at once', async () => {
+    const goals = [
+      { kind: 'event', match: fixture.SIGNUP },
+      { kind: 'page', match: '/pricing' },
+      { kind: 'page', match: '/pric*' },
+    ].map((goal, index) => ({
+      ...goal,
+      siteId: fixture.SITE_ID,
+      id: `g_${index}`,
+      name: goal.match,
+      createdBy: 'u_1',
+      createdAt: 0,
+    })) as Parameters<typeof goalStatsPipeline>[5];
+    const explained = (await db
+      .collection('events')
+      .aggregate(goalStatsPipeline(fixture.SITE_ID, span, fixture.TIMEZONE, false, undefined, goals))
+      .explain('queryPlanner')) as unknown as Document;
+    const stages = explained.stages as Document[];
+    const outer = scanStages({ stages: stages[0] } as Document);
+    expect(outer).toContain('IXSCAN');
+    expect(outer).not.toContain('COLLSCAN');
+    const unions = unionStages({ stages } as Document);
+    expect(unions).toHaveLength(1);
+    expect(unions[0]).toContain('IXSCAN');
+    expect(unions[0]).not.toContain('COLLSCAN');
+  });
 });
 
 describe('the adapter never creates an index', () => {

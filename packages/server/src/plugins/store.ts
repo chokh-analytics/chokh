@@ -17,12 +17,14 @@ export async function openStore(presence: Presence): Promise<{
   // AccountStore, and every adapter implements both.
   store: AnalyticsStore & AccountStore;
   kind: string;
+  // The database server's version, for the boot log: the property breakdown
+  // needs MongoDB 5.0, and an operator on an older server should read why in
+  // the first lines the process writes. Absent on memory, which has no server.
+  version?: string;
 }> {
   if (env.MONGODB_URI === undefined) {
     return { store: createMemoryStore([], { presence }), kind: 'memory' };
   }
-  return {
-    store: await createMongoStore({ uri: env.MONGODB_URI, presence }),
-    kind: 'mongodb',
-  };
+  const store = await createMongoStore({ uri: env.MONGODB_URI, presence });
+  return { store, kind: 'mongodb', version: store.serverVersion };
 }
