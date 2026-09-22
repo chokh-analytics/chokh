@@ -4,11 +4,12 @@ import type { AccountStore } from '../AccountStore.js';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   DEFAULT_TEAM_ID,
+  goalIdFor,
   type StoredApiKey,
   type StoredTeam,
   type StoredUser,
 } from '../accounts.js';
-import { StoreQueryError } from '../query.js';
+import { MAX_GOALS_PER_SITE, StoreQueryError, type Goal, type GoalKind } from '../query.js';
 import { defaultSiteSettings, type Site } from '../types.js';
 
 // What an adapter hands the account suite. `site` and `sites` come from
@@ -43,6 +44,18 @@ function key(id: string, siteId: string, keyHash: string): StoredApiKey {
     scopes: ['read:stats'],
     createdAt: NOW,
     createdBy: 'u_1',
+  };
+}
+
+function goal(siteId: string, kind: GoalKind, match: string, at = NOW): Goal {
+  return {
+    siteId,
+    id: goalIdFor(siteId, kind, match),
+    name: match,
+    kind,
+    match,
+    createdBy: 'u_1',
+    createdAt: at,
   };
 }
 
@@ -263,6 +276,62 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
       it('will not delete the key of another site', async () => {
         expect(await store.deleteApiKey('s_other', 'k_1')).toBe(false);
         expect(await store.apiKeyByHash('hash-one')).not.toBeNull();
+      });
+    });
+
+    describe('goals', () => {
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_goals', ['goals.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('stores a goal and reads it back by id and in the list, oldest first', async () => {
+        const signup = { ...goal('s_goals', 'event', 'signup', NOW + 10), value: 5 };
+        await store.createGoal(signup);
+        await store.createGoal(goal('s_goals', 'page', '/*/checkout/done', NOW));
+
+        expect(await store.goal('s_goals', signup.id)).toEqual(signup);
+        const rows = await store.goals('s_goals');
+        expect(rows.map((row) => row.match)).toEqual(['/*/checkout/done', 'signup']);
+        expect(await store.goals('s_else')).toEqual([]);
+      });
+
+      it('refuses the same question asked twice, because the id is the question', async () => {
+        const again = { ...goal('s_goals', 'event', 'signup'), name: 'Another name' };
+        expect(again.id).toBe(goalIdFor('s_goals', 'event', 'signup'));
+        expect(await refusal(() => store.createGoal(again))).toBe('GOAL_EXISTS');
+        // The same name as a page is a different question.
+        await store.createGoal(goal('s_goals', 'page', 'signup'));
+        expect(await store.goals('s_goals')).toHaveLength(3);
+      });
+
+      it('refuses one goal more than a site may have', async () => {
+        const have = (await store.goals('s_goals')).length;
+        for (let index = have; index < MAX_GOALS_PER_SITE; index += 1) {
+          await store.createGoal(goal('s_goals', 'event', `event_${index}`));
+        }
+        expect(await store.goals('s_goals')).toHaveLength(MAX_GOALS_PER_SITE);
+        expect(
+          await refusal(() => store.createGoal(goal('s_goals', 'event', 'one_too_many'))),
+        ).toBe('GOAL_LIMIT');
+        // Another site's allowance is its own.
+        await store.createGoal(goal('s_else', 'event', 'one_too_many'));
+      });
+
+      it("deletes once and says so the second time, and never another site's", async () => {
+        const id = goalIdFor('s_goals', 'event', 'signup');
+        expect(await store.deleteGoal('s_else', id)).toBe(false);
+        expect(await store.goal('s_goals', id)).not.toBeNull();
+        expect(await store.deleteGoal('s_goals', id)).toBe(true);
+        expect(await store.deleteGoal('s_goals', id)).toBe(false);
+        expect(await store.goal('s_goals', id)).toBeNull();
+      });
+
+      it('refuses a goal on a site nobody registered', async () => {
+        expect(await refusal(() => store.createGoal(goal('s_nobody', 'event', 'signup')))).toBe(
+          'UNKNOWN_SITE',
+        );
       });
     });
 

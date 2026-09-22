@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+
+import type { GoalKind } from './query.js';
+
 // The control plane: who may read a site, with what, and who read an identity.
 //
 // These rows are not analytics. They are the accounts, the teams, the API keys
@@ -96,4 +100,16 @@ export interface AuditRecord {
   // Which identity fields the response actually carried. A read that revealed
   // nothing writes no row at all.
   fields: string[];
+}
+
+// A goal's id, derived from what it asks rather than drawn at random.
+//
+// Two goals asking the same question would be the same numbers under two names,
+// so the second is refused, and deriving the id is what lets the unique index on
+// {siteId, id} refuse it without a read before the write or an index of its own.
+// It also means deleting a goal and adding it again gives it back its id, which
+// is right: nothing was counted under the old one.
+export function goalIdFor(siteId: string, kind: GoalKind, match: string): string {
+  const digest = createHash('sha256').update(`${siteId}\n${kind}\n${match}`).digest('base64url');
+  return `g_${digest.slice(0, 16)}`;
 }

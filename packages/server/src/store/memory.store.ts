@@ -1,5 +1,6 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
+  MAX_GOALS_PER_SITE,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
@@ -44,6 +45,7 @@ import {
   type Dimension,
   type EngagementResult,
   type EngagementTally,
+  type Goal,
   type Interval,
   type Metrics,
   type Presence,
@@ -112,6 +114,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let teams: StoredTeam[] = [];
   let apiKeys: StoredApiKey[] = [];
   let auditLog: AuditRecord[] = [];
+  let goals: Goal[] = [];
 
   function siteOrThrow(siteId: string): Site {
     const site = bySiteId.get(siteId);
@@ -490,6 +493,38 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(deleted);
     },
 
+    goals(siteId: string): Promise<Goal[]> {
+      return Promise.resolve(
+        goals
+          .filter((row) => row.siteId === siteId)
+          .sort((left, right) => left.createdAt - right.createdAt)
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    goal(siteId: string, goalId: string): Promise<Goal | null> {
+      const found = goals.find((row) => row.siteId === siteId && row.id === goalId);
+      return Promise.resolve(found === undefined ? null : { ...found });
+    },
+
+    async createGoal(goal: Goal): Promise<void> {
+      siteOrThrow(goal.siteId);
+      if (goals.some((row) => row.siteId === goal.siteId && row.id === goal.id)) {
+        throw new StoreQueryError('GOAL_EXISTS', 'A goal already asks that question');
+      }
+      if (goals.filter((row) => row.siteId === goal.siteId).length >= MAX_GOALS_PER_SITE) {
+        throw new StoreQueryError('GOAL_LIMIT', `A site can have at most ${MAX_GOALS_PER_SITE} goals`);
+      }
+      goals.push({ ...goal });
+    },
+
+    deleteGoal(siteId: string, goalId: string): Promise<boolean> {
+      const kept = goals.filter((row) => !(row.siteId === siteId && row.id === goalId));
+      const deleted = kept.length !== goals.length;
+      goals = kept;
+      return Promise.resolve(deleted);
+    },
+
     audit(row: AuditRecord): Promise<void> {
       auditLog.push({ ...row });
       return Promise.resolve();
@@ -581,6 +616,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       teams = [];
       apiKeys = [];
       auditLog = [];
+      goals = [];
       bySiteId.clear();
       ownPresence.clear();
     },

@@ -52,7 +52,7 @@ runAccountConformance('mongodb', async () => {
   return {
     store,
     reset: async () => {
-      for (const name of ['sites', 'users', 'teams', 'api_keys', 'audit_log']) {
+      for (const name of ['sites', 'users', 'teams', 'api_keys', 'audit_log', 'goals']) {
         await store.db.collection(name).deleteMany({});
       }
     },

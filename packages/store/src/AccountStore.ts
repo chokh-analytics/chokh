@@ -1,4 +1,5 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
+import type { Goal } from './query.js';
 import type { Site, SiteSettings } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -48,6 +49,19 @@ export interface AccountStore {
   // False when there was no such key, so a route can answer 404 rather than
   // pretending it deleted something.
   deleteApiKey(siteId: string, keyId: string): Promise<boolean>;
+
+  // A site's goals, oldest first. Configuration and not analytics: a goal is
+  // a question the reports ask of the raw events, so nothing here is counted
+  // and a retention purge never touches one.
+  goals(siteId: string): Promise<Goal[]>;
+  goal(siteId: string, goalId: string): Promise<Goal | null>;
+  // Refuses a site nobody registered with UNKNOWN_SITE, a goal asking what
+  // another already asks with GOAL_EXISTS (the id is derived from the question,
+  // so the unique index is what refuses it), and one more than
+  // MAX_GOALS_PER_SITE with GOAL_LIMIT.
+  createGoal(goal: Goal): Promise<void>;
+  // False when there was no such goal on this site, so a route can answer 404.
+  deleteGoal(siteId: string, goalId: string): Promise<boolean>;
 
   audit(row: AuditRecord): Promise<void>;
   // The trail for a site over a range, oldest first. Read by tests today and by

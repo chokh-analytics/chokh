@@ -23,6 +23,7 @@ export const USERS = 'users';
 export const TEAMS = 'teams';
 export const API_KEYS = 'api_keys';
 export const AUDIT_LOG = 'audit_log';
+export const GOALS = 'goals';
 
 export const schema: readonly CollectionSchema[] = [
   {

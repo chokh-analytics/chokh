@@ -1,5 +1,6 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
+  MAX_GOALS_PER_SITE,
   PROFILE_EVENT_LIMIT,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
@@ -40,6 +41,7 @@ import {
   type Dimension,
   type EngagementResult,
   type EngagementTally,
+  type Goal,
   type Interval,
   type Metrics,
   type Presence,
@@ -71,7 +73,13 @@ import {
   type TeamMember,
   type UserPatch,
 } from '@chokh/store';
-import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
+import {
+  MongoClient,
+  MongoServerError,
+  type AnyBulkWriteOperation,
+  type Db,
+  type Document,
+} from 'mongodb';
 
 import {
   engagementPipeline,
@@ -90,6 +98,7 @@ import {
   API_KEYS,
   AUDIT_LOG,
   EVENTS,
+  GOALS,
   ROLLUPS_DAILY,
   SESSIONS,
   SITES,
@@ -158,6 +167,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const teams = db.collection<StoredTeam>(TEAMS);
   const apiKeys = db.collection<StoredApiKey>(API_KEYS);
   const auditLog = db.collection<AuditRecord>(AUDIT_LOG);
+  const goals = db.collection<Goal>(GOALS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -450,6 +460,43 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async deleteApiKey(siteId: string, keyId: string): Promise<boolean> {
       const result = await apiKeys.deleteOne({ siteId, id: keyId });
+      return result.deletedCount > 0;
+    },
+
+    goals(siteId: string): Promise<Goal[]> {
+      // The {siteId, id} unique index answers the site by its prefix. At most
+      // fifty rows, so the order is set in memory rather than by an index of
+      // its own.
+      return goals
+        .find({ siteId }, { projection: { _id: 0 } })
+        .toArray()
+        .then((rows) => rows.sort((left, right) => left.createdAt - right.createdAt));
+    },
+
+    goal(siteId: string, goalId: string): Promise<Goal | null> {
+      return goals.findOne({ siteId, id: goalId }, { projection: { _id: 0 } });
+    },
+
+    async createGoal(goal: Goal): Promise<void> {
+      await siteOrThrow(goal.siteId);
+      if ((await goals.countDocuments({ siteId: goal.siteId })) >= MAX_GOALS_PER_SITE) {
+        throw new StoreQueryError('GOAL_LIMIT', `A site can have at most ${MAX_GOALS_PER_SITE} goals`);
+      }
+      try {
+        await goals.insertOne({ ...goal });
+      } catch (error) {
+        // The id is derived from the question, so the unique index is what
+        // refuses the same question asked twice, with no read before the write
+        // for two requests to race past.
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('GOAL_EXISTS', 'A goal already asks that question');
+        }
+        throw error;
+      }
+    },
+
+    async deleteGoal(siteId: string, goalId: string): Promise<boolean> {
+      const result = await goals.deleteOne({ siteId, id: goalId });
       return result.deletedCount > 0;
     },
 

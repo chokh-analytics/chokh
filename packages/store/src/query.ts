@@ -362,6 +362,45 @@ export interface RollupSummary {
   pageviews: number;
 }
 
+// A goal: a page being viewed or a custom event being sent, counted as a
+// success.
+//
+// A page goal matches the path the way the tracker sends it, and a * stands
+// for any run of characters inside one segment of it, so /*/checkout/done is
+// the same page in every locale prefix. An event goal matches one name
+// exactly. Nothing is counted when a goal is written: a goal is a question
+// asked of the raw events, which is why one created today answers for every day
+// those events still cover, and why deleting and adding it again brings its
+// numbers back.
+export type GoalKind = 'page' | 'event';
+
+export const GOAL_KINDS: readonly GoalKind[] = ['page', 'event'];
+
+export interface GoalMatch {
+  kind: GoalKind;
+  match: string;
+}
+
+export interface Goal extends GoalMatch {
+  siteId: string;
+  // Derived from the site, the kind and the match (goalIdFor), so the same
+  // question asked twice is the same row and the unique index refuses it.
+  id: string;
+  name: string;
+  // A plain number counted once per completion. No unit, on purpose: a sum of
+  // taka and dollars is not a number anybody can act on, and revenue with a
+  // currency is a feature of its own.
+  value?: number;
+  // Who added it: a dashboard user's id, or the id of the key that did.
+  createdBy: string;
+  createdAt: number;
+}
+
+// How many goals a site may have. Every goal read tags each matching row with
+// the goals it matches, so this is a bound on the work of one read as much as a
+// bound on a list somebody has to scroll.
+export const MAX_GOALS_PER_SITE = 50;
+
 export interface PurgeSummary {
   events: number;
   sessions: number;
