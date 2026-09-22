@@ -12,12 +12,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apply } from './migrate.js';
 import { createMongoStore } from './mongo.store.js';
 import {
+  conversionBreakdownPipeline,
+  conversionTotalsPipeline,
   engagementPipeline,
   rawBreakdownPipeline,
   rawTotalsByBucketPipeline,
   rollupBreakdownPipeline,
   rollupTotalsByDatePipeline,
   sessionBreakdownPipeline,
+  sessionConversionBreakdownPipeline,
   sessionSourcedBreakdownPipeline,
   sessionTotalsByBucketPipeline,
 } from './pipelines.js';
@@ -60,6 +63,32 @@ function scanStages(explained: Document): string[] {
   };
   walk(explained.queryPlanner ?? explained.stages ?? explained);
   return stages;
+}
+
+// The part of an explain that a $unionWith brings in, which has a plan of its
+// own. A conversion read is two halves under one key, and a half that scans
+// the collection is the whole events collection read on every goal read even
+// when the other half leads with an index.
+function unionStages(explained: Document): string[][] {
+  const found: string[][] = [];
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== 'object') {
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key === '$unionWith') {
+        found.push(scanStages({ stages: value } as Document));
+        continue;
+      }
+      walk(value);
+    }
+  };
+  walk(explained);
+  return found;
 }
 
 beforeAll(async () => {
@@ -222,6 +251,92 @@ describe('engagement pipeline', () => {
       const stages = scanStages(explained);
       expect(stages).toContain('IXSCAN');
       expect(stages).not.toContain('COLLSCAN');
+    },
+  );
+});
+
+// A goal read is raw for its whole range, so it has no rollup to fall back on:
+// both halves of it have to lead with an index or a conversion column is a
+// collection scan per card.
+describe('conversion pipelines', () => {
+  const span = { from: fixture.DAY_BEFORE_START, to: fixture.NOW };
+  const goals = [
+    { kind: 'event', match: fixture.SIGNUP },
+    { kind: 'page', match: '/pricing' },
+    { kind: 'page', match: '/*/pricing' },
+  ] as const;
+
+  async function explain(collection: string, pipeline: Document[]): Promise<Document> {
+    return (await db
+      .collection(collection)
+      .aggregate(pipeline)
+      .explain('queryPlanner')) as unknown as Document;
+  }
+
+  // The outer half is the first stage, the $cursor MongoDB read the collection
+  // with; the inner half is the plan inside the $unionWith stage. Read apart,
+  // so an index on one half cannot pass for the other. Only the plan's stages
+  // are walked: the explain also echoes the command, whose $unionWith carries
+  // no plan at all.
+  function expectIndexed(explained: Document): void {
+    const stages = explained.stages as Document[];
+    const outer = scanStages({ stages: stages[0] } as Document);
+    expect(outer).toContain('IXSCAN');
+    expect(outer).not.toContain('COLLSCAN');
+    const unions = unionStages({ stages } as Document);
+    expect(unions).toHaveLength(1);
+    for (const inner of unions) {
+      expect(inner).toContain('IXSCAN');
+      expect(inner).not.toContain('COLLSCAN');
+    }
+  }
+
+  it.each(goals)('scans an index on both halves of the totals for a $kind goal', async (goal) => {
+    expectIndexed(
+      await explain(
+        'events',
+        conversionTotalsPipeline(fixture.SITE_ID, span, fixture.TIMEZONE, false, undefined, goal),
+      ),
+    );
+  });
+
+  it.each(['country', 'page', 'utm_campaign', 'event'] as const)(
+    'scans an index on both halves of a breakdown by %s',
+    async (dim) => {
+      expectIndexed(
+        await explain(
+          'events',
+          conversionBreakdownPipeline(
+            fixture.SITE_ID,
+            span,
+            fixture.TIMEZONE,
+            dim,
+            false,
+            undefined,
+            goals[0],
+          ),
+        ),
+      );
+    },
+  );
+
+  it.each(SESSION_DIMENSIONS)(
+    'scans an index on both halves of a breakdown by %s off the stays',
+    async (dim) => {
+      expectIndexed(
+        await explain(
+          'sessions',
+          sessionConversionBreakdownPipeline(
+            fixture.SITE_ID,
+            span,
+            fixture.TIMEZONE,
+            dim,
+            false,
+            undefined,
+            goals[0],
+          ),
+        ),
+      );
     },
   );
 });

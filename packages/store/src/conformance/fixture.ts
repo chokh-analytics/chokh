@@ -44,6 +44,11 @@ export const USER_ID = 'u_rafi';
 // declares nothing, which is what an unlabelled pageview looks like and is not
 // a 200.
 export const NOT_FOUND_STATUS = '404';
+
+// The one custom event in this world. v1 sends it once today with no page and
+// no properties; v3 sends it on the 17th and again today, from /docs, with a
+// plan. So a goal on it has converters on a rolled day and on the raw one.
+export const SIGNUP = 'signup';
 export const NOT_FOUND_PATH = '/docs';
 
 export function fixtureSite(): Site {
@@ -93,6 +98,7 @@ interface Draft {
   scrollDepth?: number;
   status?: string;
   value?: number;
+  props?: Record<string, string>;
 }
 
 const PROFILES = {
@@ -126,6 +132,17 @@ const DRAFTS: Draft[] = [
     referrer: 'https://www.google.com/',
     status: NOT_FOUND_STATUS,
   },
+  // A signup in the middle of a stay on a day that is rolled up, so a goal
+  // read proves it reads raw rows across the rollup. On the page already open,
+  // so no entry or exit moves.
+  {
+    ts: Date.UTC(2026, 8, 17, 5, 5, 0),
+    type: 'event',
+    visitor: 'v3',
+    path: '/docs',
+    name: SIGNUP,
+    props: { plan: 'free' },
+  },
   { ts: Date.UTC(2026, 8, 17, 5, 10, 0), type: 'pageview', visitor: 'v3', path: '/home' },
 
   // Dhaka 2026-09-18, today. The first one is the boundary: 00:30 in Dhaka,
@@ -144,9 +161,19 @@ const DRAFTS: Draft[] = [
     path: '/docs',
     status: NOT_FOUND_STATUS,
   },
+  // And another today, inside the same kind of stay, with a different plan so
+  // the property breakdown has two values to tell apart.
+  {
+    ts: Date.UTC(2026, 8, 18, 3, 32, 0),
+    type: 'event',
+    visitor: 'v3',
+    path: '/docs',
+    name: SIGNUP,
+    props: { plan: 'pro' },
+  },
   { ts: Date.UTC(2026, 8, 18, 3, 35, 0), type: 'pageview', visitor: 'v3', path: '/pricing' },
   { ts: Date.UTC(2026, 8, 18, 3, 45, 0), type: 'pageview', visitor: 'bot', path: '/home' },
-  { ts: Date.UTC(2026, 8, 18, 3, 50, 0), type: 'event', visitor: 'v1', name: 'signup', userId: USER_ID },
+  { ts: Date.UTC(2026, 8, 18, 3, 50, 0), type: 'event', visitor: 'v1', name: SIGNUP, userId: USER_ID },
 
   // The last minute decides who is online: v2 is, v3 stopped 90 seconds ago.
   // A heartbeat moves the stay and the presence entry and is never stored, so
@@ -189,6 +216,7 @@ function build(draft: Draft): StoredEvent {
   if (draft.scrollDepth !== undefined) event.scrollDepth = draft.scrollDepth;
   if (draft.status !== undefined) event.status = draft.status;
   if (draft.value !== undefined) event.value = draft.value;
+  if (draft.props !== undefined) event.props = { ...draft.props };
   if (draft.type === 'identify') event.traits = { plan: 'pro' };
   return event;
 }

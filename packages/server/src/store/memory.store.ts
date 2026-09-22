@@ -11,6 +11,8 @@ import {
   addSession,
   addTotals,
   assertEngageable,
+  assertNoGoal,
+  conversionMatcher,
   assertIntervalRange,
   assertFilterable,
   botSelector,
@@ -20,6 +22,7 @@ import {
   dayBounds,
   dayKey,
   dimensionValue,
+  finishConversion,
   finishEngagement,
   finishMetrics,
   foldVisitor,
@@ -42,10 +45,12 @@ import {
   type AnalyticsStore,
   type BreakdownResult,
   type BreakdownRow,
+  type Conversion,
   type Dimension,
   type EngagementResult,
   type EngagementTally,
   type Goal,
+  type GoalRead,
   type Interval,
   type Metrics,
   type Presence,
@@ -189,19 +194,23 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     return totals;
   }
 
+  // Per day, per value, the visitors a breakdown counted: the membership a
+  // conversion is counted against.
+  type Members = Map<string, Map<string, Set<string>>>;
+
   function rawBreakdown(
     query: Query,
     span: Range,
     dim: Dimension,
     timezone: string,
-  ): Map<string, Totals> {
+  ): { totals: Map<string, Totals>; members: Members } {
     const out = new Map<string, Totals>();
     const into = (key: string): Totals => {
       const totals = out.get(key) ?? zeroTotals();
       out.set(key, totals);
       return totals;
     };
-    const perDay = new Map<string, Map<string, Set<string>>>();
+    const perDay: Members = new Map();
     const countVisitor = (ts: number, key: string, visitorId: string): void => {
       const day = dayKey(ts, timezone);
       let byKey = perDay.get(day);
@@ -250,7 +259,70 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         into(value).visitors += seen.size;
       }
     }
+    return { totals: out, members: perDay };
+  }
+
+  // Who reached the goal, per day, and how many times. Only the site, the span,
+  // the bot side and the goal decide it: the query's other filters narrow the
+  // people a conversion is counted against, never the goal.
+  function rawConverters(
+    query: Query,
+    goal: GoalRead,
+    span: Range,
+    timezone: string,
+  ): Map<string, Map<string, number>> {
+    const wantsBots = botSelector(query.filters);
+    const reached = conversionMatcher(goal);
+    const out = new Map<string, Map<string, number>>();
+    for (const event of events) {
+      if (event.siteId !== query.siteId || event.ts < span.from || event.ts >= span.to) continue;
+      if (event.bot !== wantsBots || !reached(event)) continue;
+      const day = dayKey(event.ts, timezone);
+      const byVisitor = out.get(day) ?? new Map<string, number>();
+      out.set(day, byVisitor);
+      byVisitor.set(event.visitorId, (byVisitor.get(event.visitorId) ?? 0) + 1);
+    }
     return out;
+  }
+
+  // The overlap, day by day: the people counted who also converted that day.
+  function overlap(
+    counted: Map<string, Set<string>>,
+    converters: Map<string, Map<string, number>>,
+  ): { visitors: number; completions: number } {
+    let visitors = 0;
+    let completions = 0;
+    for (const [day, seen] of counted) {
+      const reached = converters.get(day);
+      if (reached === undefined) continue;
+      for (const visitorId of seen) {
+        const times = reached.get(visitorId);
+        if (times === undefined) continue;
+        visitors += 1;
+        completions += times;
+      }
+    }
+    return { visitors, completions };
+  }
+
+  // A goal read is raw for the whole range, so this is one span.
+  function conversionFor(
+    query: Query,
+    goal: GoalRead,
+    range: Range,
+    site: Site,
+    base: number,
+  ): Conversion {
+    const timezone = site.settings.timezone;
+    const counted = new Map<string, Set<string>>();
+    for (const event of rawRows(query, range)) {
+      const day = dayKey(event.ts, timezone);
+      const seen = counted.get(day) ?? new Set<string>();
+      counted.set(day, seen);
+      seen.add(event.visitorId);
+    }
+    const converters = rawConverters(query, goal, range, timezone);
+    return finishConversion(overlap(counted, converters), base, goal);
   }
 
   function rollupRows(siteId: string, days: string[], dim: RollupDim, key?: string): RollupRecord[] {
@@ -282,6 +354,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       timezone,
       filters: query.filters,
       ...(interval === undefined ? {} : { interval }),
+      ...(query.goal === undefined ? {} : { goal: query.goal }),
     });
     const totals = zeroTotals();
     const selector = rollupTotalSelector(query.filters);
@@ -303,6 +376,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       timezone,
       filters: query.filters,
       dim,
+      ...(query.goal === undefined ? {} : { goal: query.goal }),
     });
     const byKey = new Map<string, Totals>();
     const collect = (key: string, totals: Partial<Totals>): void => {
@@ -313,13 +387,40 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     for (const row of rollupRows(site.id, plan.days, dim)) {
       collect(row.key, row);
     }
+    // With a goal the plan is one raw span, so these are the members of every
+    // row there is.
+    const members: Members = new Map();
     for (const span of plan.raw) {
-      for (const [key, totals] of rawBreakdown(query, span, dim, timezone)) {
+      const read = rawBreakdown(query, span, dim, timezone);
+      for (const [key, totals] of read.totals) {
         collect(key, totals);
       }
+      for (const [day, byValue] of read.members) {
+        members.set(day, byValue);
+      }
     }
+    const goal = query.goal;
+    const converters =
+      goal === undefined
+        ? null
+        : rawConverters(query, goal, { from: query.from, to: query.to }, timezone);
     return sortBreakdownRows(
-      [...byKey].map(([key, totals]) => ({ key, metrics: finishMetrics(totals) })),
+      [...byKey].map(([key, totals]): BreakdownRow => {
+        const metrics = finishMetrics(totals);
+        if (goal === undefined || converters === null) {
+          return { key, metrics };
+        }
+        const counted = new Map<string, Set<string>>();
+        for (const [day, byValue] of members) {
+          const seen = byValue.get(key);
+          if (seen !== undefined) counted.set(day, seen);
+        }
+        return {
+          key,
+          metrics,
+          conversion: finishConversion(overlap(counted, converters), metrics.visitors, goal),
+        };
+      }),
     );
   }
 
@@ -631,6 +732,10 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         previousRange: null,
         previous: null,
       };
+      if (query.goal !== undefined) {
+        result.conversion = conversionFor(query, query.goal, range, site, result.metrics.visitors);
+        result.previousConversion = null;
+      }
       if (query.compare !== undefined) {
         // The same window the chart's dashed line uses, so the tile's
         // percentage and the line under it are answering one question. The
@@ -643,6 +748,15 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         );
         result.previousRange = previousRange;
         result.previous = metricsFor(query, previousRange, site);
+        if (query.goal !== undefined) {
+          result.previousConversion = conversionFor(
+            query,
+            query.goal,
+            previousRange,
+            site,
+            result.previous.visitors,
+          );
+        }
       }
       return result;
     },
@@ -650,6 +764,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     async timeseries(query: Query): Promise<TimeseriesResult> {
       const site = siteOrThrow(query.siteId);
       assertFilterable(query.filters);
+      assertNoGoal(query, 'timeseries');
       const interval: Interval = query.interval ?? 'day';
       assertIntervalRange(interval, query.from, query.to);
       const timezone = site.settings.timezone;
@@ -682,6 +797,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     async engagement(query: Query): Promise<EngagementResult> {
       siteOrThrow(query.siteId);
       assertFilterable(query.filters);
+      assertNoGoal(query, 'engagement');
       const dim = assertEngageable(query.dim);
       const tallies = new Map<string, EngagementTally>();
       // One span, the whole range: a leave lives in events and nowhere else,

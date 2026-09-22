@@ -4,6 +4,7 @@ import {
   needsRawRows,
   type Dimension,
   type Filter,
+  type GoalMatch,
   type Range,
 } from './query.js';
 import { addDays, dayBounds, dayKey, type Interval } from './time.js';
@@ -57,6 +58,9 @@ export interface ReadPlanOptions {
   // The bucket size the caller is going to fold these rows into. Omitted means
   // a day or coarser, which a rollup can answer.
   interval?: Interval;
+  // A read counted against a goal is raw for the whole range, both halves of
+  // it: see conversionMatcher in query.ts.
+  goal?: GoalMatch;
 }
 
 export function readPlan(options: ReadPlanOptions): ReadPlan {
@@ -65,7 +69,11 @@ export function readPlan(options: ReadPlanOptions): ReadPlan {
     return { days: [], raw: [] };
   }
   const allRaw: ReadPlan = { days: [], raw: [{ from, to }] };
-  if (needsRawRows(options.filters, options.dim) || needsRawForInterval(options.interval)) {
+  if (
+    options.goal !== undefined ||
+    needsRawRows(options.filters, options.dim) ||
+    needsRawForInterval(options.interval)
+  ) {
     return allRaw;
   }
 

@@ -3,13 +3,18 @@ import {
   EVENT_PATH_BY_DIMENSION,
   EVENT_TYPE_BY_DIMENSION,
   SESSION_PATH_BY_DIMENSION,
+  goalIsPattern,
+  goalPattern,
   type Dimension,
   type Filter,
+  type GoalMatch,
   type Interval,
   type Range,
   type RollupDim,
 } from '@chokh/store';
 import type { Document } from 'mongodb';
+
+import { EVENTS } from './schema.js';
 
 // Every read is an aggregation, and every aggregation is built here so the
 // explain test can hold the same pipeline the adapter runs.
@@ -440,5 +445,173 @@ export function engagementPipeline(
         leaves: { $sum: 1 },
       },
     },
+  ];
+}
+
+// Conversions. A conversion is an overlap of two sets of people per day, the
+// people a read counted and the people who reached the goal, so each pipeline
+// below is one round trip that gathers both halves under the same
+// {day, visitorId} key: the counted half from the collection that counts that
+// read's visitors, and the goal half pulled in from events by $unionWith. Both
+// halves open with a $match on the site and the range, so both lead with an
+// index.
+
+// The rows that reach a goal. The site, the span, the bot side and the goal,
+// and none of the query's other filters: those narrow the people a conversion
+// is counted against, never the goal. The same rule conversionMatcher states
+// for the other adapter.
+export function goalMatch(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  goal: GoalMatch,
+): Document {
+  const base = { siteId, ts: { $gte: span.from, $lt: span.to }, bot: wantsBots };
+  if (goal.kind === 'event') {
+    return { ...base, type: 'event', name: goal.match };
+  }
+  return {
+    ...base,
+    type: 'pageview',
+    path: goalIsPattern(goal) ? { $regex: goalPattern(goal.match) } : goal.match,
+  };
+}
+
+// Per day and visitor, how many times the goal was reached.
+export function convertersPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  goal: GoalMatch,
+): Document[] {
+  return [
+    { $match: goalMatch(siteId, span, wantsBots, goal) },
+    {
+      $group: {
+        _id: { day: dayExpression(timezone), visitorId: '$visitorId' },
+        completions: { $sum: 1 },
+      },
+    },
+  ];
+}
+
+// Converted visitors and completions for a whole read, against the people its
+// own events counted.
+export function conversionTotalsPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  goal: GoalMatch,
+): Document[] {
+  return [
+    { $match: eventMatch(siteId, span, wantsBots, filters) },
+    { $group: { _id: { day: dayExpression(timezone), visitorId: '$visitorId' }, counted: { $max: 1 } } },
+    {
+      $unionWith: {
+        coll: EVENTS,
+        pipeline: convertersPipeline(siteId, span, timezone, wantsBots, goal),
+      },
+    },
+    {
+      $group: {
+        _id: '$_id',
+        counted: { $max: '$counted' },
+        completions: { $sum: '$completions' },
+      },
+    },
+    { $match: { counted: 1, completions: { $gt: 0 } } },
+    { $group: { _id: null, visitors: { $sum: 1 }, completions: { $sum: '$completions' } } },
+  ];
+}
+
+// The half of a breakdown's conversion read that is the same for both kinds of
+// membership: bring the goal in, keep the visitor-days that reached it, and
+// count them once for every value they were counted under.
+function conversionTail(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  wantsBots: boolean,
+  goal: GoalMatch,
+): Document[] {
+  return [
+    {
+      $unionWith: {
+        coll: EVENTS,
+        pipeline: convertersPipeline(siteId, span, timezone, wantsBots, goal),
+      },
+    },
+    {
+      $group: {
+        _id: '$_id',
+        keys: { $push: { $ifNull: ['$keys', []] } },
+        completions: { $sum: '$completions' },
+      },
+    },
+    { $match: { completions: { $gt: 0 } } },
+    {
+      $project: {
+        completions: 1,
+        keys: { $reduce: { input: '$keys', initialValue: [], in: { $setUnion: ['$$value', '$$this'] } } },
+      },
+    },
+    { $unwind: '$keys' },
+    { $group: { _id: '$keys', visitors: { $sum: 1 }, completions: { $sum: '$completions' } } },
+  ];
+}
+
+// Converted visitors per value of a dimension an event carries, counted
+// against the events that put each visitor in each row.
+export function conversionBreakdownPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  dim: Dimension,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  goal: GoalMatch,
+): Document[] {
+  return [
+    { $match: eventMatch(siteId, span, wantsBots, filters) },
+    {
+      $project: {
+        day: dayExpression(timezone),
+        visitorId: 1,
+        key: { $ifNull: [dimensionExpression(dim), null] },
+      },
+    },
+    { $match: { key: { $ne: null } } },
+    { $group: { _id: { day: '$day', visitorId: '$visitorId' }, keys: { $addToSet: '$key' } } },
+    ...conversionTail(siteId, span, timezone, wantsBots, goal),
+  ];
+}
+
+// The same for entry, exit and channel, whose visitors are counted off the
+// stays: a visitor is in a row on the day a stay of theirs with that value
+// began, the rule the breakdown already counts them by.
+export function sessionConversionBreakdownPipeline(
+  siteId: string,
+  span: Range,
+  timezone: string,
+  dim: Dimension,
+  wantsBots: boolean,
+  filters: Filter[] | undefined,
+  goal: GoalMatch,
+): Document[] {
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters) },
+    {
+      $project: {
+        day: dayExpression(timezone, '$startedAt'),
+        visitorId: 1,
+        key: { $ifNull: [sessionDimensionExpression(dim), null] },
+      },
+    },
+    { $match: { key: { $ne: null } } },
+    { $group: { _id: { day: '$day', visitorId: '$visitorId' }, keys: { $addToSet: '$key' } } },
+    ...conversionTail(siteId, span, timezone, wantsBots, goal),
   ];
 }

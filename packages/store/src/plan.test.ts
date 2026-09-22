@@ -80,3 +80,16 @@ describe('readPlan', () => {
     ).toEqual([]);
   });
 });
+
+describe('a read counted against a goal', () => {
+  // A rollup holds counts one dimension at a time and a conversion is an
+  // overlap of two sets of people, so a goal read is raw for the whole range,
+  // the visitors it divides by included.
+  it('reads raw rows for a whole rolled day', () => {
+    expect(plan({ goal: { kind: 'event', match: 'signup' } })).toEqual({
+      days: [],
+      raw: [{ from: YESTERDAY_START, to: TODAY_START }],
+    });
+    expect(plan().days).toEqual(['2026-09-17']);
+  });
+});

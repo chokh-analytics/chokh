@@ -11,6 +11,7 @@ import {
   addEngagement,
   addTotals,
   assertEngageable,
+  assertNoGoal,
   assertFilterable,
   assertIntervalRange,
   botSelector,
@@ -19,6 +20,7 @@ import {
   comparisonRange,
   createMemoryPresence,
   dayBounds,
+  finishConversion,
   finishEngagement,
   finishMetrics,
   foldVisitor,
@@ -38,10 +40,12 @@ import {
   type AnalyticsStore,
   type BreakdownResult,
   type BreakdownRow,
+  type Conversion,
   type Dimension,
   type EngagementResult,
   type EngagementTally,
   type Goal,
+  type GoalRead,
   type Interval,
   type Metrics,
   type Presence,
@@ -82,6 +86,8 @@ import {
 } from 'mongodb';
 
 import {
+  conversionBreakdownPipeline,
+  conversionTotalsPipeline,
   engagementPipeline,
   rawTotalsByBucketPipeline,
   rollupTotalsByDatePipeline,
@@ -91,6 +97,7 @@ import {
   rollupBreakdownPipeline,
   rollupTotalsPipeline,
   sessionBreakdownPipeline,
+  sessionConversionBreakdownPipeline,
   sessionSourcedBreakdownPipeline,
   sessionTotalsPipeline,
 } from './pipelines.js';
@@ -212,6 +219,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       todayStart: startOfDay(now(), timezone),
       timezone,
       filters: query.filters,
+      ...(query.goal === undefined ? {} : { goal: query.goal }),
     });
     const totals = zeroTotals();
     if (plan.days.length > 0) {
@@ -232,6 +240,79 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     return finishMetrics(totals);
   }
 
+  // A goal read is raw for the whole range, so this is one aggregation over it,
+  // against the visitors the same raw rows counted.
+  async function conversionFor(
+    query: Query,
+    goal: GoalRead,
+    range: Range,
+    site: Site,
+    base: number,
+  ): Promise<Conversion> {
+    const [row] = await events
+      .aggregate(
+        conversionTotalsPipeline(
+          site.id,
+          range,
+          site.settings.timezone,
+          botSelector(query.filters),
+          query.filters,
+          goal,
+        ),
+      )
+      .toArray();
+    return finishConversion(
+      {
+        visitors: (row?.visitors as number | undefined) ?? 0,
+        completions: (row?.completions as number | undefined) ?? 0,
+      },
+      base,
+      goal,
+    );
+  }
+
+  // Converted visitors per row, from the collection that counted the row's
+  // visitors. Empty when the session side cannot answer the filters, which is
+  // when the breakdown itself has no rows from it either.
+  async function conversionsByKey(
+    query: Query,
+    goal: GoalRead,
+    dim: Dimension,
+    site: Site,
+  ): Promise<Map<string, { visitors: number; completions: number }>> {
+    const span: Range = { from: query.from, to: query.to };
+    const timezone = site.settings.timezone;
+    const wantsBots = botSelector(query.filters);
+    let rows: Document[] = [];
+    if (!SESSION_DIMENSIONS.includes(dim)) {
+      rows = await events
+        .aggregate(
+          conversionBreakdownPipeline(site.id, span, timezone, dim, wantsBots, query.filters, goal),
+        )
+        .toArray();
+    } else if (sessionsAnswerFilters(query.filters)) {
+      rows = await sessions
+        .aggregate(
+          sessionConversionBreakdownPipeline(
+            site.id,
+            span,
+            timezone,
+            dim,
+            wantsBots,
+            query.filters,
+            goal,
+          ),
+        )
+        .toArray();
+    }
+    return new Map(
+      rows.map((row) => [
+        String(row._id),
+        { visitors: row.visitors as number, completions: row.completions as number },
+      ]),
+    );
+  }
+
   async function breakdownFor(query: Query, dim: Dimension, site: Site): Promise<BreakdownRow[]> {
     const timezone = site.settings.timezone;
     const plan = readPlan({
@@ -241,6 +322,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       timezone,
       filters: query.filters,
       dim,
+      ...(query.goal === undefined ? {} : { goal: query.goal }),
     });
     const byKey = new Map<string, Totals>();
     const collect = (key: string, row: Partial<Totals>): void => {
@@ -285,8 +367,17 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         collect(String(row._id), row as Partial<Totals>);
       }
     }
+    const goal = query.goal;
+    const converted = goal === undefined ? null : await conversionsByKey(query, goal, dim, site);
     return sortBreakdownRows(
-      [...byKey].map(([key, totals]) => ({ key, metrics: finishMetrics(totals) })),
+      [...byKey].map(([key, totals]): BreakdownRow => {
+        const metrics = finishMetrics(totals);
+        if (goal === undefined || converted === null) {
+          return { key, metrics };
+        }
+        const found = converted.get(key) ?? { visitors: 0, completions: 0 };
+        return { key, metrics, conversion: finishConversion(found, metrics.visitors, goal) };
+      }),
     );
   }
 
@@ -637,6 +728,16 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         previousRange: null,
         previous: null,
       };
+      if (query.goal !== undefined) {
+        result.conversion = await conversionFor(
+          query,
+          query.goal,
+          range,
+          site,
+          result.metrics.visitors,
+        );
+        result.previousConversion = null;
+      }
       if (query.compare !== undefined) {
         // The same window the chart's dashed line uses, so the tile's
         // percentage and the line under it are answering one question. The
@@ -649,6 +750,15 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         );
         result.previousRange = previousRange;
         result.previous = await metricsFor(query, previousRange, site);
+        if (query.goal !== undefined) {
+          result.previousConversion = await conversionFor(
+            query,
+            query.goal,
+            previousRange,
+            site,
+            result.previous.visitors,
+          );
+        }
       }
       return result;
     },
@@ -656,6 +766,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async timeseries(query: Query): Promise<TimeseriesResult> {
       const site = await siteOrThrow(query.siteId);
       assertFilterable(query.filters);
+      assertNoGoal(query, 'timeseries');
       const interval: Interval = query.interval ?? 'day';
       assertIntervalRange(interval, query.from, query.to);
       const timezone = site.settings.timezone;
@@ -755,6 +866,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async engagement(query: Query): Promise<EngagementResult> {
       await siteOrThrow(query.siteId);
       assertFilterable(query.filters);
+      assertNoGoal(query, 'engagement');
       const dim = assertEngageable(query.dim);
       // One aggregation over the whole range. A leave lives in events and
       // nowhere else, so there is no rollup half of this read to plan around.

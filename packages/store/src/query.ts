@@ -21,6 +21,11 @@ export interface Query {
   interval?: Interval;
   dim?: Dimension;
   limit?: number;
+  // Which goal to count conversions against. Honoured by aggregate and
+  // breakdown, which then answer a conversion beside the metrics; refused by
+  // timeseries and engagement rather than ignored. A query with a goal reads raw
+  // rows for the whole range: see conversionMatcher below for why.
+  goal?: GoalRead;
 }
 
 export type Compare = 'previous_period' | 'previous_year';
@@ -190,6 +195,10 @@ export interface AggregateResult {
   // Present only when the query carried a compare.
   previousRange: Range | null;
   previous: Metrics | null;
+  // Present only when the query carried a goal; the previous one only when it
+  // carried a compare as well.
+  conversion?: Conversion;
+  previousConversion?: Conversion | null;
 }
 
 export interface TimeseriesPoint {
@@ -207,6 +216,8 @@ export interface TimeseriesResult {
 export interface BreakdownRow {
   key: string;
   metrics: Metrics;
+  // Present on every row when the query carried a goal.
+  conversion?: Conversion;
 }
 
 export interface BreakdownResult {
@@ -400,6 +411,111 @@ export interface Goal extends GoalMatch {
 // the goals it matches, so this is a bound on the work of one read as much as a
 // bound on a list somebody has to scroll.
 export const MAX_GOALS_PER_SITE = 50;
+
+// What a read needs to know about a goal: the question, and what a completion
+// is worth.
+export interface GoalRead extends GoalMatch {
+  value?: number;
+}
+
+// How many of a row's visitors reached a goal, and what that was worth.
+//
+// The definition, in one place because two adapters must not disagree about
+// it: on each day of the site's calendar, a visitor converted if a conversion
+// event of theirs happened that day, and a row's converted visitors are, day by
+// day, the visitors counted in that row that day who also converted that day,
+// added up over the range. So it is the same arithmetic as visitors, a person
+// converting on two days counts twice, and a rate can never pass one: the
+// people who converted in a row are always some of the people in it.
+//
+// A row's membership comes from whatever counts that row's visitors already:
+// the events for every dimension an event carries, the stays for entry, exit and
+// channel. The conversion event does not have to carry the dimension itself,
+// which matters, because a server event has no country and a custom event has
+// no campaign: an order paid by somebody who came from a campaign that day
+// counts in that campaign's row.
+//
+// The query's filters narrow the people a conversion is counted against and
+// never the goal: "of the people who read /pricing, how many signed up" does
+// not need the signup to happen on /pricing.
+export interface Conversion {
+  // Converted visitors, each day's added up.
+  visitors: number;
+  // Conversion events of those visitors on those days.
+  completions: number;
+  // visitors over the row's visitors; null over nobody.
+  rate: number | null;
+  // completions times the goal's value; null when the goal has none.
+  value: number | null;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// A page goal's match as an anchored pattern: * is any run of characters inside
+// one segment of the path, and nothing else is special, so a path containing
+// a dot or a bracket means that dot or that bracket. One function, so the
+// in-memory test and MongoDB's $regex are the same pattern.
+export function goalPattern(match: string): string {
+  return `^${match.split('*').map(escapeRegex).join('[^/]*')}$`;
+}
+
+// Whether a page goal needs a pattern at all. A match with no * is a plain
+// equality, which is cheaper to ask of every row and is what most goals are.
+export function goalIsPattern(goal: GoalMatch): boolean {
+  return goal.kind === 'page' && goal.match.includes('*');
+}
+
+// Whether a stored row reached a goal. A page goal is reached by a pageview of
+// a matching path and by nothing else, so a leave beacon or an event on that
+// page does not count twice; an event goal by a custom event of that exact
+// name, a server's included. The bot side is the caller's: a read excludes bots
+// unless it asked for them, and a conversion follows the read.
+//
+// Why a goal read is raw for the whole range, denominator included: a daily
+// rollup holds counts, one dimension at a time, and a conversion is an overlap
+// between two sets of people. A rolled goal dimension would not help either:
+// goals are defined after the fact, so its rows would be empty for every day
+// before the goal existed, and a backfill can only re-roll days whose raw events
+// still exist, which is the window a raw read already sees. Reading both halves
+// from the same rows is what keeps a rate from dividing a raw count by a rolled
+// one.
+export function conversionMatcher(goal: GoalMatch): (event: StoredEvent) => boolean {
+  if (goal.kind === 'event') {
+    return (event) => event.type === 'event' && event.name === goal.match;
+  }
+  if (!goalIsPattern(goal)) {
+    return (event) => event.type === 'pageview' && event.path === goal.match;
+  }
+  const pattern = new RegExp(goalPattern(goal.match));
+  return (event) => event.type === 'pageview' && event.path !== undefined && pattern.test(event.path);
+}
+
+export function finishConversion(
+  converted: { visitors: number; completions: number },
+  base: number,
+  goal: GoalRead,
+): Conversion {
+  return {
+    visitors: converted.visitors,
+    completions: converted.completions,
+    rate: base === 0 ? null : converted.visitors / base,
+    value: goal.value === undefined ? null : converted.completions * goal.value,
+  };
+}
+
+// The two reads a goal cannot be asked of yet. Refused rather than ignored,
+// because a chart that silently dropped the goal would draw every visitor under
+// a heading that says conversions.
+export function assertNoGoal(query: Query, read: 'timeseries' | 'engagement'): void {
+  if (query.goal !== undefined) {
+    throw new StoreQueryError(
+      'UNSUPPORTED_GOAL',
+      `A ${read === 'timeseries' ? 'time series' : 'time on page read'} cannot be counted against a goal yet`,
+    );
+  }
+}
 
 export interface PurgeSummary {
   events: number;

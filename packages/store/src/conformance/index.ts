@@ -2,11 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
+  DIMENSIONS,
   MAX_HOUR_RANGE_DAYS,
   MAX_MINUTE_RANGE_HOURS,
   ONLINE_WINDOW_MS,
   StoreQueryError,
   type BreakdownResult,
+  type Conversion,
+  type GoalRead,
   type Metrics,
 } from '../query.js';
 import { dayKey } from '../time.js';
@@ -33,6 +36,13 @@ const DAY = 24 * 60 * 60 * 1000;
 function rowsByKey(result: BreakdownResult): Map<string, Metrics> {
   return new Map(result.rows.map((row) => [row.key, row.metrics]));
 }
+
+function conversionsByKey(result: BreakdownResult): Map<string, Conversion | undefined> {
+  return new Map(result.rows.map((row) => [row.key, row.conversion]));
+}
+
+// The goal most of the conversion cases ask about, worth ten a completion.
+const SIGNUP_GOAL: GoalRead = { kind: 'event', match: F.SIGNUP, value: 10 };
 
 // The one suite every adapter passes. A new adapter adds no tests of its own
 // for anything covered here.
@@ -419,7 +429,8 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(utm.get('facebook')?.visitors).toBe(1);
 
         const events = rowsByKey(await store.breakdown({ ...today, dim: 'event' }));
-        expect(events.get('signup')?.visitors).toBe(1);
+        // v1 and v3 both signed up today.
+        expect(events.get('signup')?.visitors).toBe(2);
         expect(events.size).toBe(1);
       });
 
@@ -657,6 +668,156 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(rows.get('/home')?.pageviews).toBe(1);
         expect(rows.get('/pricing')?.pageviews).toBe(1);
         expect(rows.has('/docs')).toBe(false);
+      });
+    });
+
+    // A conversion, as the contract defines it: day by day, the people counted
+    // in a row who also reached the goal that day. The signups of the fixture
+    // are v3 on the 17th, and v3 and v1 today.
+    describe('conversions', () => {
+      it('counts converted visitors, completions, a rate and a value on the aggregate', async () => {
+        const result = await store.aggregate({ ...wholeRange, goal: SIGNUP_GOAL });
+        // Raw rows answer the same visitors the rollups do.
+        expect(result.metrics.visitors).toBe(F.EXPECTED_RANGE.visitors);
+        expect(result.conversion).toEqual({
+          visitors: 3,
+          completions: 3,
+          rate: 3 / F.EXPECTED_RANGE.visitors,
+          value: 30,
+        });
+
+        const plain = await store.aggregate(wholeRange);
+        expect(plain.conversion).toBeUndefined();
+      });
+
+      it('reads a rolled day raw, so its converters count', async () => {
+        const result = await store.aggregate({ ...yesterday, goal: SIGNUP_GOAL });
+        expect(result.metrics.visitors).toBe(F.EXPECTED.yesterday.visitors);
+        expect(result.conversion?.visitors).toBe(1);
+        expect(result.conversion?.rate).toBeCloseTo(1 / F.EXPECTED.yesterday.visitors, 10);
+      });
+
+      it('counts the period before as well when the query compares', async () => {
+        const result = await store.aggregate({
+          ...yesterday,
+          compare: 'previous_period',
+          goal: SIGNUP_GOAL,
+        });
+        // Nobody signed up on the 16th, and a rate over two visitors is a zero,
+        // not an unknown.
+        expect(result.previousConversion).toEqual({
+          visitors: 0,
+          completions: 0,
+          rate: 0,
+          value: 0,
+        });
+      });
+
+      it('rates a row by an event dimension against the row', async () => {
+        const rows = conversionsByKey(
+          await store.breakdown({ ...wholeRange, dim: 'country', goal: SIGNUP_GOAL }),
+        );
+        // BD is v1 on three days and v3 on two, five visitors, and three of
+        // those visitor-days signed up.
+        expect(rows.get('BD')).toEqual({ visitors: 3, completions: 3, rate: 3 / 5, value: 30 });
+        expect(rows.get('IN')).toEqual({ visitors: 0, completions: 0, rate: 0, value: 0 });
+      });
+
+      // A signup carries no referrer, so reading the conversion event's own
+      // fields would put it in no channel at all. Counting it against the stays
+      // that put the person in the row is what files v3's first signup under
+      // the search that brought them.
+      it('rates a row by a stay dimension against the stays that counted it', async () => {
+        const rows = conversionsByKey(
+          await store.breakdown({ ...wholeRange, dim: 'channel', goal: SIGNUP_GOAL }),
+        );
+        expect(rows.get('organic')).toMatchObject({ visitors: 1, rate: 1 });
+        expect(rows.get('direct')).toMatchObject({ visitors: 2, rate: 2 / 5 });
+        expect(rows.get('social')).toMatchObject({ visitors: 0, rate: 0 });
+      });
+
+      it('answers on a dimension a visit spans, where visits cannot', async () => {
+        const result = await store.breakdown({ ...today, dim: 'page', goal: SIGNUP_GOAL });
+        const rows = conversionsByKey(result);
+        expect(rows.get('/pricing')).toMatchObject({ visitors: 1, rate: 0.5 });
+        expect(rows.get('/docs')).toMatchObject({ visitors: 1, rate: 1 });
+        expect(rows.get('/home')).toMatchObject({ visitors: 1, rate: 1 });
+        // The visit numbers stay unanswered on a page, goal or no goal.
+        expect(rowsByKey(result).get('/pricing')?.bounceRate).toBeNull();
+      });
+
+      it('narrows the people counted with a filter and never the goal', async () => {
+        // v2 and v3 read /pricing today; v3 signed up from /docs. A goal that
+        // had to happen on the filtered page would answer nobody.
+        const result = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'page', op: 'is', value: '/pricing' }],
+          goal: SIGNUP_GOAL,
+        });
+        expect(result.metrics.visitors).toBe(2);
+        expect(result.conversion).toMatchObject({ visitors: 1, rate: 0.5 });
+      });
+
+      it('reaches a page goal by a pageview, and a star by one segment', async () => {
+        const exact = await store.aggregate({ ...today, goal: { kind: 'page', match: '/pricing' } });
+        expect(exact.conversion).toEqual({ visitors: 2, completions: 2, rate: 2 / 3, value: null });
+
+        const star = await store.aggregate({ ...today, goal: { kind: 'page', match: '/pric*' } });
+        expect(star.conversion?.visitors).toBe(2);
+
+        const deeper = await store.aggregate({
+          ...today,
+          goal: { kind: 'page', match: '/*/pricing' },
+        });
+        expect(deeper.conversion?.visitors).toBe(0);
+      });
+
+      it('leaves bots out unless the query asks for them', async () => {
+        const goal = { kind: 'page', match: '/home' } as const;
+        const humans = await store.aggregate({ ...today, goal });
+        expect(humans.conversion?.visitors).toBe(1);
+
+        const crawlers = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'bot', op: 'is', value: 'true' }],
+          goal,
+        });
+        expect(crawlers.metrics.visitors).toBe(1);
+        expect(crawlers.conversion?.visitors).toBe(1);
+      });
+
+      // The promise the definition makes, checked on every dimension there is:
+      // the people who converted in a row are always some of the people in it.
+      it.each(DIMENSIONS)('never converts more visitors than a %s row has', async (dim) => {
+        const result = await store.breakdown({ ...wholeRange, dim, goal: SIGNUP_GOAL });
+        for (const row of result.rows) {
+          expect(row.conversion).toBeDefined();
+          expect(row.conversion?.visitors ?? 0).toBeLessThanOrEqual(row.metrics.visitors);
+          const rate = row.conversion?.rate ?? null;
+          if (rate !== null) {
+            expect(rate).toBeGreaterThanOrEqual(0);
+            expect(rate).toBeLessThanOrEqual(1);
+          }
+        }
+      });
+
+      it('says nothing over nobody', async () => {
+        const empty = await store.aggregate({
+          siteId: F.SITE_ID,
+          from: Date.UTC(2026, 0, 1),
+          to: Date.UTC(2026, 0, 2),
+          goal: { kind: 'event', match: F.SIGNUP },
+        });
+        expect(empty.conversion).toEqual({ visitors: 0, completions: 0, rate: null, value: null });
+      });
+
+      it('refuses a goal on a time series or a time on page read', async () => {
+        await expect(
+          store.timeseries({ ...today, interval: 'hour', goal: SIGNUP_GOAL }),
+        ).rejects.toMatchObject({ code: 'UNSUPPORTED_GOAL' });
+        await expect(
+          store.engagement({ ...today, dim: 'page', goal: SIGNUP_GOAL }),
+        ).rejects.toMatchObject({ code: 'UNSUPPORTED_GOAL' });
       });
     });
 
