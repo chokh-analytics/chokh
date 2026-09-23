@@ -251,3 +251,79 @@ test('falls back to polling when the stream dies, and keeps counting', async ({ 
   await collect(page.request, `v_polled_${Date.now()}`);
   await expect.poll(() => onlineCount(page), { timeout: 15_000 }).toBeGreaterThan(0);
 });
+
+// A goal, end to end: a visitor sent by a search engine signs up, a goal asks
+// about that signup, and the Sources report files the signup under the search
+// that brought them rather than under the page it was sent from. The column is
+// the server's same-day overlap drawn by the client, which no unit test on
+// either side can say in one sentence. And the chart on the Overview still
+// draws, because the client never forwards a goal to the time series, which the
+// server refuses (AN-EVT01 ruling 4).
+async function signupFromSearch(request: APIRequestContext, visitorId: string): Promise<void> {
+  const now = Date.now();
+  const answer = await request.post('/api/collect', {
+    headers: { 'content-type': 'text/plain', origin: ORIGIN },
+    data: JSON.stringify({
+      siteId: SITE,
+      sentAt: now,
+      hostname: '127.0.0.1',
+      visitorId,
+      lang: 'en',
+      screen: '1440x900',
+      events: [
+        { type: 'pageview', ts: now - 2_000, path: '/pricing', referrer: 'https://www.google.com/' },
+        { type: 'event', ts: now - 1_000, path: '/pricing', name: 'e2e_signup', props: { plan: 'pro' } },
+      ],
+    }),
+  });
+  expect(answer.status(), 'the collector refused the batch').toBeLessThan(300);
+}
+
+async function goalFor(request: APIRequestContext, match: string): Promise<string> {
+  const answer = await request.post(`/api/sites/${SITE}/goals`, {
+    data: { name: 'Signed up in the suite', kind: 'event', match },
+  });
+  const body = (await answer.json()) as {
+    data?: { goal: { id: string } };
+    error?: { details?: { goalId?: string } };
+  };
+  // Created now, or by an earlier case of this same run: the id is derived from
+  // the question, so the second ask names the goal that already answers it.
+  const id = body.data?.goal.id ?? body.error?.details?.goalId;
+  expect(id, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
+  return id as string;
+}
+
+test('counts a goal on every breakdown, and never asks the chart for it', async ({ page }) => {
+  await signupFromSearch(page.request, `v_goal_${Date.now()}`);
+  const goal = await goalFor(page.request, 'e2e_signup');
+
+  const series: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/stats/timeseries') || url.pathname.endsWith('/stats/engagement')) {
+      series.push(url.search);
+    }
+  });
+
+  await boot(page, `/${SITE}/sources?range=today&goal=${goal}`);
+  const channels = page.getByRole('region', { name: 'Channels' });
+  await expect(channels.getByRole('columnheader', { name: 'Conversion rate' })).toBeVisible();
+  const organic = channels.getByRole('row').filter({ hasText: 'Organic search' });
+  await expect(organic.locator('td').last()).toHaveAttribute('title', /^[1-9][\d,]* converted$/);
+  await expect(page.getByText('Goal: Signed up in the suite')).toBeVisible();
+
+  await page.goto(`/${SITE}?range=today&goal=${goal}`);
+  const chart = page.locator('table', { hasText: 'The numbers behind the chart above.' });
+  await expect.poll(() => chart.locator('tbody tr').count()).toBeGreaterThan(0);
+  await expect(
+    page.getByRole('region', { name: 'Sources' }).getByRole('columnheader', { name: 'Conversion rate' }),
+  ).toBeAttached();
+
+  await page.goto(`/${SITE}/pages?range=today&goal=${goal}`);
+  await expect(page.getByRole('region', { name: 'How far people read' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+
+  expect(series.length).toBeGreaterThan(0);
+  expect(series.filter((search) => search.includes('goal='))).toEqual([]);
+});

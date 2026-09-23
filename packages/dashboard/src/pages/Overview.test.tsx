@@ -152,9 +152,9 @@ async function totalsLanded(): Promise<void> {
   await waitFor(() => expect(tile('Visitors')).not.toHaveTextContent(/^Visitors$/));
 }
 
-function show(): JSX.Element {
+function show(over: Partial<AppContextValue> = {}): JSX.Element {
   const client = createClient({ fetch: globalThis.fetch });
-  const value: AppContextValue = { client, me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] }, site: SITE, now: NOW };
+  const value: AppContextValue = { client, me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] }, site: SITE, now: NOW, ...over };
   return (
     <QueryClientProvider client={createQueryClient()}>
       <AppContext.Provider value={value}>
@@ -418,5 +418,177 @@ describe('Overview, when the live read fails', () => {
     await totalsLanded();
     const absent = container.querySelector('[class*="absent"]');
     expect(absent).toHaveTextContent('not available');
+  });
+});
+
+// A goal chosen in the range bar puts a second column on every card and a
+// figure beside the goal's name. Two reads cannot take one: the server refuses
+// a goal on a time series and on time on page, so a client that forwarded it
+// would lose the chart the moment somebody chose a goal. That is ruling 4 of
+// the AN-EVT01 plan review, and these cases are its proof on this page.
+describe('Overview, with a goal chosen', () => {
+  const GOAL = {
+    siteId: 's_test',
+    id: 'g_signup',
+    kind: 'event' as const,
+    match: 'signup',
+    name: 'Signed up',
+    createdBy: 'u_1',
+    createdAt: NOW - 86_400_000,
+  };
+
+  function conversion(visitors: number, rate: number | null) {
+    return { visitors, completions: visitors, rate, value: null };
+  }
+
+  function serveWithGoal(): string[] {
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string) => {
+        const url = String(input);
+        asked.push(url);
+        const withGoal = new URL(url, 'http://x').searchParams.get('goal') !== null;
+        const meta = withGoal ? { retentionDays: 90, rawOnly: true } : undefined;
+        if (url.includes('/stats/aggregate')) {
+          return Promise.resolve(
+            ok(
+              {
+                metrics: metrics(),
+                previous: metrics({ visitors: 250 }),
+                ...(withGoal ? { conversion: conversion(38, 38 / 315) } : {}),
+              },
+              meta,
+            ),
+          );
+        }
+        if (url.includes('/stats/timeseries')) {
+          return Promise.resolve(
+            ok({
+              interval: 'day',
+              points: [
+                { start: TODAY_START, end: NOW, metrics: metrics() },
+                { start: TODAY_START + 86_400_000, end: NOW, metrics: metrics() },
+              ],
+              previous: null,
+            }),
+          );
+        }
+        if (url.includes('/realtime')) {
+          return Promise.resolve(ok({ online: 5, signedIn: 2, anonymous: 3 }));
+        }
+        if (url.includes('/goals')) {
+          return Promise.resolve(ok({ goals: [GOAL] }));
+        }
+        const dim = new URL(url, 'http://x').searchParams.get('dim') ?? '';
+        return Promise.resolve(
+          ok(
+            {
+              dim,
+              rows: [
+                {
+                  key: dim === 'channel' ? 'organic' : 'BD',
+                  metrics: metrics({ visitors: 200 }),
+                  ...(withGoal ? { conversion: conversion(30, 0.15) } : {}),
+                },
+              ],
+            },
+            meta,
+          ),
+        );
+      }),
+    );
+    return asked;
+  }
+
+  function reads(asked: string[], route: string): URLSearchParams[] {
+    return asked
+      .filter((url) => url.includes(`/stats/${route}`))
+      .map((url) => new URL(url, 'http://x').searchParams);
+  }
+
+  it('still draws the chart, and asks the chart for no goal', async () => {
+    const asked = serveWithGoal();
+    window.history.replaceState(null, '', '/s_test?goal=g_signup');
+    render(show({ goals: [GOAL] }));
+    await totalsLanded();
+
+    // The chart has its points: the hidden table under it carries one row per
+    // day, which is what an empty or refused series would not.
+    const table = await screen.findByText('The numbers behind the chart above.');
+    await waitFor(() =>
+      expect(table.closest('table')?.querySelectorAll('tbody tr')).toHaveLength(2),
+    );
+
+    expect(reads(asked, 'timeseries').length).toBeGreaterThan(0);
+    expect(reads(asked, 'timeseries').every((params) => !params.has('goal'))).toBe(true);
+    expect(reads(asked, 'engagement').every((params) => !params.has('goal'))).toBe(true);
+    // And the reads that draw a conversion did carry it.
+    expect(reads(asked, 'aggregate').some((params) => params.get('goal') === 'g_signup')).toBe(
+      true,
+    );
+    expect(reads(asked, 'breakdown').every((params) => params.get('goal') === 'g_signup')).toBe(
+      true,
+    );
+  });
+
+  it('puts the rate on every card, with how many people it is on hover', async () => {
+    serveWithGoal();
+    window.history.replaceState(null, '', '/s_test?goal=g_signup');
+    render(show({ goals: [GOAL] }));
+    await totalsLanded();
+
+    const sources = screen.getByRole('region', { name: 'Sources' });
+    await waitFor(() => expect(sources).toHaveTextContent('15%'));
+    const rate = [...sources.querySelectorAll('td')].find((cell) => cell.textContent === '15%');
+    expect(rate).toHaveAttribute('title', '30 converted');
+    // Two columns, so the card names them.
+    expect(sources).toHaveTextContent('Conversion rate');
+    // A goal read is raw, and the card says how far back it can see.
+    expect(sources).toHaveTextContent('sees back 90 days');
+  });
+
+  it('says what share of the site reached it beside its name', async () => {
+    serveWithGoal();
+    window.history.replaceState(null, '', '/s_test?goal=g_signup');
+    render(show({ goals: [GOAL] }));
+
+    expect(await screen.findByText('Goal: Signed up')).toBeInTheDocument();
+    expect(await screen.findByText('12% converted (38)')).toBeInTheDocument();
+  });
+
+  it('draws one column and asks for no goal when none is chosen', async () => {
+    const asked = serveWithGoal();
+    render(show({ goals: [GOAL] }));
+    await totalsLanded();
+    const sources = screen.getByRole('region', { name: 'Sources' });
+    await waitFor(() => expect(sources).toHaveTextContent('Organic search'));
+
+    expect(sources).not.toHaveTextContent('Conversion rate');
+    expect(asked.every((url) => !url.includes('goal='))).toBe(true);
+  });
+
+  it('drops a goal the site does not have, and says so', async () => {
+    const asked = serveWithGoal();
+    window.history.replaceState(null, '', '/s_test?goal=g_deleted');
+    render(show({ goals: [GOAL] }));
+    await totalsLanded();
+
+    expect(screen.getByText('That goal no longer exists.')).toBeInTheDocument();
+    expect(asked.every((url) => !url.includes('goal='))).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop showing this goal' }));
+    expect(window.location.search).toBe('');
+    expect(screen.queryByText('That goal no longer exists.')).toBeNull();
+  });
+
+  it('chooses a goal from the range bar and carries it in the link', async () => {
+    serveWithGoal();
+    render(show({ goals: [GOAL] }));
+    await totalsLanded();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Goal/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Signed up/ }));
+    expect(new URLSearchParams(window.location.search).get('goal')).toBe('g_signup');
   });
 });

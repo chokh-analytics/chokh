@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useLocation, useSearch } from 'wouter';
 
-import { parseQuery, toSearch, type ViewQuery } from '../lib/query.js';
+import { parseQuery, requestedGoal, toSearch, type ViewQuery } from '../lib/query.js';
 import { useApp } from './context.js';
 
 // The URL is the state, and this is the only way to read or change it.
@@ -21,16 +21,20 @@ export interface ViewQueryHandle {
   // It does not become a step in the history, because nobody wants to press
   // back and land on a URL they never typed.
   replace(next: ViewQuery): void;
+  // The goal the link named, which query.goal is only when the site still has
+  // it. The range bar says so when the two differ.
+  requestedGoal: string | null;
 }
 
 export function useViewQuery(): ViewQueryHandle {
-  const { site, now } = useApp();
+  const { site, now, goals } = useApp();
   const search = useSearch();
   const [location, navigate] = useLocation();
 
+  const goalIds = useMemo(() => goals?.map((goal) => goal.id), [goals]);
   const query = useMemo(
-    () => parseQuery(search, now, site.settings.timezone),
-    [search, now, site.settings.timezone],
+    () => parseQuery(search, now, site.settings.timezone, goalIds),
+    [search, now, site.settings.timezone, goalIds],
   );
 
   const go = useCallback(
@@ -52,5 +56,6 @@ export function useViewQuery(): ViewQueryHandle {
     query,
     set: useCallback((next: ViewQuery) => go(next, false), [go]),
     replace: useCallback((next: ViewQuery) => go(next, true), [go]),
+    requestedGoal: useMemo(() => requestedGoal(search), [search]),
   };
 }

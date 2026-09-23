@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 
+import type { Goal } from '@chokh/store/contract';
+
 import type { PublicSite, Me } from '../lib/api.js';
 import type { Client } from '../lib/client.js';
 
@@ -16,6 +18,9 @@ export interface AppContextValue {
   me: Me;
   site: PublicSite;
   now: number;
+  // The site's goals once they have answered. What vouches for a goal id in a
+  // link: absent, and no goal in the URL is taken at its word.
+  goals?: readonly Goal[];
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

@@ -57,11 +57,11 @@ function rowsFor(dim: string, count = 12) {
   }));
 }
 
-function ok(data: unknown): Response {
+function ok(data: unknown, meta?: unknown): Response {
   return {
     status: 200,
     ok: true,
-    json: () => Promise.resolve({ success: true, data }),
+    json: () => Promise.resolve({ success: true, data, meta }),
   } as unknown as Response;
 }
 
@@ -80,12 +80,13 @@ const TABS = [
   { id: 'entry', dim: 'entry' as const, label: 'Entry' },
 ];
 
-function show(node: JSX.Element): JSX.Element {
+function show(node: JSX.Element, over: Partial<AppContextValue> = {}): JSX.Element {
   const value: AppContextValue = {
     client: createClient({ fetch: globalThis.fetch }),
     me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] },
     site: SITE,
     now: NOW,
+    ...over,
   };
   return (
     <QueryClientProvider client={createQueryClient()}>
@@ -260,5 +261,83 @@ describe('DimensionCard', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Entry' }));
     await waitFor(() => expect(window.location.search).toBe('?pages=entry'));
     expect(within(card()).getByText('/p0').closest('button')).toBeNull();
+  });
+});
+
+// With a goal chosen the quiet column is the conversion rate, whatever the card
+// drew there before, and the rows keep their order: the ranking is visitors.
+describe('DimensionCard, with a goal chosen', () => {
+  const GOAL = {
+    siteId: 's_test',
+    id: 'g_signup',
+    kind: 'event' as const,
+    match: 'signup',
+    name: 'Signed up',
+    createdBy: 'u_1',
+    createdAt: NOW - 86_400_000,
+  };
+
+  function serveConverting(): ReturnType<typeof vi.fn> {
+    const fetcher = vi.fn((input: string) => {
+      const params = new URL(String(input), 'http://x').searchParams;
+      const dim = params.get('dim') ?? '';
+      const withGoal = params.get('goal') !== null;
+      const rows = rowsFor(dim, 3).map((row, index) => ({
+        ...row,
+        ...(withGoal
+          ? {
+              conversion: {
+                visitors: 100 - index * 40,
+                completions: 120,
+                rate: index === 2 ? null : (100 - index * 40) / row.metrics.visitors,
+                value: null,
+              },
+            }
+          : {}),
+      }));
+      return Promise.resolve(
+        ok({ dim, rows }, withGoal ? { retentionDays: 120, rawOnly: true } : undefined),
+      );
+    });
+    vi.stubGlobal('fetch', fetcher);
+    return fetcher;
+  }
+
+  it('draws the rate with how many people it is, and the raw events note', async () => {
+    const fetcher = serveConverting();
+    window.history.replaceState(null, '', '/s_test/pages?goal=g_signup');
+    render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />, { goals: [GOAL] }));
+
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    expect(within(card()).getByRole('columnheader', { name: 'Conversion rate' })).toBeInTheDocument();
+    expect(within(card()).queryByRole('columnheader', { name: 'Pageviews' })).toBeNull();
+
+    // 100 of 1,000 is 10%, and hovering says who that is.
+    const rate = within(card()).getByText('10%');
+    expect(rate).toHaveAttribute('title', '100 converted');
+    // A row over nobody has no rate rather than a zero.
+    const third = within(card()).getByText('/p2').closest('tr');
+    expect(third).toHaveTextContent('not available');
+
+    expect(
+      within(card()).getByText('Read from raw events, so this report sees back 120 days and no further.'),
+    ).toBeInTheDocument();
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('goal=g_signup');
+
+    // The file carries the goal, so it has the four conversion columns too.
+    const href = within(card()).getByRole('link', { name: 'Download CSV' }).getAttribute('href');
+    expect(href).toContain('goal=g_signup');
+  });
+
+  it('draws the column it always drew, and no note, when no goal is chosen', async () => {
+    const fetcher = serveConverting();
+    render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />, { goals: [GOAL] }));
+
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    expect(within(card()).getByRole('columnheader', { name: 'Pageviews' })).toBeInTheDocument();
+    expect(within(card()).queryByText(/Read from raw events/)).toBeNull();
+    expect(String(fetcher.mock.calls[0]?.[0])).not.toContain('goal=');
+    const href = within(card()).getByRole('link', { name: 'Download CSV' }).getAttribute('href');
+    expect(href).not.toContain('goal=');
   });
 });

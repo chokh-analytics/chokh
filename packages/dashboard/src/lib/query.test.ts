@@ -6,6 +6,7 @@ import {
   DEFAULT_METRIC,
   DEFAULT_PRESET,
   parseQuery,
+  requestedGoal,
   toSearch,
   toStatsParams,
   type ViewQuery,
@@ -30,6 +31,7 @@ describe('parseQuery', () => {
     expect(query.filters).toEqual([]);
     expect(query.interval).toBeNull();
     expect(query.metric).toBe(DEFAULT_METRIC);
+    expect(query.goal).toBeNull();
   });
 
   it('reads a preset, and reads it in the site zone', () => {
@@ -164,6 +166,47 @@ describe('cacheKey', () => {
   it('files two different filters apart', () => {
     expect(cacheKey('s_1', toStatsParams(parse('filters=country%3D%3DBD')))).not.toEqual(
       cacheKey('s_1', toStatsParams(parse('filters=country%3D%3DIN'))),
+    );
+  });
+});
+
+// A goal in a link is only as good as the site's list: an id the site does not
+// have is dropped, like any other parameter that makes no sense, rather than
+// sent to a server that will answer every card with GOAL_NOT_FOUND.
+describe('the goal', () => {
+  const GOALS = ['g_signup', 'g_paid'];
+
+  it('is kept when the site has it, and written back into the link', () => {
+    const query = parseQuery('goal=g_signup', NOW, DHAKA, GOALS);
+    expect(query.goal).toBe('g_signup');
+    expect(toSearch(query)).toBe('?goal=g_signup');
+  });
+
+  it('is dropped when the site does not have it', () => {
+    expect(parseQuery('goal=g_deleted', NOW, DHAKA, GOALS).goal).toBeNull();
+  });
+
+  it('is dropped when there is no list to vouch for it', () => {
+    expect(parseQuery('goal=g_signup', NOW, DHAKA).goal).toBeNull();
+  });
+
+  it('is dropped when it is not the shape of an id at all', () => {
+    expect(requestedGoal('goal=%3Cscript%3E')).toBeNull();
+    expect(requestedGoal('goal=g_signup')).toBe('g_signup');
+  });
+
+  it('goes to a read only when the read asks for it', () => {
+    const query = parseQuery('goal=g_signup', NOW, DHAKA, GOALS);
+    expect(toStatsParams(query).goal).toBeUndefined();
+    expect(toStatsParams(query, { dim: 'page' }).goal).toBeUndefined();
+    expect(toStatsParams(query, { dim: 'page', goal: true }).goal).toBe('g_signup');
+    expect(toStatsParams(parse(''), { goal: true }).goal).toBeUndefined();
+  });
+
+  it('files a read with a goal apart from the same read without one', () => {
+    const query = parseQuery('goal=g_signup', NOW, DHAKA, GOALS);
+    expect(cacheKey('s_1', toStatsParams(query, { goal: true }))).not.toEqual(
+      cacheKey('s_1', toStatsParams(query)),
     );
   });
 });

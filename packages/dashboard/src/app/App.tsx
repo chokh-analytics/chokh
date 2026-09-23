@@ -12,7 +12,8 @@ import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { Redirect, Route, Switch, useLocation, useParams, useSearch } from 'wouter';
 
 import { createClient, type Client } from '../lib/client.js';
-import { createQueryClient, useMe } from '../lib/queries.js';
+import { requestedGoal } from '../lib/query.js';
+import { createQueryClient, useGoals, useMe } from '../lib/queries.js';
 import { messages } from '../messages/en.js';
 import { FirstRun } from '../pages/FirstRun.js';
 import { Overview } from '../pages/Overview.js';
@@ -115,15 +116,27 @@ function SiteFrame({
   onSignedOut: () => void;
 }): JSX.Element {
   const params = useParams<{ siteId?: string }>();
+  const search = useSearch();
   const site = value.sites.find((candidate) => candidate.id === params.siteId) ?? value.sites[0];
   if (site === undefined) {
     throw new Error('SiteFrame rendered with no sites');
   }
-  const context: AppContextValue = { ...value, site };
+  const goals = useGoals(value.client, site.id);
+  const context: AppContextValue = {
+    ...value,
+    site,
+    ...(goals.data === undefined ? {} : { goals: goals.data.data.goals }),
+  };
+  // A link that names a goal waits for the list before any report asks for a
+  // number. Without the wait every card would ask twice, once without the goal
+  // and once with it, or ask with a goal that was deleted since the link was
+  // sent and draw a page of errors before the list could say so. A link with
+  // no goal in it waits for nothing.
+  const waiting = requestedGoal(search) !== null && goals.isPending;
 
   return (
     <Shell value={context} onSignedOut={onSignedOut}>
-      <SiteRoutes value={context} />
+      {waiting ? <Loading /> : <SiteRoutes value={context} />}
     </Shell>
   );
 }

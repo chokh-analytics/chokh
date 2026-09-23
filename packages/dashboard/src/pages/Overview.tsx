@@ -27,7 +27,7 @@ import {
 import { defaultInterval, isLive } from '../lib/range.js';
 import { METRICS, type MetricName } from '../lib/query.js';
 import { format, messages } from '../messages/en.js';
-import { Breakdown, Code, type BreakdownRowView } from '../ui/Breakdown.js';
+import { Breakdown, Code, conversionColumn, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Card } from '../ui/Card.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
@@ -98,7 +98,7 @@ function useBreakdownCard(
   icon?: (key: string) => JSX.Element | undefined,
 ) {
   const { client, siteId, query, now, filters } = useOverviewContext();
-  const result = useBreakdown({ client, siteId, query, now }, dim, 5);
+  const result = useBreakdown({ client, siteId, query, now }, dim, 5, true);
   const { set } = useViewQuery();
 
   const rows: BreakdownRowView[] = useMemo(() => {
@@ -116,6 +116,8 @@ function useBreakdownCard(
       title: formatExact(row.metrics.visitors),
       share: top === 0 ? 0 : row.metrics.visitors / top,
       icon: icon?.(row.key),
+      // One column on the Overview, and a second only once a goal is chosen.
+      ...(query.goal === null ? {} : conversionColumn(row.conversion)),
       ...(filterable
         ? {
             onClick: () =>
@@ -143,13 +145,21 @@ function BreakdownBody({
   caption,
   hasFilters,
   onClearFilters,
+  converting,
 }: {
-  result: { isPending: boolean; isError: boolean; error: unknown; refetch: () => void };
+  result: {
+    isPending: boolean;
+    isError: boolean;
+    error: unknown;
+    refetch: () => void;
+    data?: { meta?: Record<string, unknown> | undefined } | undefined;
+  };
   rows: BreakdownRowView[];
   dimensionLabel: string;
   caption: string;
   hasFilters: boolean;
   onClearFilters: () => void;
+  converting: boolean;
 }): JSX.Element {
   if (result.isPending) {
     // Five rows at the height five rows will be, so nothing moves when they
@@ -175,13 +185,27 @@ function BreakdownBody({
       <EmptyState message={messages.states.empty} />
     );
   }
+  const retentionDays = result.data?.meta?.retentionDays;
   return (
-    <Breakdown
-      rows={rows}
-      dimensionLabel={dimensionLabel}
-      valueLabel={messages.metrics.visitors}
-      caption={caption}
-    />
+    <>
+      {/*
+        With a goal the card has two columns, so it names them: the head the
+        card's own corner cannot hold. Without one it stays the one column the
+        corner already names.
+      */}
+      <Breakdown
+        rows={rows}
+        dimensionLabel={dimensionLabel}
+        valueLabel={messages.metrics.visitors}
+        {...(converting
+          ? { secondaryLabel: messages.metrics.conversionRate, showHead: true }
+          : {})}
+        caption={caption}
+      />
+      {converting && typeof retentionDays === 'number' && (
+        <p className={styles.note}>{format(messages.metricHelp.rawOnly, { days: retentionDays })}</p>
+      )}
+    </>
   );
 }
 
@@ -236,6 +260,7 @@ export function Overview(): JSX.Element {
   );
 
   const loading = totals.isPending;
+  const converting = query.goal !== null;
   const clear = (): void => set({ ...query, filters: [] });
   const hasFilters = query.filters.length > 0;
 
@@ -380,7 +405,7 @@ export function Overview(): JSX.Element {
       <div className={styles.cards}>
         <Card
           title={messages.overview.topPages}
-          metric={messages.metrics.visitors}
+          {...(converting ? {} : { metric: messages.metrics.visitors })}
           footer={{ to: `/${site.id}/pages`, label: messages.overview.viewAllPages }}
         >
           <BreakdownBody
@@ -390,12 +415,13 @@ export function Overview(): JSX.Element {
             caption={messages.overview.topPages}
             hasFilters={hasFilters}
             onClearFilters={clear}
+            converting={converting}
           />
         </Card>
 
         <Card
           title={messages.overview.sources}
-          metric={messages.metrics.visitors}
+          {...(converting ? {} : { metric: messages.metrics.visitors })}
           footer={{ to: `/${site.id}/sources`, label: messages.overview.viewAllSources }}
         >
           <BreakdownBody
@@ -405,12 +431,13 @@ export function Overview(): JSX.Element {
             caption={messages.overview.sources}
             hasFilters={hasFilters}
             onClearFilters={clear}
+            converting={converting}
           />
         </Card>
 
         <Card
           title={messages.overview.countries}
-          metric={messages.metrics.visitors}
+          {...(converting ? {} : { metric: messages.metrics.visitors })}
           footer={{ to: `/${site.id}/geo`, label: messages.overview.viewGeography }}
         >
           <BreakdownBody
@@ -420,12 +447,13 @@ export function Overview(): JSX.Element {
             caption={messages.overview.countries}
             hasFilters={hasFilters}
             onClearFilters={clear}
+            converting={converting}
           />
         </Card>
 
         <Card
           title={messages.overview.deviceTypes}
-          metric={messages.metrics.visitors}
+          {...(converting ? {} : { metric: messages.metrics.visitors })}
           footer={{ to: `/${site.id}/devices`, label: messages.overview.viewAllDevices }}
         >
           <BreakdownBody
@@ -435,6 +463,7 @@ export function Overview(): JSX.Element {
             caption={messages.overview.deviceTypes}
             hasFilters={hasFilters}
             onClearFilters={clear}
+            converting={converting}
           />
         </Card>
       </div>

@@ -2,6 +2,7 @@ import type {
   AggregateResult,
   BreakdownResult,
   EngagementResult,
+  Goal,
   RealtimeSnapshot,
   TimeseriesResult,
   UserProfile,
@@ -140,6 +141,11 @@ export const api = {
     params: StatsParams,
   ): Promise<Answer<EngagementResult>> =>
     client.get<EngagementResult>(`/api/sites/${siteId}/stats/engagement`, statsQuery(params)),
+
+  // The site's goals, oldest first. Anybody who can read a report can read what
+  // it is being measured against.
+  goals: (client: Client, siteId: string): Promise<Answer<{ goals: Goal[] }>> =>
+    client.get<{ goals: Goal[] }>(`/api/sites/${siteId}/goals`),
 
   realtime: (client: Client, siteId: string): Promise<Answer<RealtimeSnapshot>> =>
     client.get<RealtimeSnapshot>(`/api/sites/${siteId}/realtime`),

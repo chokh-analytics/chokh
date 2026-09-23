@@ -109,6 +109,8 @@ export const messages = {
     scrollDepth: 'Scroll depth',
     leaves: 'Exits measured',
     share: 'Share',
+    conversionRate: 'Conversion rate',
+    converted: 'Converted',
     signedInSplit: '{signedIn} signed in, {anonymous} anonymous',
   },
 
@@ -127,6 +129,8 @@ export const messages = {
     notForPages:
       'A visit spans pages, so a bounce rate and a visit duration cannot belong to one of them.',
     rawOnly: 'Read from raw events, so this report sees back {days} days and no further.',
+    conversionRate:
+      "The share of a row's visitors who reached the goal on the same day. Counted per day, like visitors, so it never passes 100%.",
   },
 
   dimensions: {
@@ -335,6 +339,18 @@ export const messages = {
     notFilterable:
       'A stay spans pages, so it cannot be filtered to one entry page, exit page or channel yet.',
     unsupported: 'That filter cannot be answered: {message}',
+  },
+
+  // A goal is chosen in the range bar and every breakdown is counted against it.
+  goals: {
+    picker: 'Goal',
+    pickerNone: 'No goal',
+    pickerEmpty: 'No goals yet.',
+    chip: 'Goal: {name}',
+    chipSummary: '{rate} converted ({count})',
+    remove: 'Stop showing this goal',
+    convertedTitle: '{count} converted',
+    gone: 'That goal no longer exists.',
   },
 
   states: {

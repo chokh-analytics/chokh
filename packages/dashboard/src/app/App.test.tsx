@@ -715,3 +715,62 @@ describe('the site switcher', () => {
     expect(names[2]).toContain('Zulu');
   });
 });
+
+// A link that names a goal waits for the site's goal list before any report
+// asks for a number. Without the wait every card asks twice, once without the
+// goal and once with it, or asks with a goal deleted since the link was sent
+// and draws a page of errors before the list can say so.
+describe('a link that names a goal', () => {
+  const ME = {
+    actor: { kind: 'session', id: 'u_1' },
+    user: { id: 'u_1', email: 'owner@chokh.test' },
+    sites: [SITE],
+    teams: [],
+  };
+  const GOAL = {
+    siteId: 's_test',
+    id: 'g_signup',
+    kind: 'event',
+    match: 'signup',
+    name: 'Signed up',
+    createdBy: 'u_1',
+    createdAt: 0,
+  };
+
+  it('asks no report anything until the list has answered, then asks with the goal', async () => {
+    at('/s_test?goal=g_signup');
+    let answerGoals: () => void = () => undefined;
+    const goalsAnswered = new Promise<void>((resolve) => {
+      answerGoals = resolve;
+    });
+    const asked: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        const url = String(input);
+        asked.push(url);
+        const path = url.split('?')[0] ?? '';
+        if (path === '/api/me') {
+          return envelope(ME);
+        }
+        if (path === '/api/sites/s_test/goals') {
+          await goalsAnswered;
+          return envelope({ goals: [GOAL] });
+        }
+        return refusal(404, 'NOT_FOUND');
+      }),
+    );
+    render(<App />);
+
+    expect(await screen.findByRole('status', { name: 'Loading the report' })).toBeDefined();
+    expect(asked.some((url) => url.includes('/stats/'))).toBe(false);
+
+    await act(async () => {
+      answerGoals();
+      await goalsAnswered;
+    });
+    await waitFor(() => expect(asked.some((url) => url.includes('/stats/aggregate'))).toBe(true));
+    const aggregates = asked.filter((url) => url.includes('/stats/aggregate'));
+    expect(aggregates.every((url) => url.includes('goal=g_signup'))).toBe(true);
+  });
+});

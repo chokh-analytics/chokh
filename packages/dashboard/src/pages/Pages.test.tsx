@@ -61,45 +61,45 @@ interface Routes {
   status?: () => Response;
 }
 
-function serve(routes: Routes = {}): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: string) => {
-      const url = new URL(String(input), 'http://x');
-      if (url.pathname.endsWith('/stats/engagement')) {
-        return Promise.resolve(
-          (routes.engagement ??
-            (() =>
-              ok({
-                dim: 'page',
-                rawOnly: true,
-                rows: [
-                  // A percentage, which is what the tracker reports and what
-                  // the store averages: the conformance fixture and the
-                  // server's own test both assert 75 here.
-                  { key: '/read', avgTimeOnPageMs: 92_000, avgScrollDepth: 75, leaves: 40 },
-                ],
-              })))(),
-        );
-      }
-      const dim = url.searchParams.get('dim') ?? '';
-      if (dim === 'event') {
-        return Promise.resolve((routes.events ?? (() => ok({ dim, rows: [] })))());
-      }
-      if (dim === 'status') {
-        return Promise.resolve((routes.status ?? (() => ok({ dim, rows: [] })))());
-      }
-      return Promise.resolve(ok({ dim, rows: [{ key: '/read', metrics: metrics(100) }] }));
-    }),
-  );
+function serve(routes: Routes = {}): ReturnType<typeof vi.fn> {
+  const fetcher = vi.fn((input: string) => {
+    const url = new URL(String(input), 'http://x');
+    if (url.pathname.endsWith('/stats/engagement')) {
+      return Promise.resolve(
+        (routes.engagement ??
+          (() =>
+            ok({
+              dim: 'page',
+              rawOnly: true,
+              rows: [
+                // A percentage, which is what the tracker reports and what
+                // the store averages: the conformance fixture and the
+                // server's own test both assert 75 here.
+                { key: '/read', avgTimeOnPageMs: 92_000, avgScrollDepth: 75, leaves: 40 },
+              ],
+            })))(),
+      );
+    }
+    const dim = url.searchParams.get('dim') ?? '';
+    if (dim === 'event') {
+      return Promise.resolve((routes.events ?? (() => ok({ dim, rows: [] })))());
+    }
+    if (dim === 'status') {
+      return Promise.resolve((routes.status ?? (() => ok({ dim, rows: [] })))());
+    }
+    return Promise.resolve(ok({ dim, rows: [{ key: '/read', metrics: metrics(100) }] }));
+  });
+  vi.stubGlobal('fetch', fetcher);
+  return fetcher;
 }
 
-function show(): JSX.Element {
+function show(over: Partial<AppContextValue> = {}): JSX.Element {
   const value: AppContextValue = {
     client: createClient({ fetch: globalThis.fetch }),
     me: { actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] },
     site: SITE,
     now: NOW,
+    ...over,
   };
   return (
     <QueryClientProvider client={createQueryClient()}>
@@ -264,5 +264,43 @@ describe('Pages', () => {
     const notFound = await screen.findByRole('region', { name: 'Pages that were not found' });
     await waitFor(() => expect(within(notFound).getByText('14')).toBeInTheDocument());
     expect(within(notFound).queryByText('28')).toBeNull();
+  });
+});
+
+// Time on page and the 404 count never take a goal: the server refuses one on
+// engagement, and the 404 card only counts. The ranking above them does.
+describe('Pages, with a goal chosen', () => {
+  const GOAL = {
+    siteId: 's_test',
+    id: 'g_signup',
+    kind: 'event' as const,
+    match: 'signup',
+    name: 'Signed up',
+    createdBy: 'u_1',
+    createdAt: NOW - 86_400_000,
+  };
+
+  it('sends the goal to the ranking and to nothing else on the page', async () => {
+    const fetcher = serve();
+    window.history.replaceState(null, '', '/s_test/pages?goal=g_signup');
+    render(show({ goals: [GOAL] }));
+
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(([url]) => String(url).includes('/stats/engagement')),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(screen.getAllByText('/read').length).toBeGreaterThan(0));
+
+    const asked = fetcher.mock.calls.map(([url]) => new URL(String(url), 'http://x'));
+    const engagement = asked.filter((url) => url.pathname.endsWith('/stats/engagement'));
+    expect(engagement.length).toBeGreaterThan(0);
+    expect(engagement.every((url) => !url.searchParams.has('goal'))).toBe(true);
+
+    const breakdowns = asked.filter((url) => url.pathname.endsWith('/stats/breakdown'));
+    const byDim = (dim: string) => breakdowns.filter((url) => url.searchParams.get('dim') === dim);
+    expect(byDim('status').every((url) => !url.searchParams.has('goal'))).toBe(true);
+    expect(byDim('event').every((url) => !url.searchParams.has('goal'))).toBe(true);
+    expect(byDim('page').every((url) => url.searchParams.get('goal') === 'g_signup')).toBe(true);
   });
 });

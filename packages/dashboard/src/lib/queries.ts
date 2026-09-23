@@ -98,8 +98,27 @@ export function useLicense(client: Client): UseQueryResult<Answer<LicenseStatus>
   });
 }
 
+// A site's goals, for the picker and for vouching for the id in a link. Read on
+// the same clock as who somebody is, because a goal changes about as often, and
+// refreshed by hand after every create and delete, because a list that still
+// offers a goal somebody has just removed is a list that lies for five minutes.
+export function goalsKey(siteId: string): unknown[] {
+  return ['goals', siteId];
+}
+
+export function useGoals(client: Client, siteId: string) {
+  return useQuery({
+    queryKey: goalsKey(siteId),
+    queryFn: () => api.goals(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
+// The totals, and with a goal chosen the share of them that reached it. The
+// only other read that takes the goal is a breakdown that draws it.
 export function useAggregate(context: ReportContext) {
-  const params = toStatsParams(context.query);
+  const params = toStatsParams(context.query, { goal: true });
   return useQuery({
     queryKey: ['aggregate', ...cacheKey(context.siteId, params)],
     queryFn: () => api.aggregate(context.client, context.siteId, params),
@@ -107,6 +126,9 @@ export function useAggregate(context: ReportContext) {
   });
 }
 
+// Never with the goal. The server refuses one on a time series, so a chart that
+// carried it would draw nothing at all the moment somebody chose a goal; the
+// chart is visitors whatever the column beside the rows says.
 export function useTimeseries(context: ReportContext) {
   const params = toStatsParams(context.query);
   return useQuery({
@@ -116,8 +138,16 @@ export function useTimeseries(context: ReportContext) {
   });
 }
 
-export function useBreakdown(context: ReportContext, dim: Dimension, limit?: number) {
-  const params = toStatsParams(context.query, { dim, limit });
+// withGoal is for a card that draws the conversion column. A read that only
+// ranks, like the map's shading or the count of 404s, leaves it out and stays a
+// rollup read.
+export function useBreakdown(
+  context: ReportContext,
+  dim: Dimension,
+  limit?: number,
+  withGoal = false,
+) {
+  const params = toStatsParams(context.query, { dim, limit, goal: withGoal });
   return useQuery({
     queryKey: ['breakdown', ...cacheKey(context.siteId, params)],
     queryFn: () => api.breakdown(context.client, context.siteId, params),
@@ -125,6 +155,7 @@ export function useBreakdown(context: ReportContext, dim: Dimension, limit?: num
   });
 }
 
+// Never with the goal either, for the same reason: the server refuses it.
 export function useEngagement(context: ReportContext, dim: Dimension, limit?: number) {
   const params = toStatsParams(context.query, { dim, limit });
   return useQuery({

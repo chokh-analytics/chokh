@@ -10,7 +10,7 @@ import { api } from '../lib/api.js';
 import { toStatsParams } from '../lib/query.js';
 import { useBreakdown } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
-import { Breakdown, Code, type BreakdownRowView } from '../ui/Breakdown.js';
+import { Breakdown, Code, conversionColumn, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Button } from '../ui/Button.js';
 import { Card } from '../ui/Card.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/State.js';
@@ -68,6 +68,10 @@ export function DimensionCard({
 }: DimensionCardProps): JSX.Element {
   const { client, site, now } = useApp();
   const { query, set } = useViewQuery();
+  // With a goal chosen the quiet column is the conversion rate, whatever it
+  // was: that is what somebody who chose a goal came to read. The rows are
+  // still ranked and barred by visitors, so choosing one never reorders a list.
+  const converting = query.goal !== null;
   const ids = useMemo(() => tabs.map((candidate) => candidate.id), [tabs]);
   const { tab, set: setTab } = useTabParam(param, ids);
   const [limit, setLimit] = useState(ROWS);
@@ -77,7 +81,7 @@ export function DimensionCard({
 
   // One more than is drawn, so "Show more" appears exactly when there is more
   // to show rather than on every full page of rows.
-  const result = useBreakdown({ client, siteId: site.id, query, now }, dim, limit + 1);
+  const result = useBreakdown({ client, siteId: site.id, query, now }, dim, limit + 1, true);
   const data = useMemo(() => result.data?.data.rows ?? [], [result.data]);
   const shown = data.slice(0, limit);
   const hasMore = data.length > limit && limit < MORE_ROWS;
@@ -93,10 +97,14 @@ export function DimensionCard({
       label: labelFor(dim, row.key),
       value: formatCount(row.metrics.visitors),
       title: formatExact(row.metrics.visitors),
-      secondary:
-        secondary === 'pageviews'
-          ? formatCount(row.metrics.pageviews)
-          : (formatRate(row.metrics.bounceRate) ?? messages.states.notAvailable),
+      ...(converting
+        ? conversionColumn(row.conversion)
+        : {
+            secondary:
+              secondary === 'pageviews'
+                ? formatCount(row.metrics.pageviews)
+                : (formatRate(row.metrics.bounceRate) ?? messages.states.notAvailable),
+          }),
       share: top === 0 ? 0 : row.metrics.visitors / top,
       unknown: row.key === '',
       // The code beside the name, because a filter is written in codes and
@@ -121,7 +129,11 @@ export function DimensionCard({
           }
         : {}),
     }));
-  }, [data, shown, dim, secondary, set, query]);
+  }, [data, shown, dim, secondary, set, query, converting]);
+
+  // A goal read is raw for its whole range, so this card sees back as far as
+  // the site keeps its events. The number comes with the answer.
+  const retentionDays = result.data?.meta?.retentionDays;
 
   const body = (): JSX.Element => {
     if (result.isPending) {
@@ -153,7 +165,11 @@ export function DimensionCard({
           dimensionLabel={current.dimensionLabel ?? current.label}
           valueLabel={messages.metrics.visitors}
           secondaryLabel={
-            secondary === 'pageviews' ? messages.metrics.pageviews : messages.metrics.bounceRate
+            converting
+              ? messages.metrics.conversionRate
+              : secondary === 'pageviews'
+                ? messages.metrics.pageviews
+                : messages.metrics.bounceRate
           }
           showHead
           caption={`${title}: ${current.label}`}
@@ -168,6 +184,11 @@ export function DimensionCard({
         */}
         {!isFilterable(dim) && <p className={styles.note}>{messages.filters.notFilterable}</p>}
         {note !== undefined && <p className={styles.note}>{note}</p>}
+        {converting && typeof retentionDays === 'number' && (
+          <p className={styles.note}>
+            {format(messages.metricHelp.rawOnly, { days: retentionDays })}
+          </p>
+        )}
         <div className={styles.foot}>
           {hasMore ? (
             <Button variant="quiet" onClick={() => setLimit(MORE_ROWS)}>
@@ -186,7 +207,11 @@ export function DimensionCard({
           */}
           <a
             className={styles.download}
-            href={api.exportUrl(client, site.id, toStatsParams(query, { dim, limit: MORE_ROWS }))}
+            href={api.exportUrl(
+              client,
+              site.id,
+              toStatsParams(query, { dim, limit: MORE_ROWS, goal: true }),
+            )}
             download
             title={messages.reports.downloadNote}
           >

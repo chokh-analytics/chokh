@@ -1,6 +1,8 @@
 import type { JSX, ReactNode } from 'react';
+import type { Conversion } from '@chokh/store/contract';
 
-import { messages } from '../messages/en.js';
+import { formatExact, formatRate } from '../lib/format.js';
+import { format, messages } from '../messages/en.js';
 import styles from './Breakdown.module.css';
 
 // The row every report in this dashboard is made of.
@@ -26,6 +28,8 @@ export interface BreakdownRowView {
   // A second, quieter column. Used where one number is not the whole answer:
   // pageviews beside visitors, a share beside a count.
   secondary?: string;
+  // What the second column is out of, when it is a rate: "38 converted".
+  secondaryTitle?: string;
   // 0 to 1, against the biggest row in the card.
   share: number;
   icon?: ReactNode;
@@ -121,7 +125,9 @@ export function Breakdown({
                 )}
               </td>
               {secondaryLabel !== undefined && (
-                <td className={styles.secondary}>{row.secondary ?? ''}</td>
+                <td className={styles.secondary} title={row.secondaryTitle}>
+                  {row.secondary ?? ''}
+                </td>
               )}
             </tr>
           );
@@ -129,6 +135,23 @@ export function Breakdown({
       </tbody>
     </table>
   );
+}
+
+// The conversion column of one row: the rate, and the people it is a share of
+// on hover. A row with nobody in it has no rate rather than a zero, and a row
+// the server sent without one says so rather than drawing a blank.
+export function conversionColumn(
+  conversion: Conversion | undefined,
+): Pick<BreakdownRowView, 'secondary' | 'secondaryTitle'> {
+  if (conversion === undefined) {
+    return { secondary: messages.states.notAvailable };
+  }
+  return {
+    secondary: formatRate(conversion.rate) ?? messages.states.notAvailable,
+    secondaryTitle: format(messages.goals.convertedTitle, {
+      count: formatExact(conversion.visitors),
+    }),
+  };
 }
 
 // A short code beside a long name: a country's ISO letters, a language tag, a

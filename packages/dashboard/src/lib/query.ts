@@ -48,6 +48,10 @@ export interface ViewQuery {
   // Which metric the overview chart draws. It is in the URL because it is part
   // of what somebody is showing somebody else.
   metric: MetricName;
+  // The goal every breakdown is counted against, by id, or null for none. In
+  // the URL for the same reason as the metric: "of the people from this
+  // campaign, how many signed up" is a view somebody sends.
+  goal: string | null;
 }
 
 // The parameter names, in one place, because they are a contract with every
@@ -60,6 +64,7 @@ export const PARAM = {
   filters: 'filters',
   interval: 'interval',
   metric: 'metric',
+  goal: 'goal',
 } as const;
 
 export const DEFAULT_PRESET: Preset = '7d';
@@ -124,20 +129,42 @@ function readInstants(from: string | null, to: string | null, timezone: string):
   return null;
 }
 
+// A goal id as the server mints it: g_ and sixteen base64url characters. The
+// shape is checked here and not the id, which only the site's list can vouch
+// for.
+const GOAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+// The goal a link asked for, whether or not the site still has it. The shell
+// needs this before the list has answered, to know whether there is a list
+// worth waiting for.
+export function requestedGoal(search: string | URLSearchParams): string | null {
+  const params = typeof search === 'string' ? new URLSearchParams(search) : search;
+  const goal = params.get(PARAM.goal);
+  return goal !== null && GOAL_ID.test(goal) ? goal : null;
+}
+
+// goalIds is the site's goal list. A goal that is not in it is dropped like any
+// other parameter that makes no sense: the goal was deleted since the link was
+// sent, or it belongs to another site, and a page without the column is better
+// than a page of cards that each say the goal is not found. With no list there
+// is nothing to vouch for the id, so it is dropped too.
 export function parseQuery(
   search: string | URLSearchParams,
   now: number,
   timezone: string,
+  goalIds?: readonly string[],
 ): ViewQuery {
   const params = typeof search === 'string' ? new URLSearchParams(search) : search;
   const range = readRange(params, now, timezone);
   const metric = params.get(PARAM.metric);
+  const goal = requestedGoal(params);
   return {
     range,
     compare: readCompare(params.get(PARAM.compare)),
     filters: decodeFilters(params.get(PARAM.filters)),
     interval: readInterval(params.get(PARAM.interval), range),
     metric: isMetric(metric) ? metric : DEFAULT_METRIC,
+    goal: goal !== null && goalIds?.includes(goal) === true ? goal : null,
   };
 }
 
@@ -174,6 +201,10 @@ export function toSearchParams(query: ViewQuery): URLSearchParams {
     params.set(PARAM.metric, query.metric);
   }
 
+  if (query.goal !== null) {
+    params.set(PARAM.goal, query.goal);
+  }
+
   return params;
 }
 
@@ -193,11 +224,17 @@ export interface StatsParams {
   interval?: Interval;
   dim?: Dimension;
   limit?: number;
+  goal?: string;
 }
 
+// The goal is asked for, never assumed. A goal read is raw for its whole range,
+// so a read that does not draw a conversion should not pay for one, and two
+// reads cannot take one at all: the server refuses a goal on a time series and
+// on time on page. Opting in means a chart or a card written tomorrow sends
+// what it draws and nothing else.
 export function toStatsParams(
   query: ViewQuery,
-  extra: { dim?: Dimension; limit?: number; interval?: Interval } = {},
+  extra: { dim?: Dimension; limit?: number; interval?: Interval; goal?: boolean } = {},
 ): StatsParams {
   const params: StatsParams = { from: query.range.from, to: query.range.to };
   const filters = encodeFilters(query.filters);
@@ -214,6 +251,9 @@ export function toStatsParams(
   }
   if (extra.limit !== undefined) {
     params.limit = extra.limit;
+  }
+  if (extra.goal === true && query.goal !== null) {
+    params.goal = query.goal;
   }
   return params;
 }
@@ -232,5 +272,6 @@ export function cacheKey(siteId: string, params: StatsParams): unknown[] {
     params.interval ?? '',
     params.dim ?? '',
     params.limit ?? 0,
+    params.goal ?? '',
   ];
 }

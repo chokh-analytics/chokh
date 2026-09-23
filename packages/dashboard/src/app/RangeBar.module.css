@@ -138,6 +138,14 @@
   color: var(--ink);
 }
 
+/* The one sentence in the goal list when there is nothing to list. */
+.pickerNote {
+  margin: 0;
+  padding: var(--s1) var(--s3) var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
 .custom {
   display: grid;
   gap: var(--s3);
