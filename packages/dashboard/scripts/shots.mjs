@@ -1,4 +1,4 @@
-// The fourteen pictures: seven reports, two themes.
+// The eighteen pictures: nine reports, two themes.
 //
 // A developer decides in about ten seconds of screenshots whether a dashboard
 // is worth installing, so these are a deliverable rather than a debugging aid,
@@ -21,15 +21,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'screenshots');
 // The ones the README carries, and every one of them is embedded in it: a
 // picture committed and referenced from nowhere is a file nobody can find and
-// nobody can delete. All fourteen are taken every run and the rest are not
+// nobody can delete. All eighteen are taken every run and the rest are not
 // committed, because a README picture has to be in the repository to be a
-// README picture and the other ten are a regenerable command away.
+// README picture and the other twelve are a regenerable command away.
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
   ['02-realtime-dark', 'dashboard-realtime-dark.png'],
   ['05-geo-light', 'dashboard-geo-light.png'],
   ['07-people-dark', 'dashboard-people-dark.png'],
+  ['08-events-dark', 'dashboard-events-dark.png'],
+  ['09-goals-light', 'dashboard-goals-light.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser
 // suite drives never take each other's place: a screenshot of live data is a
@@ -47,6 +49,10 @@ const PAGES = [
   { name: '05-geo', path: `/${SITE}/geo` },
   { name: '06-devices', path: `/${SITE}/devices` },
   { name: '07-people', path: `/${SITE}/people/v/v_abcdef0001` },
+  // An event chosen, so the picture has its property breakdown under it.
+  { name: '08-events', path: `/${SITE}/events?filters=event%3D%3Dsignup` },
+  // A goal chosen, so the picture has the chip and the chosen row.
+  { name: '09-goals', path: `/${SITE}/goals?goal=g_signup` },
 ];
 const THEMES = ['light', 'dark'];
 

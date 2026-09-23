@@ -13,14 +13,22 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  AGGREGATE,
   ENGAGEMENT,
+  EVENTS,
+  GOALS,
   ME,
   PROFILE,
   REALTIME,
-  breakdown,
+  aggregateFor,
+  breakdownFor,
+  goalStats,
+  properties,
   timeseries,
 } from './fixture-data.mjs';
+
+// What a goal read says about itself: raw rows, back as far as the site keeps
+// them.
+const RAW = { retentionDays: 180, rawOnly: true };
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
@@ -72,13 +80,31 @@ function api(url, res) {
     return ok(res, ME);
   }
   if (path.endsWith('/stats/aggregate')) {
-    return ok(res, AGGREGATE);
+    const goal = params.get('goal');
+    return ok(res, aggregateFor(goal), goal === null ? undefined : RAW);
   }
   if (path.endsWith('/stats/timeseries')) {
     return ok(res, timeseries(params.get('interval') ?? 'day'));
   }
   if (path.endsWith('/stats/breakdown')) {
-    return ok(res, breakdown(params.get('dim') ?? 'page', Number(params.get('limit') ?? 10)));
+    const goal = params.get('goal');
+    return ok(
+      res,
+      breakdownFor(params.get('dim') ?? 'page', Number(params.get('limit') ?? 10), goal),
+      goal === null ? undefined : RAW,
+    );
+  }
+  if (path.endsWith('/stats/goals')) {
+    return ok(res, goalStats(), RAW);
+  }
+  if (path.endsWith('/stats/events')) {
+    return ok(res, EVENTS, RAW);
+  }
+  if (path.endsWith('/stats/properties')) {
+    return ok(res, properties(params.get('event') ?? '', params.get('property')), RAW);
+  }
+  if (path.endsWith('/goals')) {
+    return ok(res, { goals: GOALS }, { siteId: 's_demo', max: 50 });
   }
   if (path.endsWith('/stats/engagement')) {
     return ok(res, ENGAGEMENT, { retentionDays: 180 });

@@ -76,6 +76,11 @@ pa('reset');
 pa('consent', true);
 ```
 
+The third argument to `event` is its properties: what the site chose to say
+about the event, like a plan or a quiz id. Anybody who can read the site's
+reports can read them, so anything about a person belongs in the traits of
+`identify`, which only an account with `read:identity` sees.
+
 `identify` links this visitor to an account and flushes at once. `reset` forgets
 the account, the signature and, in persistent mode, the stored visitor id, so a
 logout starts a new visitor.

@@ -150,7 +150,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/me` | a session or a key | Who you are, your teams, and your sites with your scopes |
 | `POST /api/sso`, `GET /api/sso` | nothing | A five minute token becomes a session |
 | `GET /api/sites` | a session | The sites you may read |
-| `POST /api/sites` | owner of the team | At least one domain. Returns `identifySecret` once |
+| `POST /api/sites` | owner of the team | At least one domain; the zone goes in `settings.timezone`. Returns `identifySecret` once |
 | `GET /api/sites/:siteId` | `read:stats` | Never carries `identifySecret` |
 | `PATCH /api/sites/:siteId` | `admin` | Settings merged field by field |
 | `POST /api/sites/:siteId/identify-secret/rotate` | `admin` | Returns the new secret once |
@@ -161,6 +161,12 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=minute\|hour\|day\|week\|month` |
 | `GET /api/sites/:siteId/stats/breakdown` | `read:stats` | `dim=page\|referrer\|country\|…` |
 | `GET /api/sites/:siteId/stats/engagement` | `read:stats` | Time on page and scroll depth, raw rows only |
+| `GET /api/sites/:siteId/stats/events` | `read:stats` | Custom events by name, raw rows only |
+| `GET /api/sites/:siteId/stats/properties` | `read:stats` | One event by one property, `event=` required |
+| `GET /api/sites/:siteId/stats/goals` | `read:stats` | Every goal's conversion at once |
+| `GET /api/sites/:siteId/goals` | `read:stats` | The site's goals, oldest first |
+| `POST /api/sites/:siteId/goals` | `admin` | Add a goal |
+| `DELETE /api/sites/:siteId/goals/:goalId` | `admin` | Delete one; nothing counted is lost |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any breakdown, as a file |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
@@ -192,8 +198,83 @@ it starts is refused rather than answered with zeroes, because zeroes read as
   is `is`, `!=` is `is_not` and `~` is `contains`. The compact form has no escape,
   so a value containing a semicolon has to go as JSON.
 
+- `goal=` a goal's id, on `aggregate`, `breakdown` and `export.csv`. See
+  below.
+
 `meta` carries the site, its timezone and the range that was read, so a chart can
 label itself without drawing a day boundary a second time.
+
+### Goals and conversions
+
+A goal is a page being viewed or a custom event being sent, counted as a
+success. Reading the list needs `read:stats`; adding and deleting need `admin`,
+the scope site settings need, because a goal changes what every report of the
+site says.
+
+```
+POST /api/sites/my_site/goals
+{ "name": "Signed up", "kind": "event", "match": "signup", "value": 1 }
+
+{ "name": "Checked out", "kind": "page", "match": "/*/checkout/done" }
+```
+
+- **`kind: "page"`** matches a pageview's path exactly as the tracker sent it.
+  It starts with `/`, and a `*` stands for any run of characters inside one
+  segment, so `/*/checkout/done` matches `/en/checkout/done` and not
+  `/en/x/checkout/done`. Nothing else is special.
+- **`kind: "event"`** matches one custom event name exactly, from a page or from
+  a server. A page timing is never a conversion.
+- **`value`** is optional, a plain number with no unit, counted once per
+  completion.
+
+The id is derived from the site, the kind and the match, so asking the same
+question twice is `409 GOAL_EXISTS` with the existing id in `details.goalId`. A
+site has at most 50 goals (`409 GOAL_LIMIT`), a body that does not validate is
+`400 INVALID_GOAL` with the issues, and an id that is not this site's is
+`404 GOAL_NOT_FOUND`, including an id of another site asked with a key bound to
+this one. There is no edit route: delete and add again. Deleting loses nothing,
+because nothing is counted when a goal is written; a goal is a question asked of
+the raw events, which is also why one added today answers for every day the
+events still cover.
+
+With `goal=<id>` on `aggregate` the result carries a `conversion` (and a
+`previousConversion` with a comparison); on `breakdown` every row carries one;
+`export.csv` gains `converted_visitors`, `completions`, `conversion_rate` and
+`value`. A conversion is:
+
+```
+{ "visitors": 38, "completions": 44, "rate": 0.12, "value": 44 }
+```
+
+A visitor converts on a day if a conversion event of theirs happened that day,
+on the site's calendar. A row's converted visitors are, day by day, the visitors
+counted in that row who also converted that day, added up over the range: the
+same arithmetic as visitors, so `rate` never passes 1 and is `null` over nobody.
+The conversion event does not have to carry the row's dimension, so an order paid
+by somebody who arrived from a campaign that morning counts in that campaign's
+row. Filters narrow the people a conversion is counted against, never the goal.
+A goal read is raw for its whole range, visitors included, and says so with
+`rawOnly: true` and `retentionDays` in the meta. `timeseries` and `engagement`
+refuse a goal with `400 UNSUPPORTED_GOAL` rather than ignoring it.
+
+`GET /stats/goals` answers every goal of the site at once, each with its record
+and one conversion against the range's visitors.
+
+### Events and properties
+
+`GET /stats/events` lists the range's custom events by name, each with its
+visitors, how many times it was sent, and `rate`, its share of the range's
+visitors. `GET /stats/properties?event=signup&property=plan` breaks one event down
+by one property: `properties` lists the names it carried, most used first (at
+most 50), `property` is the one the rows are about (the one asked for, else the
+most used), and an event sent without it is the `""` row, so the rows add up to
+the event. `event` is required (`400 MISSING_EVENT`). Both read raw rows only,
+and neither takes a goal.
+
+A property is something a site chose to report about an event, like a plan, a
+quiz id or a button's place on the page, so its values are readable with
+`read:stats`; anything about a person belongs in the traits of an identify,
+which stay behind `read:identity`.
 
 ### Time on page and scroll depth
 
@@ -540,6 +621,11 @@ driver. Which adapter it opens is decided once at boot:
   keeps nothing across a restart. It is not a deployment.
 
 Both adapters pass the same conformance suite in `@chokh/store`.
+
+**MongoDB 5.0 or newer.** A property value is read with `$getField`, which 5.0
+introduced, so that a property name with a dot or a dollar in it stays a name.
+The adapter reads the server's version once when it opens and the boot log
+line that names the storage adapter carries it (`"store":"mongodb","version":"7.0.24"`).
 
 ### Create the indexes before you collect anything
 

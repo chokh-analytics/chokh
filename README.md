@@ -68,6 +68,32 @@ the lightest band with one country in the darkest. The outlines are projected
 once at build time and shipped as path strings, so no browser downloads a
 mapping library to draw a file that never changes.
 
+**Events** lists what your pages and your server said happened, by name.
+
+![The events report with one event broken down by its plan, dark](docs/images/dashboard-events-dark.png)
+
+A page timing is not an event and is not in the list. Clicking an event filters
+the page to it, the same as any other row, and the card under it breaks that
+event down by the properties it carried: one tab per property, most used first,
+and an Unknown row for the times it was sent without one, so the rows add up to
+the event.
+
+**Goals** turn a page or an event into a success, and every report can then be
+read against one.
+
+![The goals report with a goal chosen](docs/images/dashboard-goals-light.png)
+
+A goal is a page being viewed (a `*` stands for one part of the path, so
+`/*/checkout/done` covers every locale prefix) or an event being sent, with an
+optional value that is a plain number with no unit. Choose one in the range bar
+and every breakdown gains a conversion column: the share of each row's visitors
+who reached the goal that same day, counted a day at a time like visitors, so it
+never passes 100%. The goal is carried in the link, so "of the people from this
+campaign, how many signed up" is a view somebody can send. A goal is a question
+asked of the raw events rather than a counter, so one added today answers for
+every day the events still cover, and deleting one loses nothing. Only an owner
+of the site adds or removes goals.
+
 **It comes with the server.** There is no second process, no separate host and
 no CDN: `docker compose up` serves the dashboard and the collector on one
 origin, which is also why the session cookie works and why nothing here is a
@@ -75,17 +101,17 @@ cross-origin request.
 
 ### What it costs to load
 
-One run of `pnpm size:dashboard` on 2026-09-20, which walks `dist/` and gzips
+One run of `pnpm size:dashboard` on 2026-09-23, which walks `dist/` and gzips
 every file that gzip does anything to. Bytes, because a kilobyte means two
 things and half a table in each is how a figure stops being checkable:
 
 | | bytes, gzipped |
 | --- | --- |
-| The first paint: the shell, the Overview and what they share | 26,709 |
+| The first paint: the shell, the Overview and what they share | 29,542 |
 | Libraries: React, the router, the query cache | 84,611 |
 | The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
-| The six other reports, one file each, loaded when opened | 12,591 |
-| Stylesheets | 9,800 |
+| The eight other reports, one file each, loaded when opened | 17,831 |
+| Stylesheets | 11,032 |
 | Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
@@ -113,7 +139,7 @@ takes a key the browser already uses.
 
 ```bash
 pnpm build
-pnpm --filter @chokh/dashboard run shots   # fourteen screenshots, seven reports in two themes
+pnpm --filter @chokh/dashboard run shots   # eighteen screenshots, nine reports in two themes
 pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
 pnpm --filter @chokh/dashboard run test:e2e
 ```
@@ -132,7 +158,8 @@ git clone https://github.com/chokh-analytics/chokh.git && cd chokh && docker com
 ```
 
 The dashboard and the collector are then on `http://localhost:4100`, with
-MongoDB and Redis beside them. Register the first account, which owns the install,
+MongoDB and Redis beside them. Chokh needs MongoDB 5.0 or newer; the compose
+file runs 7. Register the first account, which owns the install,
 and create a site:
 
 ```bash
@@ -142,8 +169,11 @@ curl -c jar -X POST localhost:4100/api/auth/register \
 
 curl -b jar -X POST localhost:4100/api/sites \
   -H 'content-type: application/json' \
-  -d '{"id":"my_site","name":"My site","domains":["example.com"]}'
+  -d '{"id":"my_site","name":"My site","domains":["example.com"],"settings":{"timezone":"Asia/Dhaka"}}'
 ```
+
+The site's timezone goes inside `settings`, as `settings.timezone`; a
+`timezone` at the top of the body is not read, and the site keeps the default.
 
 Then drop the script into any page you want counted:
 

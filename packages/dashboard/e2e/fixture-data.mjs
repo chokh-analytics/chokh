@@ -290,3 +290,143 @@ export const PROFILE = {
       : { path: ROWS.page[index % ROWS.page.length] }),
   })),
 };
+
+// Two goals, one of each kind, and what they counted. The same shapes the goal
+// routes answer: the goal record from the control plane, a conversion from the
+// store, visitors a day at a time and the rate a share of them.
+export const GOALS = [
+  {
+    siteId: 's_demo',
+    id: 'g_signup',
+    kind: 'event',
+    match: 'signup',
+    name: 'Signed up',
+    value: 1,
+    createdBy: 'u_demo',
+    createdAt: NOW - 20 * 86_400_000,
+  },
+  {
+    siteId: 's_demo',
+    id: 'g_checkout',
+    kind: 'page',
+    match: '/*/checkout/done',
+    name: 'Checked out',
+    createdBy: 'u_demo',
+    createdAt: NOW - 6 * 86_400_000,
+  },
+];
+
+function conversionOf(visitors, rate, value) {
+  const converted = Math.round(visitors * rate);
+  const completions = Math.round(converted * 1.18);
+  return {
+    visitors: converted,
+    completions,
+    rate: visitors === 0 ? null : converted / visitors,
+    value: value === undefined ? null : completions * value,
+  };
+}
+
+// A goal read against the aggregate: the site's own figure.
+export function aggregateFor(goalId) {
+  const goal = GOALS.find((candidate) => candidate.id === goalId);
+  if (goal === undefined) {
+    return AGGREGATE;
+  }
+  return {
+    ...AGGREGATE,
+    conversion: conversionOf(AGGREGATE.metrics.visitors, 0.061, goal.value),
+    previousConversion: conversionOf(AGGREGATE.previous.visitors, 0.054, goal.value),
+  };
+}
+
+// Every row of a breakdown with a conversion on it. The rate walks by row, the
+// way the bounce rate does, because a column where every row reads the same is
+// a column that reads as a bug: search converts better than social here.
+export function breakdownFor(dim, limit, goalId) {
+  const answer = breakdown(dim, limit);
+  const goal = GOALS.find((candidate) => candidate.id === goalId);
+  if (goal === undefined) {
+    return answer;
+  }
+  return {
+    ...answer,
+    rows: answer.rows.map((row, index) => ({
+      ...row,
+      conversion: conversionOf(
+        row.metrics.visitors,
+        Math.round((0.038 + ((index * 5) % 7) * 0.011) * 1000) / 1000,
+        goal.value,
+      ),
+    })),
+  };
+}
+
+export function goalStats() {
+  const visitors = AGGREGATE.metrics.visitors;
+  return {
+    visitors,
+    rows: [
+      { goal: GOALS[0], conversion: conversionOf(visitors, 0.061, GOALS[0].value) },
+      { goal: GOALS[1], conversion: conversionOf(visitors, 0.017, GOALS[1].value) },
+    ],
+    rawOnly: true,
+  };
+}
+
+// The custom events of the range. A page timing is not among them.
+export const EVENTS = {
+  visitors: AGGREGATE.metrics.visitors,
+  rows: [
+    { key: 'signup', visitors: 930, events: 1_104 },
+    { key: 'playground_run', visitors: 612, events: 4_870 },
+    { key: 'checkout_start', visitors: 348, events: 391 },
+    { key: '404', visitors: 121, events: 143 },
+    { key: 'quiz_start', visitors: 96, events: 188 },
+  ].map((row) => ({ ...row, rate: row.visitors / AGGREGATE.metrics.visitors })),
+  rawOnly: true,
+};
+
+// One event by one property. The names a page passed, most used first, and
+// the rows of the one asked for; an event without the property is the unknown
+// row, so the rows add up to the event.
+const PROPERTY_ROWS = {
+  plan: [
+    ['free', 612, 701],
+    ['pro', 244, 296],
+    ['team', 51, 77],
+    ['', 23, 30],
+  ],
+  source: [
+    ['hero', 402, 470],
+    ['pricing', 318, 371],
+    ['footer', 144, 181],
+    ['', 66, 82],
+  ],
+  referral_code: [
+    ['IMUPC2026', 88, 90],
+    ['', 842, 1_014],
+  ],
+};
+
+export function properties(event, property) {
+  const names = Object.keys(PROPERTY_ROWS);
+  const chosen = property !== null && names.includes(property) ? property : names[0];
+  return {
+    event,
+    properties: [
+      { key: 'plan', events: 1_104 },
+      { key: 'source', events: 1_104 },
+      { key: 'referral_code', events: 90 },
+    ],
+    property: chosen,
+    visitors: AGGREGATE.metrics.visitors,
+    rows: PROPERTY_ROWS[chosen].map(([key, visitors, events]) => ({
+      key,
+      visitors,
+      events,
+      rate: visitors / AGGREGATE.metrics.visitors,
+    })),
+    rawOnly: true,
+  };
+}
