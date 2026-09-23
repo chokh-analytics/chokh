@@ -13,6 +13,11 @@ import {
   createDeleteGoalController,
   createListGoalsController,
 } from '../controllers/goals.controller.js';
+import {
+  createCreateFunnelController,
+  createDeleteFunnelController,
+  createListFunnelsController,
+} from '../controllers/funnels.controller.js';
 import { createLicenseController } from '../controllers/license.controller.js';
 import {
   createUserController,
@@ -39,7 +44,9 @@ import {
   createEngagementController,
   createEventsController,
   createExportController,
+  createFunnelStatsController,
   createGoalStatsController,
+  createJourneysController,
   createPropertiesController,
   createTimeseriesController,
 } from '../controllers/stats.controller.js';
@@ -62,7 +69,7 @@ import type { AuthDeps } from '../services/auth.service.js';
 // The whole authorization model is readable here, which is the point of putting
 // them in one file: read:stats for the reports, read:identity for the two routes
 // that name a person, write:events for what a backend sends, admin for keys,
-// settings and goals. A route with no hook is a route anybody may call, and there are four:
+// settings, goals and funnels. A route with no hook is a route anybody may call, and there are four:
 // registration (open only while there is nobody), login, and the two SSO forms,
 // all four rate limited by address.
 //
@@ -194,6 +201,36 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/goals/:goalId',
     { preHandler: scope('admin') },
     createDeleteGoalController(deps),
+  );
+
+  // Funnels, the same split: reading the list is read:stats, adding and
+  // deleting are admin. The two reports that read raw rows for the whole range,
+  // how far people got through one funnel and the paths visits took, are
+  // read:stats like every report.
+  app.get(
+    '/api/sites/:siteId/funnels',
+    { preHandler: scope('read:stats') },
+    createListFunnelsController(deps),
+  );
+  app.post(
+    '/api/sites/:siteId/funnels',
+    { preHandler: scope('admin') },
+    createCreateFunnelController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/funnels/:funnelId',
+    { preHandler: scope('admin') },
+    createDeleteFunnelController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/funnel',
+    { preHandler: scope('read:stats') },
+    createFunnelStatsController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/journeys',
+    { preHandler: scope('read:stats') },
+    createJourneysController(deps),
   );
 
   // Who is here now.

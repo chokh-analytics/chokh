@@ -167,6 +167,11 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/sites/:siteId/goals` | `read:stats` | The site's goals, oldest first |
 | `POST /api/sites/:siteId/goals` | `admin` | Add a goal |
 | `DELETE /api/sites/:siteId/goals/:goalId` | `admin` | Delete one; nothing counted is lost |
+| `GET /api/sites/:siteId/funnels` | `read:stats` | The site's funnels, oldest first |
+| `POST /api/sites/:siteId/funnels` | `admin` | Add a funnel |
+| `DELETE /api/sites/:siteId/funnels/:funnelId` | `admin` | Delete one; nothing counted is lost |
+| `GET /api/sites/:siteId/stats/funnel` | `read:stats` | How far people got through one funnel, `funnel=` required |
+| `GET /api/sites/:siteId/stats/journeys` | `read:stats` | The paths visits took, entry and three pages on |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any breakdown, as a file |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
@@ -275,6 +280,86 @@ A property is something a site chose to report about an event, like a plan, a
 quiz id or a button's place on the page, so its values are readable with
 `read:stats`; anything about a person belongs in the traits of an identify,
 which stay behind `read:identity`.
+
+### Funnels and journeys
+
+A funnel is steps a visitor takes in order, within a window. Reading the list
+and the report needs `read:stats`; adding and deleting need `admin`, as goals do.
+
+```
+POST /api/sites/my_site/funnels
+{ "name": "Checkout", "window": "7d",
+  "steps": [ { "goalId": "g_x" }, { "page": "/*/pricing", "name": "Pricing" }, { "goalId": "g_y" } ] }
+```
+
+- **A step** is a goal of this site, by id, or a typed path under a page goal's
+  rules. A goal step copies the goal's question (its kind and match) when the
+  funnel is created and keeps `goalId` only to say where it came from, so
+  deleting the goal changes no funnel. `name` is optional on both and defaults to
+  the goal's name or the path. 2 to 8 steps.
+- **`window`** is `visit`, `1h`, `1d`, `7d` or `30d`: how long a visitor has from
+  the first step to the last, or every step inside one stay. Left out, it is `7d`
+  on a site that keeps its visitors (`visitorIdMode: persistent`) and `visit` on
+  a cookieless one, whose visitor ids are a daily hash that no chain can follow
+  across midnight. A server event joins the stay it arrives in under the thirty
+  minute rule, so a step a backend confirms minutes later completes a `visit`
+  funnel; one that can come later than that belongs in a time window.
+
+The id is derived from the site, the window and the steps in order, so the same
+funnel under another name is `409 FUNNEL_EXISTS` with the existing id in
+`details.funnelId`. A site has at most 50 (`409 FUNNEL_LIMIT`); a body that does
+not validate is `400 INVALID_FUNNEL` with the issues; a goal step naming a goal
+that is not this site's is `404 GOAL_NOT_FOUND` with `details.step`, counted
+from 0. There is no edit route, and deleting loses nothing.
+
+`GET /stats/funnel?funnel=<id>` (`400 MISSING_FUNNEL` without one, `404
+FUNNEL_NOT_FOUND` for an id that is not this site's) answers the funnel, the
+segment's `visitors`, and one entry per step:
+
+```
+{ "visitors": 120, "dropOff": 45, "rate": 0.6, "stepRate": 0.73 }
+```
+
+`visitors` reached this step and every one before it, in order, within the
+window; `dropOff` is how many of the previous step did not; `rate` is over the
+first step and `stepRate` over the previous one, each `null` over nobody.
+
+- **Counted once per visitor over the whole range, never per day.** A chain
+  begun on Monday and finished on Tuesday belongs to neither day. So over more
+  than a day the first step is distinct people, not the Visitors figure, which
+  adds up each day's uniques; and a funnel is not a goal's conversion, which is
+  per day.
+- **In order, one row one step.** Anything between two steps is ignored, a
+  funnel of `/home` then `/home` needs two views of `/home`, and repeating the
+  first step starts a new clock without undoing what an earlier start reached.
+  At the same millisecond, rows are taken in step order. The last step may land
+  exactly on the window's edge. Every step has to fall inside the range.
+- **Filters narrow the people and never the steps.** A visitor is in the segment
+  when a row of theirs in the range matches every filter a row carries and, for
+  `entry`, `exit` and `channel`, a stay of theirs that began in the range
+  matches those. The events and goals reports still refuse those three, because
+  they count rows and a row does not know the stay it came in on, while a funnel
+  and a journey count people and visits, which do.
+- **The first 1,000 step rows of a visitor** in the range are the ones folded.
+  No person gets near it; it is what keeps a read that asks for the bots from
+  gathering one crawler's hundred thousand rows into one group.
+
+`GET /stats/journeys` answers the paths the range's visits took, from the page
+they came in on through the next three: `columns` (four, each a list of nodes
+with `visits`, `exits`, where visits ended, and `onward`, which only the last
+column has, for visits that went further), `links` from each column to the
+next, and the total `visits`. A journey is a visit that began in the range and
+viewed a page; a page viewed twice back to back is one step, and the first 50
+pageviews of a visit are the ones read. Each column keeps its most visited pages,
+`branches=` 1 to 10 of them and 5 by default (`400 INVALID_QUERY` otherwise),
+and folds the rest into one Other node, whose `key` is `null`; a visit in Other
+keeps the pages after it. It counts visits, not visitors, because a path is a
+fact about one visit. Filters narrow the visits and never the path, the same
+way. Pages after the end of the range are not read.
+
+Both are raw for the whole range and say so with `rawOnly: true` and
+`retentionDays`. Neither takes a goal (`400 UNSUPPORTED_GOAL`), and neither
+draws a comparison: `compare` is ignored, as it is on the events report.
 
 ### Time on page and scroll depth
 
@@ -623,7 +708,9 @@ driver. Which adapter it opens is decided once at boot:
 Both adapters pass the same conformance suite in `@chokh/store`.
 
 **MongoDB 5.0 or newer.** A property value is read with `$getField`, which 5.0
-introduced, so that a property name with a dot or a dollar in it stays a name.
+introduced, so that a property name with a dot or a dollar in it stays a name,
+and the funnel and journeys reads cap each visitor's rows with
+`$setWindowFields`, 5.0 as well.
 The adapter reads the server's version once when it opens and the boot log
 line that names the storage adapter carries it (`"store":"mongodb","version":"7.0.24"`).
 

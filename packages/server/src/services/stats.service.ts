@@ -7,8 +7,12 @@ import type {
   Conversion,
   EngagementResult,
   EventsResult,
+  FunnelRead,
+  FunnelResult,
   Goal,
   GoalStatsResult,
+  JourneyQuery,
+  JourneyResult,
   Metrics,
   PropertyQuery,
   PropertyResult,
@@ -127,4 +131,19 @@ export async function breakdownCsv(
       ),
     },
   };
+}
+
+export function funnelStats(
+  store: AnalyticsStore,
+  query: Query,
+  funnel: FunnelRead,
+): Promise<Outcome<FunnelResult>> {
+  return attempt(() => store.funnelStats(query, funnel));
+}
+
+export function journeys(
+  store: AnalyticsStore,
+  query: JourneyQuery,
+): Promise<Outcome<JourneyResult>> {
+  return attempt(() => store.journeys(query));
 }

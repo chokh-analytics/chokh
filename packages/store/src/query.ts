@@ -594,7 +594,13 @@ export interface PropertyResult {
 // within a week" are both real questions.
 export type FunnelWindow = 'visit' | '1h' | '1d' | '7d' | '30d';
 
-export const FUNNEL_WINDOWS: readonly FunnelWindow[] = ['visit', '1h', '1d', '7d', '30d'];
+export const FUNNEL_WINDOWS = [
+  'visit',
+  '1h',
+  '1d',
+  '7d',
+  '30d',
+] as const satisfies readonly FunnelWindow[];
 
 const HOUR_MS = 60 * 60 * 1000;
 

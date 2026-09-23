@@ -10,6 +10,8 @@ import {
   toStoreQuery,
   type StatsQueryInput,
 } from '../schemas/stats.schema.js';
+import { funnelStatsQuerySchema, journeysQuerySchema } from '../schemas/funnels.schema.js';
+import { funnelRead } from '../services/funnels.service.js';
 import { goalRead } from '../services/goals.service.js';
 import {
   aggregate,
@@ -17,7 +19,9 @@ import {
   breakdownCsv,
   engagement,
   events,
+  funnelStats,
   goalStats,
+  journeys,
   properties,
   timeseries,
 } from '../services/stats.service.js';
@@ -329,5 +333,91 @@ export function createGoalStatsController(deps: ApiDeps) {
         rawMeta(parsed.site, parsed.input),
       ),
     );
+  };
+}
+
+// A report that has no use for a goal says so rather than quietly answering
+// something else, the way the goals report does.
+function refuseGoal(input: { goal?: string | undefined }, reply: FastifyReply, what: string): boolean {
+  if (input.goal === undefined) {
+    return false;
+  }
+  void reply.code(400).send(fail('UNSUPPORTED_GOAL', `${what} cannot be counted against a goal`));
+  return true;
+}
+
+// How far the people of the range got through one funnel, named by id and
+// resolved against the site the route already read, so a key of one site can
+// never read another site's funnel. Raw rows only, and the meta says so.
+export function createFunnelStatsController(deps: ApiDeps) {
+  return async function funnelStatsController(request: FastifyRequest, reply: FastifyReply) {
+    const site = request.site;
+    if (site === null) {
+      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
+    }
+    const raw = request.query as Record<string, unknown>;
+    if (typeof raw.funnel !== 'string' || raw.funnel === '') {
+      return reply.code(400).send(fail('MISSING_FUNNEL', 'A funnel report needs a funnel'));
+    }
+    const input = funnelStatsQuerySchema.safeParse(request.query);
+    if (!input.success) {
+      return reply
+        .code(400)
+        .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
+    }
+    if (input.data.to <= input.data.from) {
+      return reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
+    }
+    if (refuseGoal(input.data, reply, 'A funnel')) {
+      return reply;
+    }
+    const funnel = await deps.store.funnel(site.id, input.data.funnel);
+    if (funnel === null) {
+      return reply
+        .code(404)
+        .send(fail('FUNNEL_NOT_FOUND', `No funnel ${input.data.funnel} belongs to ${site.id}`));
+    }
+    const result = await funnelStats(
+      deps.store,
+      toStoreQuery(site.id, input.data),
+      funnelRead(funnel),
+    );
+    if (!result.ok) {
+      return reply.code(result.status).send(fail(result.code, result.message));
+    }
+    return reply.send(
+      ok({ funnel, ...result.data }, { ...rawMeta(site, input.data), funnel: funnel.id }),
+    );
+  };
+}
+
+// The paths the range's visits took. Raw rows only, and the meta says so.
+export function createJourneysController(deps: ApiDeps) {
+  return async function journeysController(request: FastifyRequest, reply: FastifyReply) {
+    const site = request.site;
+    if (site === null) {
+      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
+    }
+    const input = journeysQuerySchema.safeParse(request.query);
+    if (!input.success) {
+      return reply
+        .code(400)
+        .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
+    }
+    if (input.data.to <= input.data.from) {
+      return reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
+    }
+    if (refuseGoal(input.data, reply, 'The journeys report')) {
+      return reply;
+    }
+    const query = toStoreQuery(site.id, input.data);
+    const result = await journeys(
+      deps.store,
+      input.data.branches === undefined ? query : { ...query, branches: input.data.branches },
+    );
+    if (!result.ok) {
+      return reply.code(result.status).send(fail(result.code, result.message));
+    }
+    return reply.send(ok(result.data, rawMeta(site, input.data)));
   };
 }
