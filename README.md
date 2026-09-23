@@ -15,6 +15,8 @@ a collector, a stats API, a realtime stream and a dashboard.
 - Country, region and city from an offline IP database, plus browser, OS and device
 - Who is on the site right now, which page they are on and how long they have been there
 - Custom events, `identify` for signed-in people, and per-person history
+- Goals with a conversion column on every report, funnels with the drop-off at
+  every step, and the paths visits took from the page they came in on
 - Privacy as configuration: cookieless or persistent visitor ids, full, anonymised or
   no IP storage, bot filtering, per-site retention
 - A JSON API for all of it, with a CSV export and a live stream of who is here
@@ -94,6 +96,38 @@ asked of the raw events rather than a counter, so one added today answers for
 every day the events still cover, and deleting one loses nothing. Only an owner
 of the site adds or removes goals.
 
+**Funnels** are steps people take in order, each a page or one of your goals,
+and how many of them got through each one.
+
+![A four step funnel, drawn with who left between the steps](docs/images/dashboard-funnels-light.png)
+
+A funnel has two to eight steps and a time to finish: the same visit, or an
+hour, a day, 7 days or 30 days from the first step to the last. Seven days is
+the default on a site that remembers its visitors, and the same visit on a
+cookieless one, whose visitor ids cannot follow anybody across midnight. Each
+step is a bar as long as its share of the first, with the count and the share
+beside it as text, and between two steps it says how many left, in grey rather
+than red: a funnel narrows by design, and leaving one is not an error. A person
+counts once over the whole range, so over several days the first step is not the
+Visitors figure, and the page says so under the drawing. The funnel being read
+is carried in the link, the filters narrow the people and never the steps, and a
+step made from a goal copies the goal's question, so deleting the goal changes no
+funnel. Like a goal, a funnel is a question asked of the raw events: deleting
+one loses nothing, and only an owner of the site adds or removes one.
+
+**Journeys** is the fourth tab of Top pages, beside Entry and Exit: the paths
+visits took from the page they came in on through the next three.
+
+![The paths visits took, four steps deep](docs/images/dashboard-journeys-dark.png)
+
+It counts visits, not visitors, because a path is a fact about one visit, and a
+page reloaded back to back is one step. Each step keeps its most visited pages,
+3, 5 or 10 of them, chosen in the card and kept in the link, and folds the rest
+into Other; every node says how many visits ended there, so every column adds
+up. Pressing a page narrows the report to the visits that saw it. On a phone the
+flow keeps a width a path can be read at and scrolls inside its card, and the
+same numbers are there as a table for a screen reader.
+
 **It comes with the server.** There is no second process, no separate host and
 no CDN: `docker compose up` serves the dashboard and the collector on one
 origin, which is also why the session cookie works and why nothing here is a
@@ -107,11 +141,11 @@ things and half a table in each is how a figure stops being checkable:
 
 | | bytes, gzipped |
 | --- | --- |
-| The first paint: the shell, the Overview and what they share | 29,542 |
+| The first paint: the shell, the Overview and what they share | 31,133 |
 | Libraries: React, the router, the query cache | 84,611 |
 | The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
-| The eight other reports, one file each, loaded when opened | 17,831 |
-| Stylesheets | 11,032 |
+| The nine other reports and the Journeys tab, one file each, loaded when opened | 25,248 |
+| Stylesheets | 13,226 |
 | Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
@@ -121,9 +155,10 @@ and CI fails a build that puts any group over its own.
 
 ### Accessibility
 
-Lighthouse scores it 1 on the Overview and on Realtime, in both the light and
-the dark palette, over 25 and 23 applicable audits respectively, against the
-real server rather than a fixture. CI fails under 1, and the run also asserts
+Lighthouse scores it 1 on the Overview, on Realtime, on Funnels with a funnel
+drawn and on the Journeys tab, in both the light and the dark palette, over 25,
+23, 26 and 32 applicable audits respectively, against the real server rather
+than a fixture. CI fails under 1, and the run also asserts
 that the page it audited had the dashboard rendered in it, because Lighthouse
 scores a blank page 1. Every chart carries its numbers as a table for a screen
 reader, including the world map.
@@ -139,7 +174,7 @@ takes a key the browser already uses.
 
 ```bash
 pnpm build
-pnpm --filter @chokh/dashboard run shots   # eighteen screenshots, nine reports in two themes
+pnpm --filter @chokh/dashboard run shots   # twenty-two screenshots, eleven views in two themes
 pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
 pnpm --filter @chokh/dashboard run test:e2e
 ```

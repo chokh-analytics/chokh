@@ -361,6 +361,10 @@ Both are raw for the whole range and say so with `rawOnly: true` and
 `retentionDays`. Neither takes a goal (`400 UNSUPPORTED_GOAL`), and neither
 draws a comparison: `compare` is ignored, as it is on the events report.
 
+The dashboard draws both: Funnels is a destination of its own, and Journeys is a
+tab on Pages. A page pressed in the flow filters the report with `page`, the
+one of the two that every other card of that report can answer too.
+
 ### Time on page and scroll depth
 
 `GET /api/sites/:siteId/stats/engagement?dim=page` answers one row per value

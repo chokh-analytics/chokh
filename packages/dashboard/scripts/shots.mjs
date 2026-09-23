@@ -21,9 +21,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'screenshots');
 // The ones the README carries, and every one of them is embedded in it: a
 // picture committed and referenced from nowhere is a file nobody can find and
-// nobody can delete. All eighteen are taken every run and the rest are not
+// nobody can delete. All twenty-two are taken every run and the rest are not
 // committed, because a README picture has to be in the repository to be a
-// README picture and the other twelve are a regenerable command away.
+// README picture and the other fourteen are a regenerable command away.
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
@@ -32,6 +32,8 @@ const README_SHOTS = new Map([
   ['07-people-dark', 'dashboard-people-dark.png'],
   ['08-events-dark', 'dashboard-events-dark.png'],
   ['09-goals-light', 'dashboard-goals-light.png'],
+  ['10-funnels-light', 'dashboard-funnels-light.png'],
+  ['11-journeys-dark', 'dashboard-journeys-dark.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser
 // suite drives never take each other's place: a screenshot of live data is a
@@ -125,6 +127,9 @@ for (const theme of THEMES) {
 }
 
 await browser.close();
+// The fixture this script started, stopped, or the command never returns: a
+// child process keeps its parent running for as long as it runs.
+fixture.stop();
 console.warn(`\n${taken} screenshots in ${OUT}`);
 if (taken !== PAGES.length * THEMES.length) {
   process.exit(1);
