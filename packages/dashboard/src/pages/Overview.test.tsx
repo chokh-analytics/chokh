@@ -592,3 +592,17 @@ describe('Overview, with a goal chosen', () => {
     expect(new URLSearchParams(window.location.search).get('goal')).toBe('g_signup');
   });
 });
+
+// The picker on a site with no goals says so and points at the page that adds
+// one, rather than opening onto an empty list.
+describe('Overview, on a site with no goals', () => {
+  it('points the empty picker at the Goals page', async () => {
+    serve();
+    render(show({ goals: [] }));
+    await totalsLanded();
+
+    await userEvent.click(screen.getByRole('button', { name: /^Goal/ }));
+    expect(await screen.findByText('No goals yet.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Add a goal' })).toHaveAttribute('href', '/s_test/goals');
+  });
+});

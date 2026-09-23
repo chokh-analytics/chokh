@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type JSX, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { Link, useLocation, useRoute } from 'wouter';
 
 import { api } from '../lib/api.js';
@@ -20,7 +20,7 @@ import { AppContext, type AppContextValue } from './context.js';
 import { OPEN_SHORTCUTS, Shortcuts } from './shortcuts.js';
 import styles from './Shell.module.css';
 
-// The frame every report is drawn in: the mark, the site being read, seven
+// The frame every report is drawn in: the mark, the site being read, nine
 // destinations, and the three controls that are about the reader rather than
 // about the numbers.
 
@@ -38,6 +38,7 @@ export function destinationsFor(siteId: string): Destination[] {
     { path: `/${siteId}/geo`, label: messages.nav.geo },
     { path: `/${siteId}/devices`, label: messages.nav.devices },
     { path: `/${siteId}/events`, label: messages.nav.events },
+    { path: `/${siteId}/goals`, label: messages.nav.goals },
     { path: `/${siteId}/people`, label: messages.nav.people },
   ];
 }
@@ -269,6 +270,26 @@ export interface ShellProps {
 }
 
 export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element {
+  const nav = useRef<HTMLElement>(null);
+  const [location] = useLocation();
+
+  // On a phone the destinations are one row that scrolls sideways, and nine of
+  // them do not fit in 390 pixels. The page somebody is on has to be in view,
+  // or the row says nothing about where they are: Goals and People start past
+  // the right edge. Only the row scrolls, never the page.
+  useEffect(() => {
+    const row = nav.current;
+    const current = row?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (row === null || row === undefined || current === null || current === undefined) {
+      return;
+    }
+    const left = current.offsetLeft - row.offsetLeft;
+    const right = left + current.offsetWidth;
+    if (left < row.scrollLeft || right > row.scrollLeft + row.clientWidth) {
+      row.scrollLeft = Math.max(0, left - (row.clientWidth - current.offsetWidth) / 2);
+    }
+  }, [location]);
+
   return (
     <AppContext.Provider value={value}>
       <div className={styles.shell}>
@@ -281,7 +302,7 @@ export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element
               <Wordmark />
             </Link>
             <SiteSwitcher value={value} />
-            <nav className={styles.nav} aria-label={messages.a11y.mainLandmark}>
+            <nav className={styles.nav} aria-label={messages.a11y.mainLandmark} ref={nav}>
               {destinationsFor(value.site.id).map((destination) => (
                 <NavLink key={destination.path} to={destination.path} label={destination.label} />
               ))}

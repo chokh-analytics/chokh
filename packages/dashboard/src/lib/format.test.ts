@@ -12,6 +12,7 @@ import {
   formatExact,
   formatOnlineFor,
   formatRate,
+  formatValue,
   formatRatio,
   formatSince,
   viewsPerVisit,
@@ -198,5 +199,16 @@ describe('languageName', () => {
     expect(languageName(undefined)).toBeNull();
     expect(languageName('')).toBeNull();
     expect(languageName('not a tag')).toBeNull();
+  });
+});
+
+// A goal's value has no unit, so it is written as the number it is: grouped,
+// and with the decimals somebody gave it rather than rounded to a count.
+describe('formatValue', () => {
+  it('writes a plain number with no unit', () => {
+    expect(formatValue(110)).toBe('110');
+    expect(formatValue(12_500)).toBe('12,500');
+    expect(formatValue(7.5)).toBe('7.5');
+    expect(formatValue(1 / 3)).toBe('0.33');
   });
 });

@@ -50,6 +50,14 @@ function percentLabel(percent: number): string {
   return `${oneDecimal.endsWith('.0') ? oneDecimal.slice(0, -2) : oneDecimal}%`;
 }
 
+// A goal's value: a plain number with no unit, because a goal has none, and up
+// to two decimals, because a value of 2.5 a completion is a value somebody set.
+const VALUE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+
+export function formatValue(value: number): string {
+  return Number.isFinite(value) ? VALUE.format(value) : '0';
+}
+
 // A fraction from the store becomes a percentage on the page.
 export function formatRate(fraction: number | null | undefined): string | null {
   if (fraction === null || fraction === undefined || !Number.isFinite(fraction)) {

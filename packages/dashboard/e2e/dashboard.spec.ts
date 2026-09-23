@@ -95,6 +95,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Geo', 'Geography'],
     ['Devices', 'Devices'],
     ['Events', 'Events'],
+    ['Goals', 'Goals'],
     ['People', 'People'],
   ] as const) {
     await page.getByRole('link', { name: label, exact: true }).click();
@@ -151,6 +152,48 @@ test('serves its own fonts and nothing from anywhere else', async ({ page }) => 
   expect(outside).toEqual([]);
   const fonts = await page.evaluate(() => document.fonts.size);
   expect(fonts).toBeGreaterThan(0);
+});
+
+// Nine destinations do not fit in 390 pixels, so they are one row that scrolls
+// sideways under the bar. The header stays two rows, and the page somebody is
+// on is scrolled into the row rather than left past its right edge.
+test('keeps nine destinations in one row on a phone, with the current one in view', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const [path, label] of [
+    ['goals', 'Goals'],
+    ['people', 'People'],
+    ['events', 'Events'],
+  ] as const) {
+    await boot(page, `/${SITE}/${path}`);
+    const nav = page.getByRole('navigation', { name: 'Report' });
+    const row = await nav.boundingBox();
+    const current = await nav.getByRole('link', { name: label, exact: true }).boundingBox();
+    expect(row, 'the navigation has no box').not.toBeNull();
+    expect(current, `${label} has no box`).not.toBeNull();
+    if (row === null || current === null) {
+      return;
+    }
+    // One row of links, not a wrapped block of them.
+    expect(row.height).toBeLessThan(current.height * 2);
+    expect(current.x).toBeGreaterThanOrEqual(row.x - 1);
+    expect(current.x + current.width).toBeLessThanOrEqual(row.x + row.width + 1);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  }
+
+  // And the range bar stays two rows with the goal control in it: the goal and
+  // the zone share the second row rather than the zone falling to a third.
+  const goal = await page.getByRole('button', { name: 'Goal', exact: true }).boundingBox();
+  const zone = await page.getByText('Asia/Dhaka', { exact: true }).boundingBox();
+  expect(goal).not.toBeNull();
+  expect(zone).not.toBeNull();
+  if (goal !== null && zone !== null) {
+    expect(Math.abs(goal.y + goal.height / 2 - (zone.y + zone.height / 2))).toBeLessThan(goal.height);
+  }
 });
 
 test('reads on a phone without a sideways scrollbar', async ({ page }) => {
@@ -280,24 +323,30 @@ async function signupFromSearch(request: APIRequestContext, visitorId: string): 
   expect(answer.status(), 'the collector refused the batch').toBeLessThan(300);
 }
 
-async function goalFor(request: APIRequestContext, match: string): Promise<string> {
-  const answer = await request.post(`/api/sites/${SITE}/goals`, {
-    data: { name: 'Signed up in the suite', kind: 'event', match },
-  });
-  const body = (await answer.json()) as {
-    data?: { goal: { id: string } };
-    error?: { details?: { goalId?: string } };
-  };
-  // Created now, or by an earlier case of this same run: the id is derived from
-  // the question, so the second ask names the goal that already answers it.
-  const id = body.data?.goal.id ?? body.error?.details?.goalId;
-  expect(id, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
-  return id as string;
+// A goal made the way a person makes one: on the Goals page, with the form,
+// and chosen by pressing its name. Against a server this run started it is
+// created here; against one reused while the suite is being written it may
+// already exist, and the page says so in words, which is its own proof.
+async function goalFromThePage(page: Page, match: string): Promise<string> {
+  await boot(page, `/${SITE}/goals?range=today`);
+  const form = page.getByRole('region', { name: 'Add a goal' });
+  await form.getByLabel('Name', { exact: true }).fill('Signed up in the suite');
+  await form.getByLabel('Event name').fill(match);
+  await form.getByRole('button', { name: 'Add the goal' }).click();
+
+  const list = page.getByRole('region', { name: 'Goals', exact: true });
+  const created = list.getByRole('button', { name: 'Signed up in the suite' });
+  await expect(created.or(form.getByText('A goal for that already exists.'))).toBeVisible();
+  await expect(created).toBeVisible();
+  await created.click();
+  await expect(page).toHaveURL(/goal=g_/);
+  const goal = new URL(page.url()).searchParams.get('goal');
+  expect(goal).toBeTruthy();
+  return goal as string;
 }
 
 test('counts a goal on every breakdown, and never asks the chart for it', async ({ page }) => {
   await signupFromSearch(page.request, `v_goal_${Date.now()}`);
-  const goal = await goalFor(page.request, 'e2e_signup');
 
   const series: string[] = [];
   page.on('request', (request) => {
@@ -306,6 +355,15 @@ test('counts a goal on every breakdown, and never asks the chart for it', async 
       series.push(url.search);
     }
   });
+
+  const goal = await goalFromThePage(page, 'e2e_signup');
+  // Chosen on the Goals page, and the Goals page says what it counted.
+  await expect(
+    page
+      .getByRole('region', { name: 'Goals', exact: true })
+      .getByRole('row')
+      .filter({ hasText: 'Signed up in the suite' }),
+  ).toContainText(/[1-9]/);
 
   await boot(page, `/${SITE}/sources?range=today&goal=${goal}`);
   const channels = page.getByRole('region', { name: 'Channels' });
@@ -327,6 +385,26 @@ test('counts a goal on every breakdown, and never asks the chart for it', async 
 
   expect(series.length).toBeGreaterThan(0);
   expect(series.filter((search) => search.includes('goal='))).toEqual([]);
+
+  // Deleted, and the numbers leave with it: the link loses the goal and the
+  // column goes. Nothing is lost, which is what the confirmation promised.
+  await page.goto(`/${SITE}/goals?range=today&goal=${goal}`);
+  const row = page
+    .getByRole('region', { name: 'Goals', exact: true })
+    .getByRole('row')
+    .filter({ hasText: 'Signed up in the suite' });
+  await row.getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByText(/Nothing is lost/)).toBeVisible();
+  await page.getByRole('button', { name: 'Delete it' }).click();
+  await expect(page).not.toHaveURL(/goal=/);
+  await expect(row).toHaveCount(0);
+
+  await page.goto(`/${SITE}/sources?range=today&goal=${goal}`);
+  await expect(page.getByText('That goal no longer exists.')).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Channels' }).getByRole('columnheader', { name: 'Bounce rate' }),
+  ).toBeAttached();
+  await expect(page.getByRole('columnheader', { name: 'Conversion rate' })).toHaveCount(0);
 });
 
 // The events report over a batch this case posted itself: the event is listed

@@ -4,6 +4,8 @@ import type {
   EngagementResult,
   EventsResult,
   Goal,
+  GoalKind,
+  GoalStatsResult,
   PropertyResult,
   RealtimeSnapshot,
   TimeseriesResult,
@@ -88,6 +90,13 @@ export interface CreatedSite {
   };
 }
 
+// The goals report as the route answers it: the store's result with each
+// goal's record put back beside its conversion, so the page draws a name and
+// not an id. A goal deleted between the two reads is a row with no record.
+export interface GoalStatsView extends Omit<GoalStatsResult, 'rows'> {
+  rows: { goal?: Goal; conversion: GoalStatsResult['rows'][number]['conversion'] }[];
+}
+
 function statsQuery(params: StatsParams): Params {
   return { ...params };
 }
@@ -148,6 +157,32 @@ export const api = {
   // it is being measured against.
   goals: (client: Client, siteId: string): Promise<Answer<{ goals: Goal[] }>> =>
     client.get<{ goals: Goal[] }>(`/api/sites/${siteId}/goals`),
+
+  // Adding and deleting a goal need an owner of the site's team; the server says
+  // so with a 403 for anybody else, and the page says so before they try.
+  createGoal: (
+    client: Client,
+    siteId: string,
+    input: { name: string; kind: GoalKind; match: string; value?: number },
+  ): Promise<Answer<{ goal: Goal }>> =>
+    client.post<{ goal: Goal }>(`/api/sites/${siteId}/goals`, input),
+
+  deleteGoal: (
+    client: Client,
+    siteId: string,
+    goalId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/goals/${encodeURIComponent(goalId)}`,
+    ),
+
+  // Every goal of the site at once, each with its record and one conversion.
+  goalStats: (
+    client: Client,
+    siteId: string,
+    params: StatsParams,
+  ): Promise<Answer<GoalStatsView>> =>
+    client.get<GoalStatsView>(`/api/sites/${siteId}/stats/goals`, statsQuery(params)),
 
   // The custom events of the range by name, and one of them by a property.
   // Both raw only, and neither takes a goal.

@@ -1,4 +1,5 @@
 import { useState, type JSX } from 'react';
+import { Link } from 'wouter';
 import type { Filter, Goal } from '@chokh/store/contract';
 
 import { OPERATOR_SIGNS, removeFilter } from '../lib/filters.js';
@@ -79,7 +80,14 @@ function GoalPicker(): JSX.Element {
       trigger={({ open, toggle }) => (
         <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="true">
           {messages.goals.picker}
-          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+          <svg
+            className={styles.pickerCaret}
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="currentColor"
+          >
             <path d="M7 10l5 5 5-5z" />
           </svg>
         </Button>
@@ -96,7 +104,12 @@ function GoalPicker(): JSX.Element {
             {goals.isError ? (
               <p className={styles.pickerNote}>{messages.states.error}</p>
             ) : goals.isPending ? null : list.length === 0 ? (
-              <p className={styles.pickerNote}>{messages.goals.pickerEmpty}</p>
+              <>
+                <p className={styles.pickerNote}>{messages.goals.pickerEmpty}</p>
+                <Link to={`/${site.id}/goals`} className={popover.item} onClick={close}>
+                  <span>{messages.goals.pickerManage}</span>
+                </Link>
+              </>
             ) : (
               <>
                 <button

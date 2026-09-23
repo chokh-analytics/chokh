@@ -168,8 +168,15 @@
  * onto a line of its own goes.
  */
 @media (max-width: 720px) {
+  /* Eight between controls rather than twelve, and no caret on the goal
+   * control: the second row is the arrows, the comparison, the goal and the
+   * zone, and at 390 wide the goal pushed the zone onto a third row. */
   .bar {
-    gap: var(--s2) var(--s3);
+    gap: var(--s2);
+  }
+
+  .pickerCaret {
+    display: none;
   }
 
   .group {

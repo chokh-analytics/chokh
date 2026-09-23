@@ -24,9 +24,10 @@ export const OPEN_SHORTCUTS = 'chokh:shortcuts';
 
 // g then a letter, in the order the navigation is in. The letters are the first
 // letter of each destination, except that Geo and Overview both want their own
-// and "g g" for Geo is what every tool with this convention does, and People is
-// u, for users, because p is Pages.
-const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'u'];
+// and "g g" for Geo is what every tool with this convention does, People is u,
+// for users, because p is Pages, and Goals is c, for conversions, because g is
+// taken twice over.
+const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'c', 'u'];
 
 // One binding, described once: what it is called, which group it belongs in,
 // and what it does. The keys run this table and the card lists it, so a card

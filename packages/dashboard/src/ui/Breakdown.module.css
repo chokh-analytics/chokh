@@ -119,7 +119,10 @@
   gap: var(--s3);
 }
 
-.headSecondary {
+.head .headSecondary {
+  /* Over its numbers, which are right aligned. As .headSecondary alone it lost
+   * to .head th and sat at the left edge of a column whose figures are at the
+   * right edge, which a conversion rate beside a visitor count made obvious. */
   text-align: right;
 }
 

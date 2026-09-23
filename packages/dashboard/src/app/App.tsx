@@ -39,6 +39,7 @@ const Sources = lazy(async () => ({ default: (await import('../pages/Sources.js'
 const Geo = lazy(async () => ({ default: (await import('../pages/Geo.js')).Geo }));
 const Devices = lazy(async () => ({ default: (await import('../pages/Devices.js')).Devices }));
 const Events = lazy(async () => ({ default: (await import('../pages/Events.js')).Events }));
+const Goals = lazy(async () => ({ default: (await import('../pages/Goals.js')).Goals }));
 const People = lazy(async () => ({ default: (await import('../pages/People.js')).People }));
 
 // What is on screen while a report's chunk is on its way.
@@ -86,6 +87,9 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
         </Route>
         <Route path="/:siteId/events">
           <Events />
+        </Route>
+        <Route path="/:siteId/goals">
+          <Goals />
         </Route>
         <Route path="/:siteId/people">
           <People />

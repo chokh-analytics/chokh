@@ -165,6 +165,17 @@ export function useEngagement(context: ReportContext, dim: Dimension, limit?: nu
   });
 }
 
+// Every goal's conversion, for the Goals page. Keyed under the site first so
+// adding or deleting a goal can drop every range of it at once.
+export function useGoalStats(context: ReportContext) {
+  const params = toStatsParams(context.query);
+  return useQuery({
+    queryKey: ['goal-stats', context.siteId, ...cacheKey(context.siteId, params)],
+    queryFn: () => api.goalStats(context.client, context.siteId, params),
+    ...liveness(context.query, context.now),
+  });
+}
+
 // The events report and a property breakdown. Neither takes the goal: the server
 // refuses one on both, and a list of events counted against a goal is not a
 // question the page asks.

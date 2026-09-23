@@ -1,0 +1,187 @@
+.lede {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+
+.head th {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cell {
+  padding: var(--s1) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.right,
+.head .right {
+  text-align: right;
+}
+
+/* A column name with its help dot beside it, spaced like a card title's. */
+.withHelp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The goal's own name is the control: pressing it puts the goal on every
+ * report. The bar behind it is converted people against the goal that
+ * converted most, the same picture every other report draws. */
+.pick {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 32px;
+  padding: var(--s1) var(--s2);
+  border: 0;
+  border-radius: var(--r1);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+
+.pick:hover {
+  background: var(--soft);
+}
+
+.bar {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: var(--accent-soft);
+  border-radius: var(--r1);
+  pointer-events: none;
+}
+
+.name {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The goal that is on. Accent ink rather than a status colour: a chosen goal
+ * is a choice, not good news. */
+.chosen .name {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.match code {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Not measured is not zero, and must not read like a number. */
+.absent {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.confirm {
+  padding: var(--s2) var(--s3) var(--s3);
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+
+.confirm p {
+  margin: 0 0 var(--s2);
+}
+
+.actions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.problem {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--warn);
+}
+
+.note {
+  margin: 0;
+  padding: var(--s2) var(--s3) 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.empty {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  color: var(--muted);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.emptyTitle {
+  color: var(--ink);
+}
+
+.form {
+  padding: 0 var(--s3) var(--s3);
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--s3);
+  max-width: 520px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.form .mono input {
+  font-family: var(--font-mono);
+}
+
+/* On a phone the list keeps what a goal is called, how many reached it and
+ * the rate; what it matches, the completions and the value are one tap away
+ * on a wider screen. */
+@media (max-width: 720px) {
+  .match,
+  .wide {
+    display: none;
+  }
+}

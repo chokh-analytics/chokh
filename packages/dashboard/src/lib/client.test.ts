@@ -138,6 +138,17 @@ describe('createClient', () => {
     );
   });
 
+  // A delete carries no body and no content type, which a server that parses
+  // JSON would otherwise refuse as an empty document.
+  it('deletes with no body', async () => {
+    const fetch = vi.fn().mockResolvedValue(respond(200, { success: true, data: { deleted: true } }));
+    const answer = await createClient({ fetch }).delete<{ deleted: boolean }>('/api/sites/s/goals/g');
+    expect(answer.data.deleted).toBe(true);
+    const [, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+  });
+
   it('builds the URL a download or a stream is opened at', () => {
     const client = createClient({ baseUrl: 'http://localhost:4100/' });
     expect(client.url('/api/sites/s_1/export.csv', { dim: 'page' })).toBe(
