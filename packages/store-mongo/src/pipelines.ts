@@ -845,53 +845,42 @@ export function goalStatsPipeline(
 // proved on through these stages and compares.
 function funnelFoldExpression(stepCount: number, windowMs: number): Document {
   const initial: null[] = new Array<null>(stepCount).fill(null);
-  const best = {
-    $reduce: {
-      input: '$rows',
-      initialValue: initial,
-      in: {
-        $map: {
-          input: { $range: [0, stepCount] },
-          // Named, so $$this is still the row the $reduce is on.
-          as: 'step',
-          in: {
-            $cond: [
-              { $eq: ['$$step', 0] },
-              {
-                $cond: [
-                  { $arrayElemAt: ['$$this.h', 0] },
-                  '$$this.t',
-                  { $arrayElemAt: ['$$value', 0] },
-                ],
-              },
-              {
-                $let: {
-                  vars: {
-                    start: { $arrayElemAt: ['$$value', { $subtract: ['$$step', 1] }] },
-                    current: { $arrayElemAt: ['$$value', '$$step'] },
-                  },
-                  in: {
-                    $cond: [
-                      {
-                        $and: [
-                          { $arrayElemAt: ['$$this.h', '$$step'] },
-                          { $ne: ['$$start', null] },
-                          { $lte: [{ $subtract: ['$$this.t', '$$start'] }, windowMs] },
-                        ],
-                      },
-                      // $max passes over a null, so an empty step takes the start.
-                      { $max: ['$$current', '$$start'] },
-                      '$$current',
-                    ],
-                  },
-                },
-              },
-            ],
-          },
+  // One expression per step, written out rather than a $map over $range: the
+  // step count is known when the pipeline is built, and an index that is a
+  // constant costs nothing per row, where a $map pays for the range, the
+  // comparison and the subtraction on every one of them.
+  const next: Document[] = [];
+  for (let step = 0; step < stepCount; step += 1) {
+    if (step === 0) {
+      next.push({
+        $cond: [{ $arrayElemAt: ['$$this.h', 0] }, '$$this.t', { $arrayElemAt: ['$$value', 0] }],
+      });
+      continue;
+    }
+    next.push({
+      $let: {
+        vars: {
+          start: { $arrayElemAt: ['$$value', step - 1] },
+          current: { $arrayElemAt: ['$$value', step] },
+        },
+        in: {
+          $cond: [
+            {
+              $and: [
+                { $arrayElemAt: ['$$this.h', step] },
+                { $ne: ['$$start', null] },
+                { $lte: [{ $subtract: ['$$this.t', '$$start'] }, windowMs] },
+              ],
+            },
+            // $max passes over a null, so an empty step takes the start.
+            { $max: ['$$current', '$$start'] },
+            '$$current',
+          ],
         },
       },
-    },
-  };
+    });
+  }
+  const best = { $reduce: { input: '$rows', initialValue: initial, in: next } };
   return { $size: { $filter: { input: best, cond: { $ne: ['$$this', null] } } } };
 }
 
