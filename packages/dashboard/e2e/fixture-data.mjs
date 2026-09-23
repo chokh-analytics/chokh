@@ -12,6 +12,8 @@
 // fixture that answers a shape the server never sends proves the dashboard
 // against a server that does not exist.
 
+import { finishJourneys, journeyPath, journeyStepCounts, topJourneyPages } from '@chokh/store';
+
 // A Friday, so the week in the charts has a shape rather than a plateau.
 export const NOW = Date.UTC(2026, 8, 18, 9, 30, 0);
 
@@ -424,6 +426,31 @@ export function funnelStats(funnelId) {
     }),
     rawOnly: true,
   };
+}
+
+// The paths of the week, by how many visits took each, folded by the store's
+// own functions so the flow is the shape the journeys route answers.
+const WALKS = [
+  [['/', '/courses/competitive-programming', '/pricing', '/checkout'], 610],
+  [['/', '/courses/competitive-programming', '/learn/c'], 540],
+  [['/', '/pricing', '/checkout', '/checkout/done'], 380],
+  [['/', '/playground'], 720],
+  [['/', '/contests', '/contests/round-1'], 260],
+  [['/courses/competitive-programming', '/pricing', '/checkout', '/checkout/done', '/learn/c'], 410],
+  [['/courses/competitive-programming', '/learn/c', '/playground'], 330],
+  [['/learn/c', '/playground', '/learn/c', '/playground'], 520],
+  [['/learn/c'], 440],
+  [['/pricing', '/checkout'], 290],
+  [['/blog/why-we-built-chokh', '/', '/courses/competitive-programming'], 180],
+  [['/playground', '/learn/c'], 210],
+  [['/about'], 120],
+];
+
+export function journeys(branches) {
+  const paths = WALKS.flatMap(([walk, count]) =>
+    Array.from({ length: count }, () => journeyPath(walk)),
+  );
+  return finishJourneys(journeyStepCounts(paths, topJourneyPages(paths, branches)), branches);
 }
 
 // The custom events of the range. A page timing is not among them.

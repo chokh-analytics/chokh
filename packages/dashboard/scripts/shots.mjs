@@ -1,4 +1,4 @@
-// The twenty pictures: ten reports, two themes.
+// The twenty-two pictures: eleven views, two themes.
 //
 // A developer decides in about ten seconds of screenshots whether a dashboard
 // is worth installing, so these are a deliverable rather than a debugging aid,
@@ -55,6 +55,8 @@ const PAGES = [
   { name: '09-goals', path: `/${SITE}/goals?goal=g_signup` },
   // The first funnel drawn, four steps, with the builder under it.
   { name: '10-funnels', path: `/${SITE}/funnels?funnel=f_course` },
+  // The fourth tab on Pages, the flow drawn.
+  { name: '11-journeys', path: `/${SITE}/pages?pages=journeys` },
 ];
 const THEMES = ['light', 'dark'];
 

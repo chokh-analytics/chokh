@@ -24,6 +24,7 @@ import {
   breakdownFor,
   funnelStats,
   goalStats,
+  journeys,
   properties,
   timeseries,
 } from './fixture-data.mjs';
@@ -104,6 +105,9 @@ function api(url, res) {
   }
   if (path.endsWith('/stats/properties')) {
     return ok(res, properties(params.get('event') ?? '', params.get('property')), RAW);
+  }
+  if (path.endsWith('/stats/journeys')) {
+    return ok(res, journeys(Number(params.get('branches') ?? 5)), RAW);
   }
   if (path.endsWith('/stats/funnel')) {
     return ok(res, funnelStats(params.get('funnel')), { ...RAW, funnel: params.get('funnel') });

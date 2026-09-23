@@ -1,6 +1,7 @@
-import { useMemo, type JSX } from 'react';
+import { Suspense, lazy, useMemo, type JSX } from 'react';
 
 import { useApp } from '../app/context.js';
+import { useTabParam } from '../app/useTabParam.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { formatCount, formatDuration, formatPercentPoints } from '../lib/format.js';
 import { useBreakdown, useEngagement } from '../lib/queries.js';
@@ -28,6 +29,47 @@ const PAGE_TABS = [
   { id: 'exit', dim: 'exit' as const, label: messages.reports.tabExit },
 ];
 
+// The fourth tab, beside Entry and Exit because a journey runs from one to the
+// other. It is not a breakdown, so it is not a DimensionCard tab: the card
+// draws it in its head, and this page draws the flow in the card's place.
+const JOURNEYS_TAB = { id: 'journeys', label: messages.reports.tabJourneys };
+const TAB_IDS = ['all', 'entry', 'exit', 'journeys'] as const;
+const ALL_TABS = [...PAGE_TABS.map(({ id, label }) => ({ id, label })), JOURNEYS_TAB];
+
+// Its own chunk, fetched the first time somebody opens the tab and never by a
+// visit to Pages that does not.
+const Journeys = lazy(async () => ({ default: (await import('./Journeys.js')).Journeys }));
+
+function TopPages(): JSX.Element {
+  const { tab, set } = useTabParam('pages', TAB_IDS);
+  const choose = (id: string): void =>
+    set(TAB_IDS.find((candidate) => candidate === id) ?? 'all');
+  if (tab === 'journeys') {
+    return (
+      // The rest of the report stays drawn while the chunk arrives: this
+      // boundary holds only the card that is waiting.
+      <Suspense
+        fallback={
+          <Card title={messages.reports.topPages} tabs={ALL_TABS} tab="journeys" onTab={choose}>
+            <Skeleton height={320} />
+          </Card>
+        }
+      >
+        <Journeys title={messages.reports.topPages} tabs={ALL_TABS} onTab={choose} />
+      </Suspense>
+    );
+  }
+  return (
+    <DimensionCard
+      title={messages.reports.topPages}
+      tabs={PAGE_TABS}
+      param="pages"
+      secondary="pageviews"
+      moreTabs={[JOURNEYS_TAB]}
+    />
+  );
+}
+
 // Ten rows, the same as the ranking above it, so the two cards read as two
 // views of one list rather than two lists.
 const ENGAGEMENT_ROWS = 10;
@@ -54,52 +96,62 @@ function Engagement(): JSX.Element {
       ) : rows.length === 0 ? (
         <EmptyState message={messages.states.empty} />
       ) : (
-        <table className={styles.table}>
-          <caption className="sr-only">{messages.reports.engagement}</caption>
-          <thead className={styles.head}>
-            <tr>
-              <th scope="col">{messages.dimensions.page}</th>
-              <th scope="col" className={styles.right}>
-                {messages.metrics.scrollDepth}
-              </th>
-              <th scope="col" className={styles.right}>
-                {messages.metrics.timeOnPage}
-              </th>
-              <th scope="col" className={styles.right}>
-                {messages.reports.engagementLeaves}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                <td className={styles.cell}>
-                  <span className={styles.path}>{row.key}</span>
-                </td>
-                <td className={[styles.cell, styles.right].join(' ')}>
-                  {/*
-                    A quarter is a quarter: a bar rather than a percentage,
-                    because "62%" of a page whose length nobody controls is a
-                    number with a false precision on it.
-                  */}
-                  {row.avgScrollDepth === null ? (
-                    <span className={styles.absent}>{messages.states.notAvailable}</span>
-                  ) : (
-                    <Depth value={row.avgScrollDepth} />
-                  )}
-                </td>
-                <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
-                  {formatDuration(row.avgTimeOnPageMs) ?? (
-                    <span className={styles.absent}>{messages.states.notAvailable}</span>
-                  )}
-                </td>
-                <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
-                  {formatCount(row.leaves)}
-                </td>
+        // Four columns and a path are wider than a phone, so the table scrolls
+        // inside its card, the way the goal and visitor tables do, rather than
+        // moving the page and the navigation sideways.
+        <div
+          className={styles.scroll}
+          tabIndex={0}
+          role="group"
+          aria-label={messages.reports.engagement}
+        >
+          <table className={styles.table}>
+            <caption className="sr-only">{messages.reports.engagement}</caption>
+            <thead className={styles.head}>
+              <tr>
+                <th scope="col">{messages.dimensions.page}</th>
+                <th scope="col" className={styles.right}>
+                  {messages.metrics.scrollDepth}
+                </th>
+                <th scope="col" className={styles.right}>
+                  {messages.metrics.timeOnPage}
+                </th>
+                <th scope="col" className={styles.right}>
+                  {messages.reports.engagementLeaves}
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td className={styles.cell}>
+                    <span className={styles.path}>{row.key}</span>
+                  </td>
+                  <td className={[styles.cell, styles.right].join(' ')}>
+                    {/*
+                      A quarter is a quarter: a bar rather than a percentage,
+                      because "62%" of a page whose length nobody controls is a
+                      number with a false precision on it.
+                    */}
+                    {row.avgScrollDepth === null ? (
+                      <span className={styles.absent}>{messages.states.notAvailable}</span>
+                    ) : (
+                      <Depth value={row.avgScrollDepth} />
+                    )}
+                  </td>
+                  <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
+                    {formatDuration(row.avgTimeOnPageMs) ?? (
+                      <span className={styles.absent}>{messages.states.notAvailable}</span>
+                    )}
+                  </td>
+                  <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
+                    {formatCount(row.leaves)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <p className={styles.note}>
         {format(messages.metricHelp.rawOnly, { days: site.settings.retentionDays })}
@@ -220,12 +272,7 @@ function NotFound(): JSX.Element {
 export function Pages(): JSX.Element {
   return (
     <ReportPage title={messages.reports.pagesTitle}>
-      <DimensionCard
-        title={messages.reports.topPages}
-        tabs={PAGE_TABS}
-        param="pages"
-        secondary="pageviews"
-      />
+      <TopPages />
       <Engagement />
       <NotFound />
     </ReportPage>

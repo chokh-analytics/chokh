@@ -4,6 +4,16 @@
   padding: var(--s2) var(--s3);
 }
 
+/* The engagement table on a phone: it scrolls here, inside its card, and
+ * never takes the page with it. Relative, so the hidden caption is placed
+ * inside the box and scrolls with it. */
+.scroll {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

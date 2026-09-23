@@ -56,6 +56,10 @@ export interface DimensionCardProps {
   // What the quiet second column says. Pageviews beside visitors almost
   // everywhere; a bounce rate where the dimension is a whole visit.
   secondary?: 'pageviews' | 'bounceRate';
+  // Tabs drawn after the card's own that open something other than a
+  // breakdown. Choosing one writes it to the same parameter, and the page
+  // draws what it opens in place of this card.
+  moreTabs?: { id: string; label: string }[];
 }
 
 export function DimensionCard({
@@ -65,6 +69,7 @@ export function DimensionCard({
   help,
   note,
   secondary = 'pageviews',
+  moreTabs = [],
 }: DimensionCardProps): JSX.Element {
   const { client, site, now } = useApp();
   const { query, set } = useViewQuery();
@@ -226,9 +231,12 @@ export function DimensionCard({
     <Card
       title={title}
       {...(help === undefined ? {} : { help })}
-      {...(tabs.length > 1
+      {...(tabs.length + moreTabs.length > 1
         ? {
-            tabs: tabs.map((candidate) => ({ id: candidate.id, label: candidate.label })),
+            tabs: [
+              ...tabs.map((candidate) => ({ id: candidate.id, label: candidate.label })),
+              ...moreTabs,
+            ],
             tab,
             onTab: (id: string) => {
               // Back to ten rows with the tab: "show more" was a statement

@@ -234,6 +234,7 @@ export const messages = {
     tabAll: 'All pages',
     tabEntry: 'Entry',
     tabExit: 'Exit',
+    tabJourneys: 'Journeys',
     engagement: 'How far people read',
     engagementHelp:
       'Measured when a page is closed. A page nobody has left yet has no number, so a page opened once and still open is absent here rather than a zero.',
@@ -409,6 +410,30 @@ export const messages = {
       'Delete {name}? Nothing is lost: its numbers are worked out from your events, so adding it again brings them back.',
     deleteYes: 'Delete it',
     deleteNo: 'Keep it',
+  },
+
+  // The paths visits took, from the page they came in on through three more.
+  journeys: {
+    help: 'Visits, not visitors: each path is one visit, from the page it came in on through the next three, with a page reloaded back to back counted once. Each step keeps its most visited pages and folds the rest into Other. Pressing a page shows only the visits that saw it, wherever they came in.',
+    total: '{count} visits in this range.',
+    branches: 'Pages per step',
+    flow: 'The paths visits took, from the page they came in on',
+    column1: 'Entry',
+    column2: '2nd page',
+    column3: '3rd page',
+    column4: '4th page',
+    other: 'Other pages',
+    left: '{count} left here',
+    onward: '{count} went on',
+    pick: 'Show only the visits that saw {page}',
+    empty: 'No visit in this range viewed a page.',
+    tableCaption: 'The paths as a table: each step, its pages, and where the visits on them went next.',
+    tableStep: 'Step',
+    tablePage: 'Page',
+    tableVisits: 'Visits',
+    tableLeft: 'Left here',
+    tableNext: 'Went next',
+    tableNextItem: '{page}: {count}',
   },
 
   // Steps people take in order, and how many got through each one.

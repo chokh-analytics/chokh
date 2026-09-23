@@ -9,6 +9,7 @@ import type {
   Goal,
   GoalKind,
   GoalStatsResult,
+  JourneyResult,
   PropertyResult,
   RealtimeSnapshot,
   TimeseriesResult,
@@ -222,6 +223,19 @@ export const api = {
     client.get<FunnelStatsView>(`/api/sites/${siteId}/stats/funnel`, {
       ...statsQuery(params),
       funnel: funnelId,
+    }),
+
+  // The paths the range's visits took, each column folded to its most visited
+  // pages. Raw only, and never with a goal.
+  journeys: (
+    client: Client,
+    siteId: string,
+    params: StatsParams,
+    branches: number,
+  ): Promise<Answer<JourneyResult>> =>
+    client.get<JourneyResult>(`/api/sites/${siteId}/stats/journeys`, {
+      ...statsQuery(params),
+      branches,
     }),
 
   // Every goal of the site at once, each with its record and one conversion.

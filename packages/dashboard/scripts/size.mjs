@@ -44,7 +44,11 @@ const BUDGETS = [
   // spent it, the Funnels page: measured at 21,493 B for twelve chunks, the
   // largest now Funnels at 3,615 B with its list, builder and delete. With
   // the funnel drawn, measured the same day at 22,430 B, Funnels 4,540 B.
-  { name: 'routes', pattern: /\.js$/, bytes: 24 * 1024 },
+  // Raised again to 26 KB by the commit that spent it, Journeys: measured at
+  // 25,248 B for thirteen chunks, the flow its own chunk at 2,440 B and Pages
+  // 1,985 B with the fourth tab, the import that fetches it and the
+  // engagement table in a box that scrolls on a phone.
+  { name: 'routes', pattern: /\.js$/, bytes: 26 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },

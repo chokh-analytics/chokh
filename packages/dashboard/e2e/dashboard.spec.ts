@@ -610,3 +610,37 @@ test('builds a funnel from a goal and a path, reads it drawn, and deletes it', a
   const removed = await page.request.delete(`/api/sites/${SITE}/goals/${goalId as string}`);
   expect(removed.ok()).toBe(true);
 });
+
+// Journeys on a phone, over the walks the server seeds: the flow keeps a width
+// a path can be read at and scrolls inside its card, the page never moves
+// sideways, a node filters the report without closing the tab, and the branch
+// count is kept in the link.
+test('draws journeys on a phone inside their card, and filters from a node', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/pages?pages=journeys`);
+
+  const box = page.getByRole('group', {
+    name: 'The paths visits took, from the page they came in on',
+  });
+  const pricing = box.getByRole('button', { name: /^\/pricing / }).first();
+  await expect(box.getByText('4th page')).toBeVisible();
+  await expect(pricing).toBeAttached();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'Journeys scrolls the page sideways').toBeLessThanOrEqual(0);
+  const inner = await box.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect(inner, 'the flow was squeezed rather than scrolled').toBeGreaterThan(0);
+  await expect(box).toHaveAttribute('tabindex', '0');
+
+  await page.getByLabel('Pages per step').selectOption('3');
+  await expect(page).toHaveURL(/branches=3/);
+
+  await pricing.click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('filters'))
+    .toBe('page==/pricing');
+  await expect(page).toHaveURL(/pages=journeys/);
+  await expect(page).toHaveURL(/branches=3/);
+  await expect(pricing).toHaveAttribute('aria-pressed', 'true');
+});

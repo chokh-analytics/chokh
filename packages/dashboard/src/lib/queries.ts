@@ -203,6 +203,17 @@ export function useFunnelStats(context: ReportContext, funnelId: string) {
   });
 }
 
+// The paths visits took, for the Journeys tab. Never with the goal either,
+// and keyed by the branch count, which changes the answer.
+export function useJourneys(context: ReportContext, branches: number) {
+  const params = toStatsParams(context.query);
+  return useQuery({
+    queryKey: ['journeys', branches, ...cacheKey(context.siteId, params)],
+    queryFn: () => api.journeys(context.client, context.siteId, params, branches),
+    ...liveness(context.query, context.now),
+  });
+}
+
 // The events report and a property breakdown. Neither takes the goal: the server
 // refuses one on both, and a list of events counted against a goal is not a
 // question the page asks.

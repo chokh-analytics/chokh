@@ -74,3 +74,21 @@ test('loads a report as its own file, when it is opened', async ({ page }) => {
   expect(seen.length).toBeGreaterThan(atFirstPaint);
   expect(seen.some((path) => /\/People-.*\.js$/.test(path))).toBe(true);
 });
+
+// The flow is its own file, fetched when the tab is opened and not by a visit
+// to Pages that never opens it.
+test('loads Journeys only when its tab is opened', async ({ page }) => {
+  const { seen } = scripts(page);
+  const isJourneys = (path: string): boolean => /\/Journeys-.*\.js$/.test(path);
+
+  await page.goto(`/${SITE}/pages`);
+  await expect(page.getByRole('heading', { name: 'Pages', level: 1 })).toBeAttached();
+  await page.waitForLoadState('networkidle');
+  expect(seen.filter(isJourneys)).toEqual([]);
+
+  await page.getByRole('tab', { name: 'Journeys' }).click();
+  await expect(
+    page.getByRole('group', { name: 'The paths visits took, from the page they came in on' }),
+  ).toBeVisible();
+  expect(seen.filter(isJourneys)).toHaveLength(1);
+});

@@ -1,0 +1,154 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding: 0 var(--s3) var(--s3);
+}
+
+.summary {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.branches {
+  width: 9rem;
+}
+
+/* The one part of the card allowed to be wider than a phone scrolls here, and
+ * never takes the page with it. Relative, so anything positioned inside is
+ * placed against the box and scrolls with it; focusable, so a keyboard can
+ * scroll it; named, so a screen reader says what it is. */
+.scroll {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 0 var(--s3) var(--s2);
+}
+
+.scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* A path has to be readable: below this each column is narrower than a short
+ * path, so the flow keeps this width and scrolls instead. */
+.heads,
+.flow {
+  position: relative;
+  min-width: 640px;
+}
+
+.heads {
+  height: 24px;
+}
+
+.head {
+  position: absolute;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.bands {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.bands path {
+  fill: var(--accent);
+  fill-opacity: var(--chart-fill);
+}
+
+.slot {
+  position: absolute;
+  display: grid;
+  align-content: start;
+}
+
+/* A node: as tall as its share of the visits, never shorter than a line of
+ * words. The accent at its edge, the soft accent inside, the way a breakdown
+ * row draws its bar. */
+.node {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s1);
+  min-width: 0;
+  width: 100%;
+  padding: 5px var(--s2);
+  border: 0;
+  border-radius: var(--r1);
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-num);
+  text-align: left;
+  overflow: hidden;
+}
+
+button.node {
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+
+button.node:hover {
+  background: var(--soft);
+}
+
+/* A page the report is filtered to. Accent ink, and heavier: a choice, not a
+ * status. */
+.node[aria-pressed='true'] {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* The rest of a column. Not a page, so not the accent and not a control. */
+.other {
+  background: var(--soft);
+  box-shadow: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.nodeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.nodeCount {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin: 0;
+  height: 18px;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  line-height: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.footnote {
+  margin: 0;
+  padding: var(--s2) var(--s3) 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}

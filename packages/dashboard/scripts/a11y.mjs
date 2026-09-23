@@ -40,6 +40,8 @@ const PAGES = [
   { name: 'realtime', path: '/s_demo/realtime' },
   // The funnel the server seeds, drawn, and the builder under it.
   { name: 'funnels', path: '/s_demo/funnels' },
+  // The flow over the seeded walks, and the table under it.
+  { name: 'journeys', path: '/s_demo/pages?pages=journeys' },
 ];
 const THEMES = ['light', 'dark'];
 
