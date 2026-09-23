@@ -15,12 +15,14 @@ import { fileURLToPath } from 'node:url';
 import {
   ENGAGEMENT,
   EVENTS,
+  FUNNELS,
   GOALS,
   ME,
   PROFILE,
   REALTIME,
   aggregateFor,
   breakdownFor,
+  funnelStats,
   goalStats,
   properties,
   timeseries,
@@ -102,6 +104,12 @@ function api(url, res) {
   }
   if (path.endsWith('/stats/properties')) {
     return ok(res, properties(params.get('event') ?? '', params.get('property')), RAW);
+  }
+  if (path.endsWith('/stats/funnel')) {
+    return ok(res, funnelStats(params.get('funnel')), { ...RAW, funnel: params.get('funnel') });
+  }
+  if (path.endsWith('/funnels')) {
+    return ok(res, { funnels: FUNNELS }, { siteId: 's_demo', max: 50, maxSteps: 8 });
   }
   if (path.endsWith('/goals')) {
     return ok(res, { goals: GOALS }, { siteId: 's_demo', max: 50 });

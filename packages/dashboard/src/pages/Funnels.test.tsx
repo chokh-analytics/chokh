@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { finishFunnel } from '@chokh/store';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -97,10 +102,30 @@ function serve(
   funnels: FunnelRow[] = [CHECKOUT, DOCS],
   create: () => Response = () => answer(201, { success: true, data: { funnel: { ...DOCS, id: 'f_new' } } }),
   goals: (typeof SIGNUP)[] = [SIGNUP],
+  // How far people got, as the store folds it: [depth, people who stopped
+  // there]. finishFunnel turns that into the report, so the shares on the
+  // page are the fractions the server sends and not a guess at them.
+  depths: [number, number][] = [
+    [1, 30],
+    [2, 12],
+  ],
+  segment = 400,
 ): Server {
   const fetcher = vi.fn((input: string, init?: RequestInit) => {
     const url = new URL(String(input), 'http://x');
     const method = init?.method ?? 'GET';
+    if (url.pathname.endsWith('/stats/funnel')) {
+      const funnel = funnels.find((row) => row.id === url.searchParams.get('funnel'));
+      if (funnel === undefined) {
+        return Promise.resolve(refused(404, 'FUNNEL_NOT_FOUND'));
+      }
+      return Promise.resolve(
+        ok(
+          { funnel, ...finishFunnel(depths, segment, funnel.steps.length) },
+          { retentionDays: 180, rawOnly: true, funnel: funnel.id },
+        ),
+      );
+    }
     if (url.pathname.endsWith('/funnels') && method === 'POST') {
       return Promise.resolve(create());
     }
@@ -419,5 +444,116 @@ describe('Funnels, deleting one', () => {
     const deleted = server.calls().find((call) => call.method === 'DELETE');
     expect(deleted?.url.pathname).toBe('/api/sites/s_test/funnels/f_docs');
     await waitFor(() => expect(window.location.search).toBe('?range=30d'));
+  });
+});
+
+describe('Funnels, the one drawn', () => {
+  function drawn(name = 'Pricing to signup'): HTMLElement {
+    return screen.getByRole('region', { name });
+  }
+
+  it('draws each step with its count and its share of the first, and who left between', async () => {
+    const server = serve();
+    render(show());
+
+    const card = await screen.findByRole('region', { name: 'Pricing to signup' });
+    const steps = await within(card).findByRole('list', {
+      name: 'How far people got through Pricing to signup',
+    });
+    const [first, second] = within(steps).getAllByRole('listitem');
+    // 42 reached the first step and 12 of them the second: 30 stopped at one.
+    expect(first).toHaveTextContent('/pricing');
+    expect(first).toHaveTextContent('42');
+    expect(first).toHaveTextContent('100%');
+    expect(second).toHaveTextContent('Signed up');
+    // The goal's own question beside the name it was given.
+    expect(second).toHaveTextContent('signup');
+    expect(second).toHaveTextContent('12');
+    expect(second).toHaveTextContent('29%');
+    expect(within(second as HTMLElement).getByText('30 left (71%)')).toBeInTheDocument();
+
+    expect(within(drawn()).getByText('42 of 400 visitors started it.')).toBeInTheDocument();
+    expect(within(drawn()).getByText('Every step within 7 days of the first.')).toBeInTheDocument();
+    expect(
+      within(drawn()).getByText(
+        'Counted once per person over the whole range, so the first step is not the Visitors figure.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(drawn()).getByText('Read from raw events, so this report sees back 180 days and no further.'),
+    ).toBeInTheDocument();
+    // A site that remembers its visitors has nothing to say about midnight.
+    expect(within(drawn()).queryByText(/forgets a visitor/)).toBeNull();
+
+    const read = server.calls().find((call) => call.url.pathname.endsWith('/stats/funnel'));
+    expect(read?.url.pathname).toBe('/api/sites/s_test/stats/funnel');
+    expect(read?.url.searchParams.get('funnel')).toBe('f_checkout');
+  });
+
+  it('draws the one the link names, sends the filters and never the goal', async () => {
+    const server = serve();
+    window.history.replaceState(
+      null,
+      '',
+      '/s_test/funnels?funnel=f_docs&goal=g_signup&filters=country%3D%3DBD',
+    );
+    render(show());
+
+    expect(await screen.findByRole('region', { name: 'Docs in one sitting' })).toBeInTheDocument();
+    expect(
+      await within(drawn('Docs in one sitting')).findByText('Every step in the same visit.'),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(server.calls().some((call) => call.url.pathname.endsWith('/stats/funnel'))).toBe(true),
+    );
+    const read = server.calls().find((call) => call.url.pathname.endsWith('/stats/funnel'));
+    expect(read?.url.searchParams.get('funnel')).toBe('f_docs');
+    expect(read?.url.searchParams.get('filters')).toBe('country==BD');
+    expect(read?.url.searchParams.has('goal')).toBe(false);
+  });
+
+  it('says a cookieless site cannot follow anybody across its midnight', async () => {
+    serve();
+    render(show('owner', 'cookieless'));
+
+    expect(
+      await within(await screen.findByRole('region', { name: 'Pricing to signup' })).findByText(
+        'This site forgets a visitor at its midnight, so a step taken on another day counts as somebody new and no funnel here crosses midnight.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('says nobody started it rather than drawing empty bars', async () => {
+    serve(undefined, undefined, undefined, []);
+    render(show());
+
+    expect(
+      await within(await screen.findByRole('region', { name: 'Pricing to signup' })).findByText(
+        'Nobody reached the first step in this range.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: /How far people got/ })).toBeNull();
+  });
+
+  it('offers to clear the filters when they are why nobody is here', async () => {
+    serve(undefined, undefined, undefined, []);
+    window.history.replaceState(null, '', '/s_test/funnels?filters=country%3D%3DBD');
+    render(show());
+
+    const card = await screen.findByRole('region', { name: 'Pricing to signup' });
+    expect(await within(card).findByText('No visitors matched these filters.')).toBeInTheDocument();
+    await userEvent.click(within(card).getByRole('button', { name: 'Clear filters' }));
+    expect(window.location.search).toBe('');
+  });
+
+  // Leaving a funnel is what a funnel measures, not a fault: the line between
+  // two steps is the quiet colour, and a status colour on it fails here.
+  it('says who left in the quiet colour, never a status one', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(resolve(here, 'Funnels.module.css'), 'utf8');
+    const start = css.indexOf('.drop {');
+    const rule = css.slice(start, css.indexOf('}', start));
+    expect(rule).toContain('color: var(--muted)');
+    expect(rule).not.toMatch(/--(dead|warn|live)/);
   });
 });

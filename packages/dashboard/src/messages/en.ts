@@ -449,6 +449,19 @@ export const messages = {
     existsShow: 'Show it',
     limit: 'A site can have at most {max} funnels.',
     goalGone: 'That goal no longer exists. Choose another.',
+    started: '{entered} of {visitors} visitors started it.',
+    finishVisit: 'Every step in the same visit.',
+    finish1h: 'Every step within an hour of the first.',
+    finish1d: 'Every step within a day of the first.',
+    finish7d: 'Every step within 7 days of the first.',
+    finish30d: 'Every step within 30 days of the first.',
+    chart: 'How far people got through {name}',
+    left: '{count} left ({rate})',
+    nobody: 'Nobody reached the first step in this range.',
+    perVisitor:
+      'Counted once per person over the whole range, so the first step is not the Visitors figure.',
+    cookieless:
+      'This site forgets a visitor at its midnight, so a step taken on another day counts as somebody new and no funnel here crosses midnight.',
     ownerOnly: 'Only an owner of this site can add or remove funnels.',
     delete: 'Delete',
     deleteConfirm:

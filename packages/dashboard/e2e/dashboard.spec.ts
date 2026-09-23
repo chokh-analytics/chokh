@@ -201,9 +201,12 @@ test('keeps ten destinations in one row at 390 and at 1024, with the current one
         ).toBeVisible();
       }
       if (path === 'funnels') {
-        // The seeded funnel listed, and the builder opened out to three steps,
+        // The seeded funnel drawn, and the builder opened out to three steps,
         // so the overflow is measured over the widest this page gets.
         await expect(page.getByRole('button', { name: 'Home to pricing' })).toBeVisible();
+        await expect(
+          page.getByRole('list', { name: 'How far people got through Home to pricing' }),
+        ).toBeVisible();
         await page.getByRole('button', { name: 'Add a step' }).click();
         await expect(page.getByRole('group', { name: 'Step 3' })).toBeVisible();
       }
@@ -521,10 +524,33 @@ test('keeps the visitor table inside a phone screen once somebody is here', asyn
 });
 
 // A funnel made the way a person makes one: on the Funnels page, from a goal
-// and a typed path, chosen into the link the moment it exists, and deleted
-// with the confirmation that says nothing is lost. The goal is made over HTTP
-// first because the goal form has its own case; this one is about the builder.
-test('builds a funnel from a goal and a path, and deletes it', async ({ page }) => {
+// and a typed path, chosen into the link the moment it exists, read drawn over
+// a visitor this case sent through it, and deleted with the confirmation that
+// says nothing is lost. The goal is made over HTTP first because the goal form
+// has its own case; this one is about the builder and the drawing.
+test('builds a funnel from a goal and a path, reads it drawn, and deletes it', async ({
+  page,
+}) => {
+  // One person who read the pricing page and then signed up, as a tracker
+  // sends it, so the drawing has somebody at both steps.
+  const now = Date.now();
+  const sent = await page.request.post('/api/collect', {
+    headers: { 'content-type': 'text/plain', origin: ORIGIN },
+    data: JSON.stringify({
+      siteId: SITE,
+      sentAt: now,
+      hostname: '127.0.0.1',
+      visitorId: `v_funnel_${now}`,
+      lang: 'en',
+      screen: '1440x900',
+      events: [
+        { type: 'pageview', ts: now - 2_000, path: '/pricing' },
+        { type: 'event', ts: now - 1_000, path: '/pricing', name: 'e2e_funnel_signup' },
+      ],
+    }),
+  });
+  expect(sent.status(), 'the collector refused the batch').toBeLessThan(300);
+
   const created = await page.request.post(`/api/sites/${SITE}/goals`, {
     data: { name: 'Signed up in the funnel case', kind: 'event', match: 'e2e_funnel_signup' },
   });
@@ -555,6 +581,20 @@ test('builds a funnel from a goal and a path, and deletes it', async ({ page }) 
   await expect(
     list.getByRole('list', { name: 'Steps of Pricing then signup in the suite' }),
   ).toHaveText(/\/pricing.*Signed up in the funnel case/);
+
+  // Drawn: the person this case sent reached both steps, with the notes under it.
+  const drawn = page.getByRole('region', { name: 'Pricing then signup in the suite' });
+  const steps = drawn.getByRole('list', {
+    name: 'How far people got through Pricing then signup in the suite',
+  });
+  await expect(steps.getByRole('listitem')).toHaveCount(2);
+  await expect(steps.getByRole('listitem').nth(1)).toContainText('Signed up in the funnel case');
+  await expect(steps.getByRole('listitem').nth(1).locator('[title]')).toHaveText(
+    /^[1-9][\d,]*$/,
+  );
+  await expect(drawn.getByText(/visitors started it\./)).toBeVisible();
+  await expect(drawn.getByText('Every step within 7 days of the first.')).toBeVisible();
+  await expect(drawn.getByText(/Counted once per person over the whole range/)).toBeVisible();
 
   // Deleted, and the link stops naming it.
   const item = list

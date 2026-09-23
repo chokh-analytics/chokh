@@ -240,3 +240,119 @@
     padding-bottom: 0;
   }
 }
+
+/* The funnel drawn. */
+.summary {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.chart {
+  display: grid;
+  margin: 0;
+  padding: 0 var(--s3);
+  list-style: none;
+}
+
+.chartStep {
+  display: grid;
+  min-width: 0;
+}
+
+/* One step on one line on a laptop: the name, the bar, the count and the share
+ * of the first step. On a phone the name stacks over the other three, so
+ * nothing on this card is wider than the screen. */
+.chartRow {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr) minmax(4ch, auto) minmax(5ch, auto);
+  align-items: center;
+  gap: var(--s3);
+  min-height: 36px;
+}
+
+.chartLabel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  margin: 0;
+  min-width: 0;
+}
+
+.chartNumber {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.chartName {
+  overflow-wrap: anywhere;
+}
+
+.chartMatch {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* The bar a breakdown row draws: the soft accent, with the accent at its end. */
+.track {
+  position: relative;
+  display: block;
+  height: 24px;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--r1);
+  background: var(--accent-soft);
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.count,
+.share {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.share {
+  color: var(--muted);
+}
+
+/* Between two steps: how many left. The quiet colour and never a status one,
+ * because a funnel narrows by design and leaving it is not an error. */
+.drop {
+  margin: 0;
+  padding: var(--s1) 0 var(--s1) var(--s4);
+  border-left: 1px dashed var(--line);
+  margin-left: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.footnote {
+  margin: 0;
+  padding: var(--s2) var(--s3) 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .chartRow {
+    grid-template-columns: minmax(0, 1fr) minmax(4ch, auto) minmax(5ch, auto);
+    row-gap: var(--s1);
+    padding-bottom: var(--s1);
+  }
+
+  .chartLabel {
+    grid-column: 1 / -1;
+  }
+}

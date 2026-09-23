@@ -38,7 +38,7 @@ const DEBUG_PORT = 9222;
 const PAGES = [
   { name: 'overview', path: '/s_demo' },
   { name: 'realtime', path: '/s_demo/realtime' },
-  // The funnel the server seeds, and the builder under it.
+  // The funnel the server seeds, drawn, and the builder under it.
   { name: 'funnels', path: '/s_demo/funnels' },
 ];
 const THEMES = ['light', 'dark'];

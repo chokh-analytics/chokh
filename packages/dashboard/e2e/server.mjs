@@ -134,6 +134,31 @@ async function seed(store, now) {
     pageview(store, known + 120_000, 3, { visitorId: 'v_known', userId: 'u_known' }),
   );
 
+  // Visits of several pages, so a funnel has people who got through it and
+  // a journey has somewhere to go. Every other seeded visitor reads one page;
+  // these walk, forty-five seconds a page, on the last three days.
+  const WALKS = [
+    ['/', '/courses/competitive-programming', '/pricing', '/learn/c'],
+    ['/', '/pricing'],
+    ['/learn/c', '/playground', '/learn/c', '/pricing', '/contests'],
+    ['/blog/why-we-built-chokh', '/', '/courses/competitive-programming'],
+    ['/', '/playground', '/playground', '/pricing'],
+    ['/contests', '/pricing'],
+  ];
+  for (let day = 3; day >= 1; day -= 1) {
+    WALKS.forEach((walk, which) => {
+      const start = now - day * DAY_MS + 3 * 3_600_000 + which * 600_000;
+      walk.forEach((path, step) => {
+        events.push(
+          pageview(store, start + step * 45_000, which + 1, {
+            visitorId: `v_walk_${day}_${which}`,
+            path,
+          }),
+        );
+      });
+    });
+  }
+
   await store.ingest(events);
 
   // Every finished day rolled up, because that is where a past day's numbers

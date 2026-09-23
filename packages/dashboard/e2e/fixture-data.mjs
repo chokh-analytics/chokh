@@ -374,6 +374,58 @@ export function goalStats() {
   };
 }
 
+// Two funnels, the shape the funnel routes answer: steps copied from goals or
+// typed as paths, and a window each.
+export const FUNNELS = [
+  {
+    siteId: 's_demo',
+    id: 'f_course',
+    name: 'Course page to paid',
+    window: '7d',
+    steps: [
+      { kind: 'page', match: '/courses/*', name: 'A course page' },
+      { kind: 'page', match: '/pricing', name: '/pricing' },
+      { kind: 'event', match: 'checkout_start', name: 'Started checkout' },
+      { kind: 'page', match: '/*/checkout/done', name: 'Checked out', goalId: 'g_checkout' },
+    ],
+    createdBy: 'u_demo',
+    createdAt: NOW - 5 * 86_400_000,
+  },
+  {
+    siteId: 's_demo',
+    id: 'f_signup',
+    name: 'Signed up in one sitting',
+    window: 'visit',
+    steps: [
+      { kind: 'page', match: '/', name: '/' },
+      { kind: 'event', match: 'signup', name: 'Signed up', goalId: 'g_signup' },
+    ],
+    createdBy: 'u_demo',
+    createdAt: NOW - 2 * 86_400_000,
+  },
+];
+
+// What a funnel counted, built the way the store builds it: a count of people
+// per step, the drop between two and the shares as fractions.
+export function funnelStats(funnelId) {
+  const funnel = FUNNELS.find((candidate) => candidate.id === funnelId) ?? FUNNELS[0];
+  const reached = funnel.id === 'f_signup' ? [4_980, 612] : [4_210, 1_380, 412, 259];
+  return {
+    funnel,
+    visitors: AGGREGATE.metrics.visitors,
+    steps: reached.map((visitors, index) => {
+      const previous = index === 0 ? null : reached[index - 1];
+      return {
+        visitors,
+        dropOff: previous === null ? 0 : previous - visitors,
+        rate: visitors / reached[0],
+        stepRate: previous === null ? null : visitors / previous,
+      };
+    }),
+    rawOnly: true,
+  };
+}
+
 // The custom events of the range. A page timing is not among them.
 export const EVENTS = {
   visitors: AGGREGATE.metrics.visitors,

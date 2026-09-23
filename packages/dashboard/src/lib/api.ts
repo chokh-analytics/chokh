@@ -4,6 +4,7 @@ import type {
   EngagementResult,
   EventsResult,
   Funnel,
+  FunnelResult,
   FunnelWindow,
   Goal,
   GoalKind,
@@ -97,6 +98,12 @@ export interface CreatedSite {
 // not an id. A goal deleted between the two reads is a row with no record.
 export interface GoalStatsView extends Omit<GoalStatsResult, 'rows'> {
   rows: { goal?: Goal; conversion: GoalStatsResult['rows'][number]['conversion'] }[];
+}
+
+// The funnel report as the route answers it: the store's result with the
+// funnel's record beside it, so a page draws step names and not indexes.
+export interface FunnelStatsView extends FunnelResult {
+  funnel: Funnel;
 }
 
 // A funnel step as it is asked for: a goal of this site by id, or a typed path.
@@ -203,6 +210,19 @@ export const api = {
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/funnels/${encodeURIComponent(funnelId)}`,
     ),
+
+  // How far the people of the range got through one funnel. Raw only, and
+  // never with a goal: the server refuses one.
+  funnelStats: (
+    client: Client,
+    siteId: string,
+    params: StatsParams,
+    funnelId: string,
+  ): Promise<Answer<FunnelStatsView>> =>
+    client.get<FunnelStatsView>(`/api/sites/${siteId}/stats/funnel`, {
+      ...statsQuery(params),
+      funnel: funnelId,
+    }),
 
   // Every goal of the site at once, each with its record and one conversion.
   goalStats: (

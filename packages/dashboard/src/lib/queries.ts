@@ -191,6 +191,18 @@ export function useGoalStats(context: ReportContext) {
   });
 }
 
+// How far the people of the range got through one funnel. Never with the
+// goal: the server refuses one, and a funnel is its own question. The filters
+// go, because they choose the people.
+export function useFunnelStats(context: ReportContext, funnelId: string) {
+  const params = toStatsParams(context.query);
+  return useQuery({
+    queryKey: ['funnel-stats', context.siteId, funnelId, ...cacheKey(context.siteId, params)],
+    queryFn: () => api.funnelStats(context.client, context.siteId, params, funnelId),
+    ...liveness(context.query, context.now),
+  });
+}
+
 // The events report and a property breakdown. Neither takes the goal: the server
 // refuses one on both, and a list of events counted against a goal is not a
 // question the page asks.

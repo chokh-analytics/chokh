@@ -13,15 +13,17 @@ import {
 } from '@chokh/store/contract';
 
 import { isOwner, useApp } from '../app/context.js';
+import { useViewQuery } from '../app/useViewQuery.js';
 import { api, type FunnelStepInput } from '../lib/api.js';
 import { ChokhError } from '../lib/client.js';
-import { funnelsKey, useFunnels, useGoals } from '../lib/queries.js';
+import { formatCount, formatExact, formatRate } from '../lib/format.js';
+import { funnelsKey, useFunnelStats, useFunnels, useGoals } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { ReportPage } from '../reports/ReportPage.js';
 import { Button } from '../ui/Button.js';
 import { Card } from '../ui/Card.js';
 import { Field, SelectField } from '../ui/Field.js';
-import { ErrorState, Skeleton } from '../ui/State.js';
+import { EmptyState, ErrorState, Skeleton } from '../ui/State.js';
 import styles from './Funnels.module.css';
 
 // A site's funnels: the list, the one being read, a way to add one and a way
@@ -43,6 +45,15 @@ const WINDOW_LABELS: Record<FunnelWindow, string> = {
   '1d': messages.funnels.window1d,
   '7d': messages.funnels.window7d,
   '30d': messages.funnels.window30d,
+};
+
+// The window said as a sentence above the drawing.
+const FINISH: Record<FunnelWindow, string> = {
+  visit: messages.funnels.finishVisit,
+  '1h': messages.funnels.finish1h,
+  '1d': messages.funnels.finish1d,
+  '7d': messages.funnels.finish7d,
+  '30d': messages.funnels.finish30d,
 };
 
 // Which funnel is drawn, in the link like everything else somebody is looking
@@ -254,6 +265,119 @@ function FunnelList({
         </p>
       )}
       {body()}
+    </Card>
+  );
+}
+
+// A funnel drawn: one row per step, its bar the step's share of the first,
+// the count and the share as real text beside it, and between two steps how
+// many left. Leaving is said in --muted and never in a status colour: a funnel
+// narrows by design, and red is kept for something that went wrong.
+//
+// The first step is distinct people over the whole range, not the Visitors
+// figure, which adds up each day; the page says so under the drawing, because
+// the two numbers sit on screens a click apart and will be compared.
+function FunnelChart({ funnel }: { funnel: Funnel }): JSX.Element {
+  const { client, site, now } = useApp();
+  const { query, set } = useViewQuery();
+  const result = useFunnelStats({ client, siteId: site.id, query, now }, funnel.id);
+  const data = result.data?.data;
+  const entered = data?.steps[0]?.visitors ?? 0;
+  const retentionDays =
+    typeof result.data?.meta?.retentionDays === 'number'
+      ? result.data.meta.retentionDays
+      : site.settings.retentionDays;
+  // A cookieless visitor id is a hash that changes at the site's midnight, so
+  // no chain crosses it whatever the window allows.
+  const forgets = site.settings.visitorIdMode === 'cookieless' && funnel.window !== 'visit';
+
+  const body = (): JSX.Element => {
+    if (result.isPending) {
+      return (
+        <div className={styles.loading}>
+          {funnel.steps.map((step, index) => (
+            <Skeleton key={`${index}-${step.match}`} height={36} />
+          ))}
+        </div>
+      );
+    }
+    if (result.isError) {
+      return <ErrorState error={result.error} onRetry={() => result.refetch()} />;
+    }
+    if (data === undefined || entered === 0) {
+      return query.filters.length > 0 ? (
+        <EmptyState
+          message={messages.states.emptyFiltered}
+          action={{ label: messages.filters.clear, onClick: () => set({ ...query, filters: [] }) }}
+        />
+      ) : (
+        <EmptyState message={messages.funnels.nobody} />
+      );
+    }
+    return (
+      <>
+        <p className={styles.summary}>
+          <span>
+            {format(messages.funnels.started, {
+              entered: formatCount(entered),
+              visitors: formatCount(data.visitors),
+            })}
+          </span>{' '}
+          <span>{FINISH[funnel.window]}</span>
+        </p>
+        <ol
+          className={styles.chart}
+          aria-label={format(messages.funnels.chart, { name: funnel.name })}
+        >
+          {data.steps.map((reached, index) => {
+            const step = funnel.steps[index];
+            const before = data.steps[index - 1];
+            const leftRate = reached.stepRate === null ? null : 1 - reached.stepRate;
+            return (
+              <li key={`${index}-${step?.match ?? ''}`} className={styles.chartStep}>
+                {before !== undefined && before.visitors > 0 && (
+                  <p className={styles.drop}>
+                    {format(messages.funnels.left, {
+                      count: formatCount(reached.dropOff),
+                      rate: formatRate(leftRate) ?? messages.states.notAvailable,
+                    })}
+                  </p>
+                )}
+                <div className={styles.chartRow}>
+                  <p className={styles.chartLabel}>
+                    <span className={styles.chartNumber}>{index + 1}</span>
+                    <span className={styles.chartName}>{step?.name}</span>
+                    {step !== undefined && step.match !== step.name && (
+                      <code className={styles.chartMatch}>{step.match}</code>
+                    )}
+                  </p>
+                  <span className={styles.track} aria-hidden="true">
+                    <span
+                      className={styles.fill}
+                      style={{ width: `${(reached.rate ?? 0) * 100}%` }}
+                    />
+                  </span>
+                  <span className={styles.count} title={formatExact(reached.visitors)}>
+                    {formatCount(reached.visitors)}
+                  </span>
+                  <span className={styles.share}>
+                    {formatRate(reached.rate) ?? messages.states.notAvailable}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </>
+    );
+  };
+
+  return (
+    <Card title={funnel.name} metric={messages.metrics.visitors}>
+      {body()}
+      <p className={styles.footnote}>{format(messages.metricHelp.rawOnly, { days: retentionDays })}</p>
+      <p className={styles.footnote}>{messages.funnels.perVisitor}</p>
+      {forgets && <p className={styles.footnote}>{messages.funnels.cookieless}</p>}
     </Card>
   );
 }
@@ -575,6 +699,7 @@ export function Funnels(): JSX.Element {
           }
         }}
       />
+      {drawn !== null && <FunnelChart key={drawn.id} funnel={drawn} />}
       <AddFunnel owner={owner} onCreated={(funnelId) => choose(funnelId)} linkTo={linkTo} />
     </ReportPage>
   );

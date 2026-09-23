@@ -42,7 +42,8 @@ const BUDGETS = [
   // Measured 2026-09-20 at 12,591 B for the eight together, the largest being
   // Realtime at 3,256 B. Raised from 20 KB on 2026-09-23 by the commit that
   // spent it, the Funnels page: measured at 21,493 B for twelve chunks, the
-  // largest now Funnels at 3,615 B with its list, builder and delete.
+  // largest now Funnels at 3,615 B with its list, builder and delete. With
+  // the funnel drawn, measured the same day at 22,430 B, Funnels 4,540 B.
   { name: 'routes', pattern: /\.js$/, bytes: 24 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
