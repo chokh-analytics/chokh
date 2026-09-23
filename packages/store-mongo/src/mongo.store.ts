@@ -1,5 +1,6 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
+  MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   PROFILE_EVENT_LIMIT,
   REALTIME_WINDOW_MS,
@@ -47,6 +48,7 @@ import {
   type EngagementResult,
   type EngagementTally,
   type EventsResult,
+  type Funnel,
   type Goal,
   type GoalRead,
   type GoalStatsResult,
@@ -116,6 +118,7 @@ import {
   API_KEYS,
   AUDIT_LOG,
   EVENTS,
+  FUNNELS,
   GOALS,
   ROLLUPS_DAILY,
   SESSIONS,
@@ -193,6 +196,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const apiKeys = db.collection<StoredApiKey>(API_KEYS);
   const auditLog = db.collection<AuditRecord>(AUDIT_LOG);
   const goals = db.collection<Goal>(GOALS);
+  const funnels = db.collection<Funnel>(FUNNELS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -624,6 +628,44 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async deleteGoal(siteId: string, goalId: string): Promise<boolean> {
       const result = await goals.deleteOne({ siteId, id: goalId });
+      return result.deletedCount > 0;
+    },
+
+    funnels(siteId: string): Promise<Funnel[]> {
+      // The {siteId, id} unique index answers the site by its prefix, and at
+      // most fifty rows are ordered in memory, the way goals are.
+      return funnels
+        .find({ siteId }, { projection: { _id: 0 } })
+        .toArray()
+        .then((rows) => rows.sort((left, right) => left.createdAt - right.createdAt));
+    },
+
+    funnel(siteId: string, funnelId: string): Promise<Funnel | null> {
+      return funnels.findOne({ siteId, id: funnelId }, { projection: { _id: 0 } });
+    },
+
+    async createFunnel(funnel: Funnel): Promise<void> {
+      await siteOrThrow(funnel.siteId);
+      if ((await funnels.countDocuments({ siteId: funnel.siteId })) >= MAX_FUNNELS_PER_SITE) {
+        throw new StoreQueryError(
+          'FUNNEL_LIMIT',
+          `A site can have at most ${MAX_FUNNELS_PER_SITE} funnels`,
+        );
+      }
+      try {
+        await funnels.insertOne({ ...funnel, steps: funnel.steps.map((step) => ({ ...step })) });
+      } catch (error) {
+        // Derived from the steps and the window, so the unique index is what
+        // refuses the same funnel twice, as it is for a goal.
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('FUNNEL_EXISTS', 'A funnel already asks that question');
+        }
+        throw error;
+      }
+    },
+
+    async deleteFunnel(siteId: string, funnelId: string): Promise<boolean> {
+      const result = await funnels.deleteOne({ siteId, id: funnelId });
       return result.deletedCount > 0;
     },
 

@@ -576,6 +576,71 @@ export interface PropertyResult {
   rawOnly: true;
 }
 
+// A funnel: steps a visitor takes in order, each a goal's question, within a
+// window.
+//
+// A step is a copy of a question, not a pointer to a goal. The builder offers
+// a site's goals and a typed path, and a step made from a goal keeps the goal's
+// kind and match and remembers goalId only to say where it came from. So
+// deleting a goal changes no funnel: the goal was a question, the funnel still
+// asks it, and nothing was counted under either when they were written.
+//
+// The window is how long a visitor has, from the first step to the last. visit
+// is the other kind of window: every step inside one stay, however long that
+// stay lasts. Which one a funnel wants is the site owner's choice per funnel,
+// because "did they finish in one sitting" and "did they come back and finish
+// within a week" are both real questions.
+export type FunnelWindow = 'visit' | '1h' | '1d' | '7d' | '30d';
+
+export const FUNNEL_WINDOWS: readonly FunnelWindow[] = ['visit', '1h', '1d', '7d', '30d'];
+
+const HOUR_MS = 60 * 60 * 1000;
+
+export const FUNNEL_WINDOW_MS: Readonly<Record<Exclude<FunnelWindow, 'visit'>, number>> = {
+  '1h': HOUR_MS,
+  '1d': 24 * HOUR_MS,
+  '7d': 7 * 24 * HOUR_MS,
+  '30d': 30 * 24 * HOUR_MS,
+};
+
+// What a builder offers first. A site that remembers its visitors across days
+// can follow a chain across days; a cookieless visitor id is a daily hash, so
+// on such a site no chain can cross midnight and a longer window would only
+// look like it works.
+export function defaultFunnelWindow(visitorIdMode: 'cookieless' | 'persistent'): FunnelWindow {
+  return visitorIdMode === 'persistent' ? '7d' : 'visit';
+}
+
+// A funnel of one step is a goal. Eight is room for the longest real path a
+// site has named (page, pricing, checkout, paid, first use) with some to
+// spare, and every step is one more pass of the fold over every row a read
+// looks at, so the ceiling is a bound on work as well as on a form.
+export const MIN_FUNNEL_STEPS = 2;
+export const MAX_FUNNEL_STEPS = 8;
+
+// How many funnels a site may have, for the reason goals have a ceiling.
+export const MAX_FUNNELS_PER_SITE = 50;
+
+export interface FunnelStep extends GoalMatch {
+  name: string;
+  // The goal this step was copied from, when it was. Provenance only: nothing
+  // reads the goal again.
+  goalId?: string;
+}
+
+export interface Funnel {
+  siteId: string;
+  // Derived from the site, the window and the steps in order (funnelIdFor),
+  // so the same funnel asked twice is the same row and the unique index
+  // refuses it. The name is not part of the question.
+  id: string;
+  name: string;
+  steps: FunnelStep[];
+  window: FunnelWindow;
+  createdBy: string;
+  createdAt: number;
+}
+
 export interface GoalStatsRow {
   goalId: string;
   conversion: Conversion;

@@ -4,12 +4,22 @@ import type { AccountStore } from '../AccountStore.js';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   DEFAULT_TEAM_ID,
+  funnelIdFor,
   goalIdFor,
   type StoredApiKey,
   type StoredTeam,
   type StoredUser,
 } from '../accounts.js';
-import { MAX_GOALS_PER_SITE, StoreQueryError, type Goal, type GoalKind } from '../query.js';
+import {
+  MAX_FUNNELS_PER_SITE,
+  MAX_GOALS_PER_SITE,
+  StoreQueryError,
+  type Funnel,
+  type FunnelStep,
+  type FunnelWindow,
+  type Goal,
+  type GoalKind,
+} from '../query.js';
 import { defaultSiteSettings, type Site } from '../types.js';
 
 // What an adapter hands the account suite. `site` and `sites` come from
@@ -58,6 +68,27 @@ function goal(siteId: string, kind: GoalKind, match: string, at = NOW): Goal {
     createdAt: at,
   };
 }
+
+function funnel(
+  siteId: string,
+  steps: FunnelStep[],
+  window: FunnelWindow = '7d',
+  at = NOW,
+): Funnel {
+  return {
+    siteId,
+    id: funnelIdFor(siteId, window, steps),
+    name: steps.map((step) => step.name).join(' then '),
+    steps,
+    window,
+    createdBy: 'u_1',
+    createdAt: at,
+  };
+}
+
+const HOME: FunnelStep = { kind: 'page', match: '/home', name: 'Home' };
+const PRICING: FunnelStep = { kind: 'page', match: '/*/pricing', name: 'Pricing' };
+const SIGNUP: FunnelStep = { kind: 'event', match: 'signup', name: 'Signed up', goalId: 'g_x' };
 
 async function refusal(run: () => Promise<unknown>): Promise<string> {
   try {
@@ -330,6 +361,78 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
 
       it('refuses a goal on a site nobody registered', async () => {
         expect(await refusal(() => store.createGoal(goal('s_nobody', 'event', 'signup')))).toBe(
+          'UNKNOWN_SITE',
+        );
+      });
+    });
+
+    describe('funnels', () => {
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_funnels', ['funnels.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('stores a funnel with its steps and reads it back by id and in the list, oldest first', async () => {
+        const later = funnel('s_funnels', [HOME, PRICING, SIGNUP], '7d', NOW + 10);
+        const earlier = funnel('s_funnels', [HOME, SIGNUP], 'visit', NOW);
+        await store.createFunnel(later);
+        await store.createFunnel(earlier);
+
+        expect(await store.funnel('s_funnels', later.id)).toEqual(later);
+        // The step copied from a goal keeps where it came from; a typed path has
+        // no goal to name.
+        const read = await store.funnel('s_funnels', later.id);
+        expect(read?.steps[2]).toEqual(SIGNUP);
+        expect(read?.steps[0]?.goalId).toBeUndefined();
+        const rows = await store.funnels('s_funnels');
+        expect(rows.map((row) => row.id)).toEqual([earlier.id, later.id]);
+        expect(await store.funnels('s_else')).toEqual([]);
+      });
+
+      it('refuses the same steps in the same window twice, whatever the name', async () => {
+        const again = { ...funnel('s_funnels', [HOME, PRICING, SIGNUP]), name: 'Another name' };
+        expect(await refusal(() => store.createFunnel(again))).toBe('FUNNEL_EXISTS');
+        // A step's provenance is not part of the question either.
+        const noGoal = funnel('s_funnels', [HOME, PRICING, { ...SIGNUP, goalId: 'g_other' }]);
+        expect(noGoal.id).toBe(again.id);
+        expect(await refusal(() => store.createFunnel(noGoal))).toBe('FUNNEL_EXISTS');
+        // Another window, or the same steps in another order, is another funnel.
+        await store.createFunnel(funnel('s_funnels', [HOME, PRICING, SIGNUP], '1d'));
+        await store.createFunnel(funnel('s_funnels', [PRICING, HOME, SIGNUP]));
+        expect(await store.funnels('s_funnels')).toHaveLength(4);
+      });
+
+      it('refuses one funnel more than a site may have', async () => {
+        const have = (await store.funnels('s_funnels')).length;
+        for (let index = have; index < MAX_FUNNELS_PER_SITE; index += 1) {
+          await store.createFunnel(
+            funnel('s_funnels', [HOME, { kind: 'page', match: `/step/${index}`, name: 'n' }]),
+          );
+        }
+        expect(await store.funnels('s_funnels')).toHaveLength(MAX_FUNNELS_PER_SITE);
+        expect(
+          await refusal(() =>
+            store.createFunnel(
+              funnel('s_funnels', [HOME, { kind: 'page', match: '/too/many', name: 'n' }]),
+            ),
+          ),
+        ).toBe('FUNNEL_LIMIT');
+        // Another site's allowance is its own.
+        await store.createFunnel(funnel('s_else', [HOME, PRICING]));
+      });
+
+      it("deletes once and says so the second time, and never another site's", async () => {
+        const id = funnelIdFor('s_funnels', '7d', [HOME, PRICING, SIGNUP]);
+        expect(await store.deleteFunnel('s_else', id)).toBe(false);
+        expect(await store.funnel('s_funnels', id)).not.toBeNull();
+        expect(await store.deleteFunnel('s_funnels', id)).toBe(true);
+        expect(await store.deleteFunnel('s_funnels', id)).toBe(false);
+        expect(await store.funnel('s_funnels', id)).toBeNull();
+      });
+
+      it('refuses a funnel on a site nobody registered', async () => {
+        expect(await refusal(() => store.createFunnel(funnel('s_nobody', [HOME, PRICING])))).toBe(
           'UNKNOWN_SITE',
         );
       });

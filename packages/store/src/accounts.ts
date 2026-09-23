@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { GoalKind } from './query.js';
+import type { FunnelWindow, GoalKind, GoalMatch } from './query.js';
 
 // The control plane: who may read a site, with what, and who read an identity.
 //
@@ -112,4 +112,17 @@ export interface AuditRecord {
 export function goalIdFor(siteId: string, kind: GoalKind, match: string): string {
   const digest = createHash('sha256').update(`${siteId}\n${kind}\n${match}`).digest('base64url');
   return `g_${digest.slice(0, 16)}`;
+}
+
+// A funnel's id, derived from what it asks, for the reason a goal's is: the
+// same steps in the same order within the same window are the same numbers, so
+// the second is refused by the unique index on {siteId, id} with no read before
+// the write. The name is not part of it, and a step's goalId is not either: a
+// step is the question it copied, wherever the question came from.
+export function funnelIdFor(siteId: string, window: FunnelWindow, steps: GoalMatch[]): string {
+  const question = steps.map((step) => `${step.kind}\t${step.match}`).join('\n');
+  const digest = createHash('sha256')
+    .update(`${siteId}\n${window}\n${question}`)
+    .digest('base64url');
+  return `f_${digest.slice(0, 16)}`;
 }

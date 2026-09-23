@@ -1,5 +1,6 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
+  MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
@@ -54,6 +55,7 @@ import {
   type EngagementResult,
   type EngagementTally,
   type EventsResult,
+  type Funnel,
   type Goal,
   type GoalRead,
   type GoalStatsResult,
@@ -105,6 +107,12 @@ export interface MemoryStore extends AnalyticsStore, AccountStore {
 const NO_DOMAIN =
   'A site needs at least one domain: the unique index on sites.domains cannot hold two empty lists';
 
+// A funnel holds an array of steps, so a copy that stopped at the top level
+// would hand a caller the stored steps to change.
+function copyFunnel(funnel: Funnel): Funnel {
+  return { ...funnel, steps: funnel.steps.map((step) => ({ ...step })) };
+}
+
 // The reference adapter: everything the contract asks for, held in arrays. It
 // is what the collector's tests read through, what an install with no
 // MONGODB_URI runs on, and the second implementation the conformance suite is
@@ -129,6 +137,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let apiKeys: StoredApiKey[] = [];
   let auditLog: AuditRecord[] = [];
   let goals: Goal[] = [];
+  let funnels: Funnel[] = [];
 
   function siteOrThrow(siteId: string): Site {
     const site = bySiteId.get(siteId);
@@ -671,6 +680,41 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(deleted);
     },
 
+    funnels(siteId: string): Promise<Funnel[]> {
+      return Promise.resolve(
+        funnels
+          .filter((row) => row.siteId === siteId)
+          .sort((left, right) => left.createdAt - right.createdAt)
+          .map(copyFunnel),
+      );
+    },
+
+    funnel(siteId: string, funnelId: string): Promise<Funnel | null> {
+      const found = funnels.find((row) => row.siteId === siteId && row.id === funnelId);
+      return Promise.resolve(found === undefined ? null : copyFunnel(found));
+    },
+
+    async createFunnel(funnel: Funnel): Promise<void> {
+      siteOrThrow(funnel.siteId);
+      if (funnels.some((row) => row.siteId === funnel.siteId && row.id === funnel.id)) {
+        throw new StoreQueryError('FUNNEL_EXISTS', 'A funnel already asks that question');
+      }
+      if (funnels.filter((row) => row.siteId === funnel.siteId).length >= MAX_FUNNELS_PER_SITE) {
+        throw new StoreQueryError(
+          'FUNNEL_LIMIT',
+          `A site can have at most ${MAX_FUNNELS_PER_SITE} funnels`,
+        );
+      }
+      funnels.push(copyFunnel(funnel));
+    },
+
+    deleteFunnel(siteId: string, funnelId: string): Promise<boolean> {
+      const kept = funnels.filter((row) => !(row.siteId === siteId && row.id === funnelId));
+      const deleted = kept.length !== funnels.length;
+      funnels = kept;
+      return Promise.resolve(deleted);
+    },
+
     audit(row: AuditRecord): Promise<void> {
       auditLog.push({ ...row });
       return Promise.resolve();
@@ -763,6 +807,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       apiKeys = [];
       auditLog = [];
       goals = [];
+      funnels = [];
       bySiteId.clear();
       ownPresence.clear();
     },

@@ -1,5 +1,5 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
-import type { Goal } from './query.js';
+import type { Funnel, Goal } from './query.js';
 import type { Site, SiteSettings } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -62,6 +62,18 @@ export interface AccountStore {
   createGoal(goal: Goal): Promise<void>;
   // False when there was no such goal on this site, so a route can answer 404.
   deleteGoal(siteId: string, goalId: string): Promise<boolean>;
+
+  // A site's funnels, oldest first. Configuration, like goals: a funnel is a
+  // question the reports ask of the raw events, so a purge never touches one.
+  funnels(siteId: string): Promise<Funnel[]>;
+  funnel(siteId: string, funnelId: string): Promise<Funnel | null>;
+  // Refuses a site nobody registered with UNKNOWN_SITE, the same steps and
+  // window asked again with FUNNEL_EXISTS (the id is derived from them, so the
+  // unique index refuses it), and one more than MAX_FUNNELS_PER_SITE with
+  // FUNNEL_LIMIT. How many steps a funnel has is checked where it is built.
+  createFunnel(funnel: Funnel): Promise<void>;
+  // False when there was no such funnel on this site, so a route can answer 404.
+  deleteFunnel(siteId: string, funnelId: string): Promise<boolean>;
 
   audit(row: AuditRecord): Promise<void>;
   // The trail for a site over a range, oldest first. Read by tests today and by
