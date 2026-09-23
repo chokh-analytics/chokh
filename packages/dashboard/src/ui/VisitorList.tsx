@@ -119,56 +119,67 @@ export function VisitorList({
   const ticking = useWallClock();
   const at = now ?? ticking;
 
+  // The table scrolls inside its card rather than the page scrolling under it.
+  // Six columns, one of them an address, are wider than a phone, and a page
+  // that moves sideways drags the navigation and the range bar with it. The
+  // box can take focus, so a keyboard can scroll it too.
   return (
-    <table className={styles.table}>
-      <caption className="sr-only">{messages.realtime.listCaption}</caption>
-      <thead className={styles.head}>
-        <tr>
-          <th scope="col">{messages.realtime.visitor}</th>
-          <th scope="col">{messages.dimensions.page}</th>
-          <th scope="col">{messages.realtime.place}</th>
-          <th scope="col">{messages.dimensions.device}</th>
-          {identity && <th scope="col">{messages.realtime.address}</th>}
-          <th scope="col" className={styles.right}>
-            {messages.realtime.onlineFor}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {online.map((visitor) => (
-          <Row
-            key={visitor.visitorId}
-            visitor={visitor}
-            identity={identity}
-            now={at}
-            timezone={timezone}
-            muted={false}
-            onSelect={onSelect}
-          />
-        ))}
-        {recent.length > 0 && (
+    <div
+      className={styles.scroll}
+      tabIndex={0}
+      role="group"
+      aria-label={messages.realtime.listCaption}
+    >
+      <table className={styles.table}>
+        <caption className="sr-only">{messages.realtime.listCaption}</caption>
+        <thead className={styles.head}>
           <tr>
-            <th
-              scope="colgroup"
-              colSpan={identity ? 6 : 5}
-              className={styles.divider}
-            >
-              {messages.realtime.recentHeading}
+            <th scope="col">{messages.realtime.visitor}</th>
+            <th scope="col">{messages.dimensions.page}</th>
+            <th scope="col">{messages.realtime.place}</th>
+            <th scope="col">{messages.dimensions.device}</th>
+            {identity && <th scope="col">{messages.realtime.address}</th>}
+            <th scope="col" className={styles.right}>
+              {messages.realtime.onlineFor}
             </th>
           </tr>
-        )}
-        {recent.map((visitor) => (
-          <Row
-            key={visitor.visitorId}
-            visitor={visitor}
-            identity={identity}
-            now={at}
-            timezone={timezone}
-            muted
-            onSelect={onSelect}
-          />
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {online.map((visitor) => (
+            <Row
+              key={visitor.visitorId}
+              visitor={visitor}
+              identity={identity}
+              now={at}
+              timezone={timezone}
+              muted={false}
+              onSelect={onSelect}
+            />
+          ))}
+          {recent.length > 0 && (
+            <tr>
+              <th
+                scope="colgroup"
+                colSpan={identity ? 6 : 5}
+                className={styles.divider}
+              >
+                {messages.realtime.recentHeading}
+              </th>
+            </tr>
+          )}
+          {recent.map((visitor) => (
+            <Row
+              key={visitor.visitorId}
+              visitor={visitor}
+              identity={identity}
+              now={at}
+              timezone={timezone}
+              muted
+              onSelect={onSelect}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

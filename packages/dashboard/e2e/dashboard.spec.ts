@@ -426,3 +426,26 @@ test('lists an event and breaks it down by what it carried', async ({ page }) =>
   await expect(properties.getByRole('row').filter({ hasText: 'pro' })).toBeVisible();
   await expect(properties.getByText('A property cannot be used as a filter yet.')).toBeVisible();
 });
+
+// Somebody on the site, read on a phone. The visitor table is six columns with
+// an address among them for an owner, which is wider than 390 pixels: it
+// scrolls inside its card, and the page itself never moves sideways. The phone
+// case above reads the Overview with nobody online, which is why this went
+// unseen until a table had a row in it.
+test('keeps the visitor table inside a phone screen once somebody is here', async ({ page }) => {
+  await collect(page.request, `v_phone_${Date.now()}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of ['people', 'realtime']) {
+    await boot(page, `/${SITE}/${path}`);
+    const table = page.getByRole('group', { name: 'Everybody seen in the last half hour.' });
+    await expect(table.getByRole('row').nth(1)).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
+    // The columns past the edge are still there, a scroll away inside the card.
+    const inner = await table.evaluate((box) => box.scrollWidth - box.clientWidth);
+    expect(inner, `${path} lost its columns rather than scrolling them`).toBeGreaterThan(0);
+  }
+});

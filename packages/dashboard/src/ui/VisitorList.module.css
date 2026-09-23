@@ -1,3 +1,11 @@
+/* The one thing on the page allowed to be wider than a phone scrolls here,
+ * inside its card, and never takes the page with it. */
+.scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
