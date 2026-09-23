@@ -3,6 +3,8 @@ import type {
   BreakdownResult,
   EngagementResult,
   EventsResult,
+  FunnelRead,
+  FunnelResult,
   Goal,
   GoalStatsResult,
   PropertyQuery,
@@ -67,6 +69,11 @@ export interface AnalyticsStore {
   // Every goal handed in, one conversion each, in one read. Raw rows only, for
   // the reason a goal read always is (see conversionMatcher).
   goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult>;
+
+  // How far the people of the range got through a funnel, per visitor over
+  // the whole range. Raw rows only, for the reason a goal read is; the
+  // definition is on FunnelResult in query.ts and the fold in funnel.ts.
+  funnelStats(query: Query, funnel: FunnelRead): Promise<FunnelResult>;
 
   // Who is here now: online counts, the pages and countries they are on, the
   // visitors themselves, and the rest of the presence window beside them. Read

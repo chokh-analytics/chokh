@@ -12,6 +12,7 @@ import {
   addEngagement,
   addTotals,
   assertEngageable,
+  assertFunnelSteps,
   assertNoGoal,
   assertFilterable,
   assertIntervalRange,
@@ -22,6 +23,9 @@ import {
   createMemoryPresence,
   dayBounds,
   finishConversion,
+  finishFunnel,
+  funnelWindowMs,
+  splitVisitFilters,
   finishEngagement,
   finishEventRow,
   finishMetrics,
@@ -52,6 +56,8 @@ import {
   type Goal,
   type GoalRead,
   type GoalStatsResult,
+  type FunnelRead,
+  type FunnelResult,
   type PropertyCount,
   type PropertyQuery,
   type PropertyResult,
@@ -99,6 +105,7 @@ import {
   conversionTotalsPipeline,
   engagementPipeline,
   eventsPipeline,
+  funnelPipeline,
   goalStatsPipeline,
   propertyKeysPipeline,
   propertyValuesPipeline,
@@ -1088,6 +1095,30 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         })),
         rawOnly: true,
       };
+    },
+
+    async funnelStats(query: Query, funnel: FunnelRead): Promise<FunnelResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertNoGoal(query, 'funnel');
+      assertFunnelSteps(funnel);
+      const rows = await events
+        .aggregate(
+          funnelPipeline(
+            site.id,
+            { from: query.from, to: query.to },
+            botSelector(query.filters),
+            splitVisitFilters(query.filters),
+            funnel,
+            funnelWindowMs(funnel.window),
+          ),
+          // The step rows are sorted by visitor, and a busy range is more than a
+          // sort holds in memory.
+          { allowDiskUse: true },
+        )
+        .toArray();
+      const depths = rows.map((row): [number, number] => [Number(row._id), row.visitors as number]);
+      const segment = depths.reduce((total, [, visitors]) => total + visitors, 0);
+      return finishFunnel(depths, segment, funnel.steps.length);
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {

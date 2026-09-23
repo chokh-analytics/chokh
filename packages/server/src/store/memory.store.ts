@@ -1,6 +1,7 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_FUNNELS_PER_SITE,
+  MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_GOALS_PER_SITE,
   MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
@@ -13,7 +14,14 @@ import {
   addSession,
   addTotals,
   assertEngageable,
+  assertFunnelSteps,
   assertNoGoal,
+  compareFunnelRows,
+  finishFunnel,
+  funnelDepth,
+  funnelHits,
+  funnelWindowMs,
+  splitVisitFilters,
   conversionMatcher,
   assertIntervalRange,
   assertFilterable,
@@ -56,6 +64,9 @@ import {
   type EngagementTally,
   type EventsResult,
   type Funnel,
+  type FunnelRead,
+  type FunnelResult,
+  type FunnelRow,
   type Goal,
   type GoalRead,
   type GoalStatsResult,
@@ -986,6 +997,86 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         })),
         rawOnly: true,
       };
+    },
+
+    async funnelStats(query: Query, funnel: FunnelRead): Promise<FunnelResult> {
+      siteOrThrow(query.siteId);
+      assertNoGoal(query, 'funnel');
+      assertFunnelSteps(funnel);
+      const wantsBots = botSelector(query.filters);
+      const split = splitVisitFilters(query.filters);
+      const inRange = (event: StoredEvent): boolean =>
+        event.siteId === query.siteId &&
+        event.ts >= query.from &&
+        event.ts < query.to &&
+        event.bot === wantsBots;
+
+      // The segment: a row of theirs matching every filter a row carries, and
+      // a stay of theirs begun in the range matching every one only a stay does.
+      const members = new Set<string>();
+      for (const event of events) {
+        if (inRange(event) && split.event.every((filter) => matchesFilter(event, filter))) {
+          members.add(event.visitorId);
+        }
+      }
+      if (split.stay.length > 0) {
+        const stayed = new Set<string>();
+        for (const session of sessions) {
+          if (
+            session.siteId === query.siteId &&
+            session.startedAt >= query.from &&
+            session.startedAt < query.to &&
+            session.bot === wantsBots &&
+            split.stay.every((filter) => matchesSessionFilter(session, filter))
+          ) {
+            stayed.add(session.visitorId);
+          }
+        }
+        for (const visitorId of members) {
+          if (!stayed.has(visitorId)) members.delete(visitorId);
+        }
+      }
+
+      // The steps, among everybody: the filters choose the people, never the
+      // rows that count as steps.
+      const hitsOf = funnelHits(funnel.steps);
+      const byVisit = funnel.window === 'visit';
+      const rows = new Map<string, { row: FunnelRow; sessionId?: string }[]>();
+      for (const event of events) {
+        if (!inRange(event) || (byVisit && event.sessionId === undefined)) continue;
+        const hits = hitsOf(event);
+        if (!hits.includes(true)) continue;
+        const list = rows.get(event.visitorId) ?? [];
+        rows.set(event.visitorId, list);
+        const entry: { row: FunnelRow; sessionId?: string } = { row: { ts: event.ts, hits } };
+        if (event.sessionId !== undefined) entry.sessionId = event.sessionId;
+        list.push(entry);
+      }
+      const windowMs = funnelWindowMs(funnel.window);
+      const depths = new Map<number, number>();
+      for (const visitorId of members) {
+        const mine = (rows.get(visitorId) ?? [])
+          .sort((left, right) => compareFunnelRows(left.row, right.row))
+          .slice(0, MAX_FUNNEL_ROWS_PER_VISITOR);
+        let depth = 0;
+        if (byVisit) {
+          const perVisit = new Map<string, FunnelRow[]>();
+          for (const entry of mine) {
+            const key = entry.sessionId ?? '';
+            perVisit.set(key, [...(perVisit.get(key) ?? []), entry.row]);
+          }
+          for (const visit of perVisit.values()) {
+            depth = Math.max(depth, funnelDepth(visit, windowMs));
+          }
+        } else {
+          depth = funnelDepth(
+            mine.map((entry) => entry.row),
+            windowMs,
+          );
+        }
+        depths.set(depth, (depths.get(depth) ?? 0) + 1);
+      }
+      return finishFunnel(depths, members.size, funnel.steps.length);
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {

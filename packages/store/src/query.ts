@@ -513,6 +513,7 @@ const GOALLESS_READS = {
   engagement: 'A time on page read',
   events: 'The events report',
   properties: 'A property breakdown',
+  funnel: 'A funnel',
 } as const;
 
 export function assertNoGoal(query: Query, read: keyof typeof GOALLESS_READS): void {
@@ -639,6 +640,54 @@ export interface Funnel {
   window: FunnelWindow;
   createdBy: string;
   createdAt: number;
+}
+
+// What a read needs of a funnel: the questions in order, and the window.
+export interface FunnelRead {
+  steps: GoalMatch[];
+  window: FunnelWindow;
+}
+
+// How many people got how far, in one place because two adapters must not
+// disagree about it:
+//
+// - Counted per visitor over the whole range, never per day. A chain begun on
+//   Monday and finished on Tuesday belongs to neither day, and a seven day
+//   window cut into days is a one day window. So the first step is distinct
+//   people over the range, which over several days is not the Visitors figure:
+//   that one adds up each day's uniques.
+// - A visitor reached step k when there are rows r1 .. rk, each ri reaching step
+//   i the way a row reaches a goal (conversionMatcher), taken in time order,
+//   with rk no later than the window after r1. With the visit window every ri is
+//   in one stay and there is no other bound. Every row lies inside the range:
+//   the range bounds each step, the window bounds the chain.
+// - Anything between two steps is ignored, one row counts for one step of one
+//   chain (so a funnel of /home then /home needs two views of /home), and
+//   repeating the first step starts a new clock without undoing what an earlier
+//   chain reached. At equal times rows are taken in step order (see
+//   compareFunnelRows), so both adapters chain them the same way.
+// - The query's filters narrow the people and never the steps, the rule a
+//   conversion keeps: a visitor is in the segment when a row of theirs in the
+//   range matches every filter an event carries and, for entry, exit and
+//   channel, a stay of theirs that began in the range matches every one of
+//   those. The steps are then counted among those people, wherever they
+//   happened.
+export interface FunnelStepResult {
+  // Reached this step, and every one before it, in order, within the window.
+  visitors: number;
+  // The previous step's visitors minus this; 0 on the first step.
+  dropOff: number;
+  // This over the first step; null over nobody.
+  rate: number | null;
+  // This over the previous step; null on the first step and over nobody.
+  stepRate: number | null;
+}
+
+export interface FunnelResult {
+  // The segment: distinct people in the range under the filters.
+  visitors: number;
+  steps: FunnelStepResult[];
+  rawOnly: true;
 }
 
 export interface GoalStatsRow {

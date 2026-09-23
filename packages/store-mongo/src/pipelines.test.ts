@@ -2,7 +2,12 @@ import {
   DIMENSIONS,
   SESSION_DIMENSIONS,
   SESSION_PATH_BY_DIMENSION,
+  funnelWindowMs,
+  splitVisitFilters,
   type Dimension,
+  type Filter,
+  type FunnelRead,
+  type FunnelWindow,
 } from '@chokh/store';
 import { fixture } from '@chokh/store/conformance';
 import { MongoClient, type Db, type Document } from 'mongodb';
@@ -16,6 +21,7 @@ import {
   conversionTotalsPipeline,
   engagementPipeline,
   eventsPipeline,
+  funnelPipeline,
   goalStatsPipeline,
   propertyKeysPipeline,
   propertyValuesPipeline,
@@ -413,6 +419,109 @@ describe('events and property pipelines', () => {
     expect(unions).toHaveLength(1);
     expect(unions[0]).toContain('IXSCAN');
     expect(unions[0]).not.toContain('COLLSCAN');
+  });
+});
+
+// A funnel read is raw for its whole range like a goal read, and it has more
+// halves: the segment by its rows, the segment by its stays when a filter names
+// a stay, and the steps. Every half leads with an index, and the one blocking
+// sort is the one over the step rows.
+describe('funnel pipeline', () => {
+  const span = { from: fixture.DAY_BEFORE_START, to: fixture.NOW };
+  const funnel = {
+    steps: [
+      { kind: 'page', match: '/home' },
+      { kind: 'page', match: '/*/pricing' },
+      { kind: 'event', match: fixture.SIGNUP },
+    ],
+    window: '7d',
+  } as const satisfies FunnelRead;
+
+  // The aggregation stages by name, per half: the outer pipeline's, and each
+  // $unionWith's own.
+  function sortsByHalf(explained: Document): { outer: number; unions: number[] } {
+    const count = (stages: unknown): number =>
+      Array.isArray(stages)
+        ? stages.filter((stage) => typeof stage === 'object' && stage !== null && '$sort' in stage)
+            .length
+        : 0;
+    const unions: number[] = [];
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== 'object') return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+        if (key === '$unionWith') {
+          const pipeline = (value as { pipeline?: unknown }).pipeline;
+          unions.push(count(pipeline));
+          continue;
+        }
+        walk(value);
+      }
+    };
+    walk(explained.stages);
+    return { outer: count(explained.stages), unions };
+  }
+
+  async function explain(filters: Filter[], window: FunnelWindow = '7d'): Promise<Document> {
+    const read = { ...funnel, window };
+    return (await db
+      .collection('events')
+      .aggregate(
+        funnelPipeline(
+          fixture.SITE_ID,
+          span,
+          false,
+          splitVisitFilters(filters),
+          read,
+          funnelWindowMs(window),
+        ),
+        { allowDiskUse: true },
+      )
+      .explain('queryPlanner')) as unknown as Document;
+  }
+
+  function expectEveryHalfIndexed(explained: Document, halves: number): void {
+    const stages = explained.stages as Document[];
+    const outer = scanStages({ stages: stages[0] } as Document);
+    expect(outer).toContain('IXSCAN');
+    expect(outer).not.toContain('COLLSCAN');
+    const unions = unionStages({ stages } as Document);
+    expect(unions).toHaveLength(halves);
+    for (const inner of unions) {
+      expect(inner).toContain('IXSCAN');
+      expect(inner).not.toContain('COLLSCAN');
+    }
+    // One blocking sort, in the half that reads the steps, which is always the
+    // last $unionWith.
+    const sorts = sortsByHalf(explained);
+    expect(sorts.outer).toBe(0);
+    expect(sorts.unions.slice(0, -1).every((each) => each === 0)).toBe(true);
+    expect(sorts.unions.at(-1)).toBe(1);
+  }
+
+  it('scans an index on both halves with no filter', async () => {
+    expectEveryHalfIndexed(await explain([]), 1);
+  });
+
+  it('scans an index on both halves with a filter a row carries', async () => {
+    expectEveryHalfIndexed(await explain([{ dim: 'country', op: 'is', value: 'BD' }]), 1);
+  });
+
+  it('scans an index on all three halves with a filter only a stay carries', async () => {
+    expectEveryHalfIndexed(
+      await explain([
+        { dim: 'channel', op: 'is', value: 'social' },
+        { dim: 'country', op: 'is', value: 'BD' },
+      ]),
+      2,
+    );
+  });
+
+  it('scans an index when the window is one visit', async () => {
+    expectEveryHalfIndexed(await explain([], 'visit'), 1);
   });
 });
 

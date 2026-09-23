@@ -3,11 +3,13 @@ import {
   EVENT_PATH_BY_DIMENSION,
   EVENT_TYPE_BY_DIMENSION,
   SESSION_PATH_BY_DIMENSION,
+  MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_PROPERTY_KEYS,
   goalIsPattern,
   goalPattern,
   type Dimension,
   type Filter,
+  type FunnelRead,
   type Goal,
   type GoalMatch,
   type Interval,
@@ -16,7 +18,7 @@ import {
 } from '@chokh/store';
 import type { Document } from 'mongodb';
 
-import { EVENTS } from './schema.js';
+import { EVENTS, SESSIONS } from './schema.js';
 
 // Every read is an aggregation, and every aggregation is built here so the
 // explain test can hold the same pipeline the adapter runs.
@@ -826,5 +828,207 @@ export function goalStatsPipeline(
         completions: { $sum: '$reached.completions' },
       },
     },
+  ];
+}
+
+// The funnel read. One aggregation on events, in the shape a goal read has: one
+// half says who is in the segment, a $unionWith brings in how far each of them
+// got, and the two meet per visitor. Only the step rows are sorted, and at most
+// steps + 1 documents come back whatever the traffic.
+
+// The fold of funnel.ts as a $reduce over a visitor's step rows in funnel
+// order. It keeps the latest start of a chain at every step and updates every
+// step from the state before the row, so it is funnelDepth line for line, and
+// the funnel test in this package runs the seeded sequences funnelDepth is
+// proved on through these stages and compares.
+function funnelFoldExpression(stepCount: number, windowMs: number): Document {
+  const initial: null[] = new Array<null>(stepCount).fill(null);
+  const best = {
+    $reduce: {
+      input: '$rows',
+      initialValue: initial,
+      in: {
+        $map: {
+          input: { $range: [0, stepCount] },
+          // Named, so $$this is still the row the $reduce is on.
+          as: 'step',
+          in: {
+            $cond: [
+              { $eq: ['$$step', 0] },
+              {
+                $cond: [
+                  { $arrayElemAt: ['$$this.h', 0] },
+                  '$$this.t',
+                  { $arrayElemAt: ['$$value', 0] },
+                ],
+              },
+              {
+                $let: {
+                  vars: {
+                    start: { $arrayElemAt: ['$$value', { $subtract: ['$$step', 1] }] },
+                    current: { $arrayElemAt: ['$$value', '$$step'] },
+                  },
+                  in: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $arrayElemAt: ['$$this.h', '$$step'] },
+                          { $ne: ['$$start', null] },
+                          { $lte: [{ $subtract: ['$$this.t', '$$start'] }, windowMs] },
+                        ],
+                      },
+                      // $max passes over a null, so an empty step takes the start.
+                      { $max: ['$$current', '$$start'] },
+                      '$$current',
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+  return { $size: { $filter: { input: best, cond: { $ne: ['$$this', null] } } } };
+}
+
+// From step rows ({visitorId, sessionId, ts, hits, first, mask}) to one
+// {_id: visitorId, depth} each. Exported on its own so the equality test can
+// run exactly these stages over the seeded sequences.
+//
+// The $sort is the read's one blocking sort, and it sorts step rows only. It
+// is also what orders each visitor's $push: $setWindowFields partitions by the
+// same keys the rows are already sorted by, the cap keeps the first thousand
+// in that order, and $group pushes in the order it receives.
+export function funnelFoldStages(stepCount: number, windowMs: number, byVisit: boolean): Document[] {
+  const stages: Document[] = [
+    { $sort: { visitorId: 1, ts: 1, first: 1, mask: 1 } },
+    {
+      $setWindowFields: {
+        partitionBy: '$visitorId',
+        sortBy: { ts: 1, first: 1, mask: 1 },
+        // A running count rather than $documentNumber, which takes one sort key
+        // and not the three that make equal times an order.
+        output: { n: { $sum: 1, window: { documents: ['unbounded', 'current'] } } },
+      },
+    },
+    { $match: { n: { $lte: MAX_FUNNEL_ROWS_PER_VISITOR } } },
+    {
+      $group: {
+        _id: byVisit ? { visitorId: '$visitorId', sessionId: '$sessionId' } : '$visitorId',
+        rows: { $push: { t: '$ts', h: '$hits' } },
+      },
+    },
+    { $project: { depth: funnelFoldExpression(stepCount, windowMs) } },
+  ];
+  if (byVisit) {
+    stages.push({ $group: { _id: '$_id.visitorId', depth: { $max: '$depth' } } });
+  }
+  return stages;
+}
+
+// Every row that reaches at least one step, tagged with which, and with the two
+// numbers funnel.ts orders equal times by: the lowest step reached, and every
+// step reached as one number.
+function funnelStepRows(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  funnel: FunnelRead,
+): Document[] {
+  const conditions: Document[] = [];
+  for (const step of funnel.steps) {
+    const condition = goalCondition(step);
+    if (!conditions.some((seen) => JSON.stringify(seen) === JSON.stringify(condition))) {
+      conditions.push(condition);
+    }
+  }
+  const match: Document = {
+    siteId,
+    ts: { $gte: span.from, $lt: span.to },
+    bot: wantsBots,
+    $or: conditions,
+  };
+  if (funnel.window === 'visit') {
+    // A row written before stays were stamped has no visit to be in.
+    match.sessionId = { $type: 'string' };
+  }
+  return [
+    { $match: match },
+    {
+      $project: {
+        _id: 0,
+        visitorId: 1,
+        sessionId: 1,
+        ts: 1,
+        hits: funnel.steps.map((step) => goalExpression(step)),
+      },
+    },
+    {
+      $addFields: {
+        first: {
+          $let: {
+            vars: { at: { $indexOfArray: ['$hits', true] } },
+            in: { $cond: [{ $eq: ['$$at', -1] }, funnel.steps.length, '$$at'] },
+          },
+        },
+        mask: {
+          $sum: funnel.steps.map((_, index) => ({
+            $cond: [{ $arrayElemAt: ['$hits', index] }, 2 ** index, 0],
+          })),
+        },
+      },
+    },
+  ];
+}
+
+export function funnelPipeline(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: { event: Filter[]; stay: Filter[] },
+  funnel: FunnelRead,
+  windowMs: number,
+): Document[] {
+  const stay = filters.stay.length > 0;
+  return [
+    // The segment by its rows.
+    { $match: eventMatch(siteId, span, wantsBots, filters.event) },
+    { $group: { _id: '$visitorId', member: { $max: 1 } } },
+    // And by its stays, when a filter names something only a stay carries.
+    ...(stay
+      ? [
+          {
+            $unionWith: {
+              coll: SESSIONS,
+              pipeline: [
+                { $match: sessionMatch(siteId, span, wantsBots, filters.stay) },
+                { $group: { _id: '$visitorId', stay: { $max: 1 } } },
+              ],
+            },
+          },
+        ]
+      : []),
+    // How far everybody got; the segment decides whose depth counts.
+    {
+      $unionWith: {
+        coll: EVENTS,
+        pipeline: [
+          ...funnelStepRows(siteId, span, wantsBots, funnel),
+          ...funnelFoldStages(funnel.steps.length, windowMs, funnel.window === 'visit'),
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: '$_id',
+        member: { $max: '$member' },
+        stay: { $max: '$stay' },
+        depth: { $max: '$depth' },
+      },
+    },
+    { $match: stay ? { member: 1, stay: 1 } : { member: 1 } },
+    { $group: { _id: { $ifNull: ['$depth', 0] }, visitors: { $sum: 1 } } },
   ];
 }

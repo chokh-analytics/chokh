@@ -9,17 +9,25 @@ import {
   StoreQueryError,
   type BreakdownResult,
   type Conversion,
+  type FunnelRead,
+  type FunnelResult,
   type Goal,
   type GoalRead,
   type Metrics,
 } from '../query.js';
+import { MAX_FUNNEL_ROWS_PER_VISITOR } from '../funnel.js';
 import { dayKey } from '../time.js';
-import type { Site } from '../types.js';
+import { defaultSiteSettings, type Site, type StoredEvent } from '../types.js';
 import * as F from './fixture.js';
 
 export * as fixture from './fixture.js';
 export { runPresenceConformance, type PresenceHarness } from './presence.js';
 export { runAccountConformance, type AccountHarness } from './accounts.js';
+export {
+  FUNNEL_SEQUENCE_COUNT,
+  funnelSequences,
+  type FunnelSequence,
+} from './funnel-sequences.js';
 
 // What an adapter hands the suite. addSite goes through the adapter's real
 // createSite; it stays on the harness because the MongoDB adapter has to be
@@ -955,6 +963,264 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         const result = await store.goalStats(today, []);
         expect(result.rows).toEqual([]);
         expect(result.visitors).toBe(F.EXPECTED.today.visitors);
+      });
+    });
+
+    // A funnel, as the contract defines it: per visitor over the whole range,
+    // raw rows only, filters narrowing the people and never the steps. The
+    // numbers below are read off the drafts in fixture.ts: v1 read /home then
+    // /pricing in one stay on the 16th, v2 read /home on the 16th and /pricing
+    // today (a day and 17h50m later), v3 read /home on the 17th and /pricing
+    // today (22h25m later).
+    describe('funnels', () => {
+      const HOME = { kind: 'page', match: '/home' } as const;
+      const PRICING = { kind: 'page', match: '/pricing' } as const;
+      const SIGNED_UP = { kind: 'event', match: F.SIGNUP } as const;
+      const reached = (result: FunnelResult): number[] =>
+        result.steps.map((step) => step.visitors);
+
+      it('counts each person once, over the whole range, within the window', async () => {
+        const day = await store.funnelStats(wholeRange, { steps: [HOME, PRICING], window: '1d' });
+        expect(day.rawOnly).toBe(true);
+        expect(day.visitors).toBe(3);
+        expect(reached(day)).toEqual([3, 2]);
+        expect(day.steps[1]).toEqual({ visitors: 2, dropOff: 1, rate: 2 / 3, stepRate: 2 / 3 });
+
+        const week = await store.funnelStats(wholeRange, { steps: [HOME, PRICING], window: '7d' });
+        expect(reached(week)).toEqual([3, 3]);
+
+        // Only v1 did both inside one stay.
+        const visit = await store.funnelStats(wholeRange, {
+          steps: [HOME, PRICING],
+          window: 'visit',
+        });
+        expect(reached(visit)).toEqual([3, 1]);
+      });
+
+      it('takes the steps in order', async () => {
+        const result = await store.funnelStats(wholeRange, {
+          steps: [PRICING, HOME],
+          window: '7d',
+        });
+        expect(reached(result)).toEqual([3, 1]);
+      });
+
+      it('lets one row be one step only', async () => {
+        // Every stay of the fixture has one view of /home at most.
+        const visit = await store.funnelStats(wholeRange, { steps: [HOME, HOME], window: 'visit' });
+        expect(reached(visit)).toEqual([3, 0]);
+        // Across a day, v1's views of the 16th, the 17th and the 18th chain.
+        const day = await store.funnelStats(wholeRange, { steps: [HOME, HOME], window: '1d' });
+        expect(reached(day)).toEqual([3, 1]);
+      });
+
+      it('reaches an event step by a custom event, a server one included', async () => {
+        const result = await store.funnelStats(wholeRange, {
+          steps: [SIGNED_UP, PRICING],
+          window: '1d',
+        });
+        // v3 signed up and read /pricing three minutes later; v1 signed up and
+        // read nothing after it.
+        expect(reached(result)).toEqual([2, 1]);
+      });
+
+      it('narrows the people with a filter a row carries and never the steps', async () => {
+        // v3 is the one who read /docs; neither step is /docs.
+        const docs = await store.funnelStats(
+          { ...wholeRange, filters: [{ dim: 'page', op: 'is', value: '/docs' }] },
+          { steps: [HOME, PRICING], window: '7d' },
+        );
+        expect(docs.visitors).toBe(1);
+        expect(reached(docs)).toEqual([1, 1]);
+
+        const india = await store.funnelStats(
+          { ...wholeRange, filters: [{ dim: 'country', op: 'is', value: 'IN' }] },
+          { steps: [HOME, PRICING], window: '1d' },
+        );
+        expect(india.visitors).toBe(1);
+        expect(reached(india)).toEqual([1, 0]);
+      });
+
+      it('narrows the people with a filter only a stay carries', async () => {
+        // v2's stay of the 16th came from Facebook; their stay today did not,
+        // and that is where they read /pricing.
+        const social = await store.funnelStats(
+          { ...wholeRange, filters: [{ dim: 'channel', op: 'is', value: 'social' }] },
+          { steps: [HOME, PRICING], window: '7d' },
+        );
+        expect(social.visitors).toBe(1);
+        expect(reached(social)).toEqual([1, 1]);
+
+        // Both kinds at once: a person has to be in both halves.
+        const both = await store.funnelStats(
+          {
+            ...wholeRange,
+            filters: [
+              { dim: 'channel', op: 'is', value: 'social' },
+              { dim: 'country', op: 'is', value: 'BD' },
+            ],
+          },
+          { steps: [HOME, PRICING], window: '7d' },
+        );
+        expect(both.visitors).toBe(0);
+        expect(reached(both)).toEqual([0, 0]);
+      });
+
+      it('leaves bots out unless the query asks for them', async () => {
+        const crawlers = await store.funnelStats(
+          { ...wholeRange, filters: [{ dim: 'bot', op: 'is', value: 'true' }] },
+          { steps: [HOME, PRICING], window: '7d' },
+        );
+        expect(crawlers.visitors).toBe(1);
+        expect(reached(crawlers)).toEqual([1, 0]);
+      });
+
+      it('reads a rolled day raw', async () => {
+        const result = await store.funnelStats(dayBefore, {
+          steps: [HOME, PRICING],
+          window: 'visit',
+        });
+        expect(result.visitors).toBe(2);
+        expect(reached(result)).toEqual([2, 1]);
+      });
+
+      it('says nothing over nobody', async () => {
+        const result = await store.funnelStats(
+          { siteId: F.SITE_ID, from: Date.UTC(2026, 0, 1), to: Date.UTC(2026, 0, 2) },
+          { steps: [HOME, PRICING], window: '7d' },
+        );
+        expect(result).toEqual({
+          visitors: 0,
+          rawOnly: true,
+          steps: [
+            { visitors: 0, dropOff: 0, rate: null, stepRate: null },
+            { visitors: 0, dropOff: 0, rate: null, stepRate: null },
+          ],
+        });
+      });
+
+      it('refuses a goal, a funnel of one step and a site it does not know', async () => {
+        const funnel: FunnelRead = { steps: [HOME, PRICING], window: '7d' };
+        await expect(
+          store.funnelStats({ ...wholeRange, goal: SIGNUP_GOAL }, funnel),
+        ).rejects.toMatchObject({ code: 'UNSUPPORTED_GOAL' });
+        await expect(
+          store.funnelStats(wholeRange, { steps: [HOME], window: '7d' }),
+        ).rejects.toMatchObject({ code: 'INVALID_FUNNEL' });
+        await expect(
+          store.funnelStats({ ...wholeRange, siteId: F.OTHER_SITE_ID }, funnel),
+        ).rejects.toMatchObject({ code: 'UNKNOWN_SITE' });
+      });
+
+      // The edges, on a site of their own so the fixture's numbers stay put.
+      describe('on a site of crafted visitors', () => {
+        const SITE = 'site_funnels';
+        const START = F.NOW - 3 * DAY;
+        const range = { siteId: SITE, from: START, to: F.NOW };
+        const MINUTE = 60_000;
+        const at = (minutes: number): number => START + minutes * MINUTE;
+
+        function crafted(
+          visitorId: string,
+          ts: number,
+          over: Partial<StoredEvent> = {},
+        ): StoredEvent {
+          return {
+            siteId: SITE,
+            ts,
+            receivedAt: ts,
+            type: 'pageview',
+            visitorId,
+            bot: false,
+            hostname: 'funnels.test',
+            ...over,
+          };
+        }
+
+        beforeAll(async () => {
+          await harness.addSite({
+            id: SITE,
+            name: 'Funnels',
+            domains: ['funnels.test'],
+            settings: defaultSiteSettings({ retentionDays: 30 }),
+          });
+          const rows: StoredEvent[] = [
+            // The window's edge: e1 finishes exactly a day after starting,
+            // e2 a millisecond later.
+            crafted('e1', at(0), { path: '/a' }),
+            crafted('e1', at(24 * 60), { path: '/b' }),
+            crafted('e2', at(0), { path: '/a' }),
+            crafted('e2', at(24 * 60) + 1, { path: '/b' }),
+            // The same millisecond: a page and the event it fired.
+            crafted('t1', at(10), { path: '/c' }),
+            crafted('t1', at(10), { type: 'event', path: '/c', name: 'go' }),
+            // A payment a backend confirmed five minutes into the browser's
+            // stay, and another forty minutes after a second stay went quiet.
+            crafted('s1', at(100), { path: '/checkout' }),
+            crafted('s1', at(105), { type: 'event', name: 'paid', source: 'server' }),
+            crafted('s2', at(200), { path: '/checkout' }),
+            crafted('s2', at(240), { type: 'event', name: 'paid', source: 'server' }),
+          ];
+          // A visitor who reaches the first step more times than a read folds,
+          // and the second step only after that.
+          for (let index = 0; index < MAX_FUNNEL_ROWS_PER_VISITOR + 1; index += 1) {
+            rows.push(crafted('cap', at(3000) + index, { path: '/a' }));
+          }
+          rows.push(crafted('cap', at(3000) + MAX_FUNNEL_ROWS_PER_VISITOR + 5, { path: '/b' }));
+          await store.ingest(rows);
+        });
+
+        it('counts a last step exactly on the window and not a millisecond past it', async () => {
+          const result = await store.funnelStats(
+            { ...range, to: at(3000) },
+            {
+              steps: [
+                { kind: 'page', match: '/a' },
+                { kind: 'page', match: '/b' },
+              ],
+              window: '1d',
+            },
+          );
+          // e1 and e2 start; only e1 finishes.
+          expect(reached(result)).toEqual([2, 1]);
+        });
+
+        it('chains rows at the same millisecond in step order, whichever order that is', async () => {
+          const page = { kind: 'page', match: '/c' } as const;
+          const event = { kind: 'event', match: 'go' } as const;
+          const forward = await store.funnelStats(range, { steps: [page, event], window: 'visit' });
+          const backward = await store.funnelStats(range, { steps: [event, page], window: 'visit' });
+          expect(reached(forward)).toEqual([1, 1]);
+          expect(reached(backward)).toEqual([1, 1]);
+        });
+
+        it("joins a server's event to the browser's stay and completes a visit with it", async () => {
+          const steps = [
+            { kind: 'page', match: '/checkout' },
+            { kind: 'event', match: 'paid' },
+          ] as const;
+          // s1's payment came inside the stay; s2's came after thirty quiet
+          // minutes, so it opened a stay of its own.
+          const visit = await store.funnelStats(range, { steps: [...steps], window: 'visit' });
+          expect(reached(visit)).toEqual([2, 1]);
+          const hour = await store.funnelStats(range, { steps: [...steps], window: '1h' });
+          expect(reached(hour)).toEqual([2, 2]);
+        });
+
+        it(`folds the first ${MAX_FUNNEL_ROWS_PER_VISITOR} step rows of a visitor and no more`, async () => {
+          const result = await store.funnelStats(
+            { ...range, from: at(3000) },
+            {
+              steps: [
+                { kind: 'page', match: '/a' },
+                { kind: 'page', match: '/b' },
+              ],
+              window: '1d',
+            },
+          );
+          expect(result.visitors).toBe(1);
+          expect(reached(result)).toEqual([1, 0]);
+        });
       });
     });
 
