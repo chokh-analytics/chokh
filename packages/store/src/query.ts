@@ -514,6 +514,7 @@ const GOALLESS_READS = {
   events: 'The events report',
   properties: 'A property breakdown',
   funnel: 'A funnel',
+  journeys: 'The journeys report',
 } as const;
 
 export function assertNoGoal(query: Query, read: keyof typeof GOALLESS_READS): void {
@@ -687,6 +688,66 @@ export interface FunnelResult {
   // The segment: distinct people in the range under the filters.
   visitors: number;
   steps: FunnelStepResult[];
+  rawOnly: true;
+}
+
+// Journeys: the paths visits took, from the page they came in on through the
+// next three.
+//
+// A journey is a visit that began in the range and viewed at least one page:
+// its pageviews in time order, with a page repeated back to back counted once,
+// because a reload is not a step. A visit with no pageview (an identify alone,
+// a server event) took no path. The unit is visits and not visitors: a path is
+// a fact about one visit, and a person who came twice took two.
+//
+// Four columns. Each keeps its most visited pages, up to the branch count, and
+// folds every other page of that column into one Other node (key null), chosen
+// per column over every visit that reached it, so a page is one node however
+// it was reached. A visit folded into Other keeps the pages after it. Every
+// node says how many visits ended there, and the last column says how many
+// went on past it, so every column adds up.
+//
+// The query's filters narrow the visits and never the path: a visit is in when
+// its stay matches every filter only a stay carries and, when a filter names
+// something a row carries, a row of that visit in the range matches all of
+// them. Pages after the end of the range are not read, so a visit that crosses
+// it is cut there; a range that ends now never cuts one.
+export const JOURNEY_STEPS = 4;
+export const DEFAULT_JOURNEY_BRANCHES = 5;
+export const MAX_JOURNEY_BRANCHES = 10;
+
+// How many pageviews of one visit a read looks at: the first fifty. A path is
+// four pages, so anything past fifty only ever says the visit went on.
+export const JOURNEY_ROWS_PER_VISIT = 50;
+
+export interface JourneyQuery extends Query {
+  branches?: number;
+}
+
+export interface JourneyNode {
+  // The page, or null for the column's Other.
+  key: string | null;
+  visits: number;
+  // Visits whose path ended at this node.
+  exits: number;
+  // Visits that went on past the last column. Zero in every other column.
+  onward: number;
+}
+
+export interface JourneyLink {
+  // From a node in this column to one in the next.
+  column: number;
+  from: string | null;
+  to: string | null;
+  visits: number;
+}
+
+export interface JourneyResult {
+  visits: number;
+  // Always JOURNEY_STEPS columns, empty past the longest path.
+  columns: JourneyNode[][];
+  links: JourneyLink[];
+  branches: number;
   rawOnly: true;
 }
 

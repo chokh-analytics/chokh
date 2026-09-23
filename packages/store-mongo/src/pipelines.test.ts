@@ -23,6 +23,8 @@ import {
   eventsPipeline,
   funnelPipeline,
   goalStatsPipeline,
+  journeyStepsPipeline,
+  journeyTopPipeline,
   propertyKeysPipeline,
   propertyValuesPipeline,
   rawBreakdownPipeline,
@@ -422,6 +424,34 @@ describe('events and property pipelines', () => {
   });
 });
 
+// How many $sort stages each half of an explained aggregation holds: the outer
+// pipeline's, and each $unionWith's own.
+function sortsByHalf(explained: Document): { outer: number; unions: number[] } {
+  const count = (stages: unknown): number =>
+    Array.isArray(stages)
+      ? stages.filter((stage) => typeof stage === 'object' && stage !== null && '$sort' in stage)
+          .length
+      : 0;
+  const unions: number[] = [];
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (key === '$unionWith') {
+        const pipeline = (value as { pipeline?: unknown }).pipeline;
+        unions.push(count(pipeline));
+        continue;
+      }
+      walk(value);
+    }
+  };
+  walk(explained.stages);
+  return { outer: count(explained.stages), unions };
+}
+
 // A funnel read is raw for its whole range like a goal read, and it has more
 // halves: the segment by its rows, the segment by its stays when a filter names
 // a stay, and the steps. Every half leads with an index, and the one blocking
@@ -436,34 +466,6 @@ describe('funnel pipeline', () => {
     ],
     window: '7d',
   } as const satisfies FunnelRead;
-
-  // The aggregation stages by name, per half: the outer pipeline's, and each
-  // $unionWith's own.
-  function sortsByHalf(explained: Document): { outer: number; unions: number[] } {
-    const count = (stages: unknown): number =>
-      Array.isArray(stages)
-        ? stages.filter((stage) => typeof stage === 'object' && stage !== null && '$sort' in stage)
-            .length
-        : 0;
-    const unions: number[] = [];
-    const walk = (node: unknown): void => {
-      if (node === null || typeof node !== 'object') return;
-      if (Array.isArray(node)) {
-        node.forEach(walk);
-        return;
-      }
-      for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-        if (key === '$unionWith') {
-          const pipeline = (value as { pipeline?: unknown }).pipeline;
-          unions.push(count(pipeline));
-          continue;
-        }
-        walk(value);
-      }
-    };
-    walk(explained.stages);
-    return { outer: count(explained.stages), unions };
-  }
 
   async function explain(filters: Filter[], window: FunnelWindow = '7d'): Promise<Document> {
     const read = { ...funnel, window };
@@ -522,6 +524,60 @@ describe('funnel pipeline', () => {
 
   it('scans an index when the window is one visit', async () => {
     expectEveryHalfIndexed(await explain([], 'visit'), 1);
+  });
+});
+
+// A journeys read is two trips, each starting on sessions and bringing in the
+// pageviews, and a row filter, through $unionWith. Every half leads with an
+// index and the one blocking sort is the one over the pageviews.
+describe('journeys pipelines', () => {
+  const span = { from: fixture.DAY_BEFORE_START, to: fixture.NOW };
+  const tops = [['/home', '/docs'], ['/pricing'], [], []];
+
+  function expectEveryHalfIndexed(explained: Document, halves: number): void {
+    const stages = explained.stages as Document[];
+    const outer = scanStages({ stages: stages[0] } as Document);
+    expect(outer).toContain('IXSCAN');
+    expect(outer).not.toContain('COLLSCAN');
+    const unions = unionStages({ stages } as Document);
+    expect(unions).toHaveLength(halves);
+    for (const inner of unions) {
+      expect(inner).toContain('IXSCAN');
+      expect(inner).not.toContain('COLLSCAN');
+    }
+    const sorts = sortsByHalf(explained);
+    expect(sorts.outer).toBe(0);
+    expect(sorts.unions.slice(0, -1).every((each) => each === 0)).toBe(true);
+    expect(sorts.unions.at(-1)).toBe(1);
+  }
+
+  async function explain(pipeline: Document[]): Promise<Document> {
+    return (await db
+      .collection('sessions')
+      .aggregate(pipeline, { allowDiskUse: true })
+      .explain('queryPlanner')) as unknown as Document;
+  }
+
+  const cases: [string, Filter[], number][] = [
+    ['no filter', [], 1],
+    ['a filter a row carries', [{ dim: 'page', op: 'is', value: '/pricing' }], 2],
+    ['a filter only a stay carries', [{ dim: 'channel', op: 'is', value: 'organic' }], 1],
+  ];
+
+  it.each(cases)('scans an index on every half of the first trip with %s', async (_, filters, halves) => {
+    expectEveryHalfIndexed(
+      await explain(journeyTopPipeline(fixture.SITE_ID, span, false, splitVisitFilters(filters), 5)),
+      halves,
+    );
+  });
+
+  it.each(cases)('scans an index on every half of the second trip with %s', async (_, filters, halves) => {
+    expectEveryHalfIndexed(
+      await explain(
+        journeyStepsPipeline(fixture.SITE_ID, span, false, splitVisitFilters(filters), tops),
+      ),
+      halves,
+    );
   });
 });
 

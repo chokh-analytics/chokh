@@ -7,6 +7,8 @@ import type {
   FunnelResult,
   Goal,
   GoalStatsResult,
+  JourneyQuery,
+  JourneyResult,
   PropertyQuery,
   PropertyResult,
   PurgeSummary,
@@ -74,6 +76,11 @@ export interface AnalyticsStore {
   // the whole range. Raw rows only, for the reason a goal read is; the
   // definition is on FunnelResult in query.ts and the fold in funnel.ts.
   funnelStats(query: Query, funnel: FunnelRead): Promise<FunnelResult>;
+
+  // The paths the range's visits took, from the entry page through the next
+  // three, with each column's rest folded into Other. Raw rows only; the
+  // definition is on JourneyResult in query.ts.
+  journeys(query: JourneyQuery): Promise<JourneyResult>;
 
   // Who is here now: online counts, the pages and countries they are on, the
   // visitors themselves, and the rest of the presence window beside them. Read

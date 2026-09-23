@@ -3,6 +3,7 @@ import {
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   PROFILE_EVENT_LIMIT,
+  JOURNEY_STEPS,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
   ROLLUP_TOTAL_DIM,
@@ -24,7 +25,9 @@ import {
   dayBounds,
   finishConversion,
   finishFunnel,
+  finishJourneys,
   funnelWindowMs,
+  journeyBranches,
   splitVisitFilters,
   finishEngagement,
   finishEventRow,
@@ -58,6 +61,9 @@ import {
   type GoalStatsResult,
   type FunnelRead,
   type FunnelResult,
+  type JourneyQuery,
+  type JourneyResult,
+  type JourneyStepCount,
   type PropertyCount,
   type PropertyQuery,
   type PropertyResult,
@@ -106,6 +112,8 @@ import {
   engagementPipeline,
   eventsPipeline,
   funnelPipeline,
+  journeyStepsPipeline,
+  journeyTopPipeline,
   goalStatsPipeline,
   propertyKeysPipeline,
   propertyValuesPipeline,
@@ -1119,6 +1127,44 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       const depths = rows.map((row): [number, number] => [Number(row._id), row.visitors as number]);
       const segment = depths.reduce((total, [, visitors]) => total + visitors, 0);
       return finishFunnel(depths, segment, funnel.steps.length);
+    },
+
+    async journeys(query: JourneyQuery): Promise<JourneyResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertNoGoal(query, 'journeys');
+      const branches = journeyBranches(query);
+      const span: Range = { from: query.from, to: query.to };
+      const wantsBots = botSelector(query.filters);
+      const filters = splitVisitFilters(query.filters);
+      // Both trips start on sessions, because a visit is in the report by its
+      // stay, and each sorts the range's pageviews by visit, which a busy range
+      // holds more of than a sort keeps in memory.
+      const [top] = await sessions
+        .aggregate(journeyTopPipeline(site.id, span, wantsBots, filters, branches), {
+          allowDiskUse: true,
+        })
+        .toArray();
+      const tops = Array.from({ length: JOURNEY_STEPS }, (_, column) =>
+        ((top?.[`c${column}`] as Document[] | undefined) ?? []).map((row) => String(row._id)),
+      );
+      const rows = await sessions
+        .aggregate(journeyStepsPipeline(site.id, span, wantsBots, filters, tops), {
+          allowDiskUse: true,
+        })
+        .toArray();
+      return finishJourneys(
+        rows.map((row): JourneyStepCount => {
+          const id = row._id as Document;
+          return {
+            column: id.column as number,
+            from: (id.from as string | null | undefined) ?? null,
+            to: (id.to as string | null | undefined) ?? null,
+            end: id.end as JourneyStepCount['end'],
+            visits: row.visits as number,
+          };
+        }),
+        branches,
+      );
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {

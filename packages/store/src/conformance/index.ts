@@ -1224,6 +1224,154 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
       });
     });
 
+    // Journeys, as the contract defines them: visits begun in the range with at
+    // least one pageview, repeats back to back counted once, four columns, the
+    // rest of a column in Other. The fixture's nine human stays are seven
+    // journeys, because v1's identify and signup stays viewed no page:
+    //
+    //   16th  v1 /home, /pricing      v2 /home
+    //   17th  v1 /home                v3 /docs, /home
+    //   18th  v1 /home                v2 /pricing        v3 /docs, /pricing
+    describe('journeys', () => {
+      const node = (key: string | null, visits: number, exits: number, onward = 0) => ({
+        key,
+        visits,
+        exits,
+        onward,
+      });
+      const link = (column: number, from: string | null, to: string | null, visits = 1) => ({
+        column,
+        from,
+        to,
+        visits,
+      });
+
+      it('follows every visit from its entry page and says where each one ended', async () => {
+        const result = await store.journeys(wholeRange);
+        expect(result.rawOnly).toBe(true);
+        expect(result.branches).toBe(5);
+        expect(result.visits).toBe(7);
+        expect(result.columns).toEqual([
+          [node('/home', 4, 3), node('/docs', 2, 0), node('/pricing', 1, 1)],
+          [node('/pricing', 2, 2), node('/home', 1, 1)],
+          [],
+          [],
+        ]);
+        expect(result.links).toEqual([
+          link(0, '/docs', '/home'),
+          link(0, '/docs', '/pricing'),
+          link(0, '/home', '/pricing'),
+        ]);
+      });
+
+      it('folds the rest of a column into Other and keeps the pages after it', async () => {
+        const result = await store.journeys({ ...wholeRange, branches: 1 });
+        expect(result.branches).toBe(1);
+        expect(result.columns).toEqual([
+          [node('/home', 4, 3), node(null, 3, 1)],
+          [node('/pricing', 2, 2), node(null, 1, 1)],
+          [],
+          [],
+        ]);
+        expect(result.links).toEqual([
+          link(0, '/home', '/pricing'),
+          link(0, null, '/pricing'),
+          link(0, null, null),
+        ]);
+      });
+
+      it('narrows the visits with a filter only a stay carries', async () => {
+        const organic = await store.journeys({
+          ...wholeRange,
+          filters: [{ dim: 'channel', op: 'is', value: 'organic' }],
+        });
+        expect(organic.visits).toBe(1);
+        expect(organic.columns[0]).toEqual([node('/docs', 1, 0)]);
+        expect(organic.links).toEqual([link(0, '/docs', '/home')]);
+      });
+
+      it('narrows the visits with a filter a row carries and never the path', async () => {
+        // The visits that saw /pricing, each from its own entry page.
+        const pricing = await store.journeys({
+          ...wholeRange,
+          filters: [{ dim: 'page', op: 'is', value: '/pricing' }],
+        });
+        expect(pricing.visits).toBe(3);
+        expect(pricing.columns[0]).toEqual([
+          node('/docs', 1, 0),
+          node('/home', 1, 0),
+          node('/pricing', 1, 1),
+        ]);
+        expect(pricing.columns[1]).toEqual([node('/pricing', 2, 2)]);
+      });
+
+      it('leaves bots out unless the query asks for them', async () => {
+        const crawlers = await store.journeys({
+          ...wholeRange,
+          filters: [{ dim: 'bot', op: 'is', value: 'true' }],
+        });
+        expect(crawlers.visits).toBe(1);
+        expect(crawlers.columns[0]).toEqual([node('/home', 1, 1)]);
+      });
+
+      it('reads a rolled day raw and answers nobody as four empty columns', async () => {
+        expect((await store.journeys(dayBefore)).visits).toBe(2);
+        const empty = await store.journeys({
+          siteId: F.SITE_ID,
+          from: Date.UTC(2026, 0, 1),
+          to: Date.UTC(2026, 0, 2),
+        });
+        expect(empty).toEqual({ visits: 0, columns: [[], [], [], []], links: [], branches: 5, rawOnly: true });
+      });
+
+      it('refuses a goal, a branch count no column can hold and a site it does not know', async () => {
+        await expect(store.journeys({ ...wholeRange, goal: SIGNUP_GOAL })).rejects.toMatchObject({
+          code: 'UNSUPPORTED_GOAL',
+        });
+        await expect(store.journeys({ ...wholeRange, branches: 11 })).rejects.toMatchObject({
+          code: 'INVALID_BRANCHES',
+        });
+        await expect(
+          store.journeys({ ...wholeRange, siteId: F.OTHER_SITE_ID }),
+        ).rejects.toMatchObject({ code: 'UNKNOWN_SITE' });
+      });
+
+      it('counts a page repeated back to back once and says a long visit went on', async () => {
+        const SITE = 'site_journeys';
+        const START = F.NOW - DAY;
+        await harness.addSite({
+          id: SITE,
+          name: 'Journeys',
+          domains: ['journeys.test'],
+          settings: defaultSiteSettings({ retentionDays: 30 }),
+        });
+        const page = (visitorId: string, minute: number, over: Partial<StoredEvent> = {}): StoredEvent => ({
+          siteId: SITE,
+          ts: START + minute * 60_000,
+          receivedAt: START + minute * 60_000,
+          type: 'pageview',
+          visitorId,
+          bot: false,
+          hostname: 'journeys.test',
+          ...over,
+        });
+        await store.ingest([
+          ...['/a', '/a', '/b', '/c', '/d', '/e'].map((path, minute) => page('long', minute, { path })),
+          // A stay with nothing but a server event took no path.
+          page('quiet', 0, { type: 'event', name: 'paid', source: 'server' }),
+        ]);
+        const result = await store.journeys({ siteId: SITE, from: START, to: F.NOW });
+        expect(result.visits).toBe(1);
+        expect(result.columns).toEqual([
+          [node('/a', 1, 0)],
+          [node('/b', 1, 0)],
+          [node('/c', 1, 0)],
+          [node('/d', 1, 0, 1)],
+        ]);
+        expect(result.links).toEqual([link(0, '/a', '/b'), link(1, '/b', '/c'), link(2, '/c', '/d')]);
+      });
+    });
+
     describe('realtime', () => {
       it('counts only the last minute', async () => {
         const snapshot = await store.realtime(F.SITE_ID);

@@ -3,6 +3,8 @@ import {
   EVENT_PATH_BY_DIMENSION,
   EVENT_TYPE_BY_DIMENSION,
   SESSION_PATH_BY_DIMENSION,
+  JOURNEY_ROWS_PER_VISIT,
+  JOURNEY_STEPS,
   MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_PROPERTY_KEYS,
   goalIsPattern,
@@ -1030,5 +1032,207 @@ export function funnelPipeline(
     },
     { $match: stay ? { member: 1, stay: 1 } : { member: 1 } },
     { $group: { _id: { $ifNull: ['$depth', 0] }, visitors: { $sum: 1 } } },
+  ];
+}
+
+// The journeys read, in two round trips over the same visits. A column's most
+// visited pages have to be known before its links can be folded onto them, and
+// the one trip alternative, sending every distinct four page path back, grows
+// with the site. So the first trip answers each column's top pages and the
+// second answers the folded counts, and both answer at most a few hundred
+// documents whatever the traffic.
+
+// Every visit that began in the range and viewed a page, as {steps, onward}:
+// its first JOURNEY_ROWS_PER_VISIT pageviews in time order, a page repeated
+// back to back counted once, cut to JOURNEY_STEPS. It starts on sessions,
+// because a visit is in the report by its stay; a row filter comes in through
+// a $unionWith, and so do the pageviews, where the one blocking sort is.
+function journeyVisitStages(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: { event: Filter[]; stay: Filter[] },
+): Document[] {
+  const byRow = filters.event.length > 0;
+  return [
+    { $match: sessionMatch(siteId, span, wantsBots, filters.stay) },
+    { $project: { _id: 0, sessionId: '$id', visit: { $literal: 1 } } },
+    ...(byRow
+      ? [
+          {
+            $unionWith: {
+              coll: EVENTS,
+              pipeline: [
+                { $match: eventMatch(siteId, span, wantsBots, filters.event) },
+                { $group: { _id: '$sessionId' } },
+                { $project: { _id: 0, sessionId: '$_id', matched: { $literal: 1 } } },
+              ],
+            },
+          },
+        ]
+      : []),
+    {
+      $unionWith: {
+        coll: EVENTS,
+        pipeline: [
+          {
+            $match: {
+              siteId,
+              ts: { $gte: span.from, $lt: span.to },
+              bot: wantsBots,
+              type: 'pageview',
+              sessionId: { $type: 'string' },
+            },
+          },
+          { $project: { _id: 0, sessionId: 1, ts: 1, path: { $ifNull: ['$path', ''] } } },
+          { $sort: { sessionId: 1, ts: 1, path: 1 } },
+          {
+            $setWindowFields: {
+              partitionBy: '$sessionId',
+              sortBy: { ts: 1, path: 1 },
+              output: { n: { $sum: 1, window: { documents: ['unbounded', 'current'] } } },
+            },
+          },
+          { $match: { n: { $lte: JOURNEY_ROWS_PER_VISIT } } },
+          { $group: { _id: '$sessionId', paths: { $push: '$path' } } },
+          { $project: { _id: 0, sessionId: '$_id', paths: 1 } },
+        ],
+      },
+    },
+    {
+      $group: {
+        _id: '$sessionId',
+        visit: { $max: '$visit' },
+        matched: { $max: '$matched' },
+        paths: { $max: '$paths' },
+      },
+    },
+    {
+      $match: {
+        visit: 1,
+        paths: { $type: 'array' },
+        ...(byRow ? { matched: 1 } : {}),
+      },
+    },
+    {
+      $project: {
+        collapsed: {
+          $reduce: {
+            input: '$paths',
+            initialValue: [],
+            in: {
+              $cond: [
+                { $eq: [{ $arrayElemAt: ['$$value', -1] }, '$$this'] },
+                '$$value',
+                { $concatArrays: ['$$value', ['$$this']] },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        steps: { $slice: ['$collapsed', JOURNEY_STEPS] },
+        onward: { $gt: [{ $size: '$collapsed' }, JOURNEY_STEPS] },
+      },
+    },
+  ];
+}
+
+// The first trip: each column's most visited pages, most first, ties by path.
+export function journeyTopPipeline(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: { event: Filter[]; stay: Filter[] },
+  branches: number,
+): Document[] {
+  const facets: Record<string, Document[]> = {};
+  for (let column = 0; column < JOURNEY_STEPS; column += 1) {
+    facets[`c${column}`] = [
+      { $match: { [`steps.${column}`]: { $exists: true } } },
+      { $group: { _id: { $arrayElemAt: ['$steps', column] }, visits: { $sum: 1 } } },
+      { $sort: { visits: -1, _id: 1 } },
+      { $limit: branches },
+    ];
+  }
+  return [...journeyVisitStages(siteId, span, wantsBots, filters), { $facet: facets }];
+}
+
+// The second trip: every visit folded onto the first trip's pages and counted
+// per column, the rows journeyStepCounts answers in memory.
+export function journeyStepsPipeline(
+  siteId: string,
+  span: Range,
+  wantsBots: boolean,
+  filters: { event: Filter[]; stay: Filter[] },
+  tops: readonly (readonly string[])[],
+): Document[] {
+  const last = JOURNEY_STEPS - 1;
+  return [
+    ...journeyVisitStages(siteId, span, wantsBots, filters),
+    {
+      $project: {
+        onward: 1,
+        size: { $size: '$steps' },
+        keys: {
+          $map: {
+            input: { $range: [0, { $size: '$steps' }] },
+            as: 'column',
+            in: {
+              $let: {
+                vars: { page: { $arrayElemAt: ['$steps', '$$column'] } },
+                in: {
+                  $cond: [
+                    // A literal, so a path is never read as a field or an operator.
+                    { $in: ['$$page', { $arrayElemAt: [{ $literal: tops }, '$$column'] }] },
+                    '$$page',
+                    null,
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        counts: {
+          $map: {
+            input: { $range: [0, '$size'] },
+            as: 'column',
+            in: {
+              $let: {
+                vars: { next: { $add: ['$$column', 1] } },
+                in: {
+                  column: '$$column',
+                  from: { $arrayElemAt: ['$keys', '$$column'] },
+                  to: {
+                    $cond: [{ $lt: ['$$next', '$size'] }, { $arrayElemAt: ['$keys', '$$next'] }, null],
+                  },
+                  end: {
+                    $cond: [
+                      { $lt: ['$$next', '$size'] },
+                      'next',
+                      {
+                        $cond: [
+                          { $and: [{ $eq: ['$$column', last] }, '$onward'] },
+                          'onward',
+                          'exit',
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    { $unwind: '$counts' },
+    { $group: { _id: '$counts', visits: { $sum: 1 } } },
   ];
 }

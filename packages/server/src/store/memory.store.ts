@@ -1,6 +1,7 @@
 import {
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_FUNNELS_PER_SITE,
+  JOURNEY_ROWS_PER_VISIT,
   MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_GOALS_PER_SITE,
   MAX_PROPERTY_KEYS,
@@ -18,9 +19,14 @@ import {
   assertNoGoal,
   compareFunnelRows,
   finishFunnel,
+  finishJourneys,
   funnelDepth,
   funnelHits,
   funnelWindowMs,
+  journeyBranches,
+  journeyPath,
+  journeyStepCounts,
+  topJourneyPages,
   splitVisitFilters,
   conversionMatcher,
   assertIntervalRange,
@@ -67,6 +73,8 @@ import {
   type FunnelRead,
   type FunnelResult,
   type FunnelRow,
+  type JourneyQuery,
+  type JourneyResult,
   type Goal,
   type GoalRead,
   type GoalStatsResult,
@@ -1077,6 +1085,76 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         depths.set(depth, (depths.get(depth) ?? 0) + 1);
       }
       return finishFunnel(depths, members.size, funnel.steps.length);
+    },
+
+    async journeys(query: JourneyQuery): Promise<JourneyResult> {
+      siteOrThrow(query.siteId);
+      assertNoGoal(query, 'journeys');
+      const branches = journeyBranches(query);
+      const wantsBots = botSelector(query.filters);
+      const split = splitVisitFilters(query.filters);
+      const inRange = (event: StoredEvent): boolean =>
+        event.siteId === query.siteId &&
+        event.ts >= query.from &&
+        event.ts < query.to &&
+        event.bot === wantsBots;
+
+      // The visits: begun in the range, on the asked side of the bot line,
+      // matching every filter only a stay carries.
+      const visits = new Set<string>();
+      for (const session of sessions) {
+        if (
+          session.siteId === query.siteId &&
+          session.startedAt >= query.from &&
+          session.startedAt < query.to &&
+          session.bot === wantsBots &&
+          split.stay.every((filter) => matchesSessionFilter(session, filter))
+        ) {
+          visits.add(session.id);
+        }
+      }
+      // And, when a filter names something a row carries, with a row that
+      // matches all of them.
+      if (split.event.length > 0) {
+        const matched = new Set<string>();
+        for (const event of events) {
+          if (
+            event.sessionId !== undefined &&
+            inRange(event) &&
+            split.event.every((filter) => matchesFilter(event, filter))
+          ) {
+            matched.add(event.sessionId);
+          }
+        }
+        for (const id of visits) {
+          if (!matched.has(id)) visits.delete(id);
+        }
+      }
+
+      const pages = new Map<string, { ts: number; path: string }[]>();
+      for (const event of events) {
+        if (event.type !== 'pageview' || event.sessionId === undefined) continue;
+        if (!inRange(event) || !visits.has(event.sessionId)) continue;
+        const list = pages.get(event.sessionId) ?? [];
+        pages.set(event.sessionId, list);
+        list.push({ ts: event.ts, path: event.path ?? '' });
+      }
+      const paths = [...pages.values()].map((list) =>
+        journeyPath(
+          list
+            .sort(
+              (left, right) =>
+                left.ts - right.ts ||
+                (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
+            )
+            .slice(0, JOURNEY_ROWS_PER_VISIT)
+            .map((page) => page.path),
+        ),
+      );
+      return finishJourneys(
+        journeyStepCounts(paths, topJourneyPages(paths, branches)),
+        branches,
+      );
     },
 
     async realtime(siteId: string, sinceMs = REALTIME_WINDOW_MS): Promise<RealtimeSnapshot> {
