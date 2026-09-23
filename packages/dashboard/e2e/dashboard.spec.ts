@@ -94,6 +94,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Sources', 'Sources'],
     ['Geo', 'Geography'],
     ['Devices', 'Devices'],
+    ['Events', 'Events'],
     ['People', 'People'],
   ] as const) {
     await page.getByRole('link', { name: label, exact: true }).click();
@@ -326,4 +327,24 @@ test('counts a goal on every breakdown, and never asks the chart for it', async 
 
   expect(series.length).toBeGreaterThan(0);
   expect(series.filter((search) => search.includes('goal='))).toEqual([]);
+});
+
+// The events report over a batch this case posted itself: the event is listed
+// by name, choosing it filters the page, and the card under it breaks it down
+// by the property it carried, read with the property's own name.
+test('lists an event and breaks it down by what it carried', async ({ page }) => {
+  await signupFromSearch(page.request, `v_events_${Date.now()}`);
+
+  await boot(page, `/${SITE}/events?range=today`);
+  const events = page.getByRole('region', { name: 'Events', exact: true });
+  await events.getByRole('button', { name: /e2e_signup/ }).click();
+  await expect(page).toHaveURL(/filters=event/);
+
+  const properties = page.getByRole('region', { name: 'Properties of e2e_signup' });
+  await expect(properties.getByRole('tab', { name: 'plan' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(properties.getByRole('row').filter({ hasText: 'pro' })).toBeVisible();
+  await expect(properties.getByText('A property cannot be used as a filter yet.')).toBeVisible();
 });

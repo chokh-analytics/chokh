@@ -1,0 +1,47 @@
+/* Five rows at the height five rows will be, so nothing moves when they land. */
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+/* The sentence under a card: where the numbers come from, or why its rows do
+ * nothing when clicked. */
+.note {
+  margin: 0;
+  padding: var(--s2) var(--s3) 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+/* What an empty card says instead of nothing: a sentence and the one line that
+ * would fill it. */
+.convention {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.convention p {
+  margin: 0;
+}
+
+.snippet {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+}
+
+/* The property names past the tabs, behind one button above the rows. */
+.more {
+  display: flex;
+  padding: 0 var(--s2) var(--s2);
+}

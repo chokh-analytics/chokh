@@ -32,6 +32,7 @@ export const messages = {
     sources: 'Sources',
     geo: 'Geo',
     devices: 'Devices',
+    events: 'Events',
     people: 'People',
     skipToContent: 'Skip to the report',
     theme: 'Light or dark',
@@ -111,6 +112,7 @@ export const messages = {
     share: 'Share',
     conversionRate: 'Conversion rate',
     converted: 'Converted',
+    events: 'Events',
     signedInSplit: '{signedIn} signed in, {anonymous} anonymous',
   },
 
@@ -149,6 +151,8 @@ export const messages = {
     lang: 'Language',
     event: 'Event',
     status: 'Status',
+    property: 'Property',
+    propertyValue: 'Value',
     utm_source: 'Campaign source',
     utm_medium: 'Campaign medium',
     utm_campaign: 'Campaign',
@@ -339,6 +343,20 @@ export const messages = {
     notFilterable:
       'A stay spans pages, so it cannot be filtered to one entry page, exit page or channel yet.',
     unsupported: 'That filter cannot be answered: {message}',
+  },
+
+  // What pages and servers said happened, and what each of those carried.
+  events: {
+    title: 'Events',
+    help: 'Custom events your pages and your server sent. Page timings are not events and are not listed.',
+    empty: 'No events in this range.',
+    emptyLede: 'Send one from a page with one line, or tag an element with data-pa-event.',
+    properties: 'Properties of {event}',
+    propertiesTitle: 'Properties',
+    propertiesPick: 'Choose an event above to see what it carried.',
+    propertiesEmpty: '{event} carried no properties in this range.',
+    propertiesMore: 'More properties',
+    notFilterable: 'A property cannot be used as a filter yet.',
   },
 
   // A goal is chosen in the range bar and every breakdown is counted against it.

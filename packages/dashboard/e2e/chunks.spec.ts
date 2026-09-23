@@ -34,6 +34,12 @@ test('never downloads the world map for a page that has no map on it', async ({ 
   await page.getByRole('link', { name: 'Pages', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Pages', level: 1 })).toBeAttached();
   expect(seen.filter(isMap)).toEqual([]);
+
+  // Events is a list of names and never a picture of the world.
+  await page.getByRole('link', { name: 'Events', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Events', level: 1 })).toBeAttached();
+  await page.waitForLoadState('networkidle');
+  expect(seen.filter(isMap)).toEqual([]);
 });
 
 test('downloads it once, on the first report that draws one', async ({ page }) => {

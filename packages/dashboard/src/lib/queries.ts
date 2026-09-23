@@ -165,6 +165,33 @@ export function useEngagement(context: ReportContext, dim: Dimension, limit?: nu
   });
 }
 
+// The events report and a property breakdown. Neither takes the goal: the server
+// refuses one on both, and a list of events counted against a goal is not a
+// question the page asks.
+export function useEvents(context: ReportContext, limit?: number) {
+  const params = toStatsParams(context.query, { limit });
+  return useQuery({
+    queryKey: ['events', ...cacheKey(context.siteId, params)],
+    queryFn: () => api.events(context.client, context.siteId, params),
+    ...liveness(context.query, context.now),
+  });
+}
+
+export function useProperties(
+  context: ReportContext,
+  event: string | null,
+  property: string | null,
+) {
+  const params = toStatsParams(context.query);
+  return useQuery({
+    queryKey: ['properties', event, property, ...cacheKey(context.siteId, params)],
+    queryFn: () =>
+      api.properties(context.client, context.siteId, params, event as string, property),
+    enabled: event !== null,
+    ...liveness(context.query, context.now),
+  });
+}
+
 // Who is here now, polled. The Overview asks for this once every ten seconds
 // for one tile; the Realtime page opens the stream instead and only falls back
 // to this. Both read the same shape, because a frame of the stream carries the

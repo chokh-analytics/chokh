@@ -37,6 +37,7 @@ export function destinationsFor(siteId: string): Destination[] {
     { path: `/${siteId}/sources`, label: messages.nav.sources },
     { path: `/${siteId}/geo`, label: messages.nav.geo },
     { path: `/${siteId}/devices`, label: messages.nav.devices },
+    { path: `/${siteId}/events`, label: messages.nav.events },
     { path: `/${siteId}/people`, label: messages.nav.people },
   ];
 }

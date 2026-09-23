@@ -2,7 +2,9 @@ import type {
   AggregateResult,
   BreakdownResult,
   EngagementResult,
+  EventsResult,
   Goal,
+  PropertyResult,
   RealtimeSnapshot,
   TimeseriesResult,
   UserProfile,
@@ -146,6 +148,24 @@ export const api = {
   // it is being measured against.
   goals: (client: Client, siteId: string): Promise<Answer<{ goals: Goal[] }>> =>
     client.get<{ goals: Goal[] }>(`/api/sites/${siteId}/goals`),
+
+  // The custom events of the range by name, and one of them by a property.
+  // Both raw only, and neither takes a goal.
+  events: (client: Client, siteId: string, params: StatsParams): Promise<Answer<EventsResult>> =>
+    client.get<EventsResult>(`/api/sites/${siteId}/stats/events`, statsQuery(params)),
+
+  properties: (
+    client: Client,
+    siteId: string,
+    params: StatsParams,
+    event: string,
+    property: string | null,
+  ): Promise<Answer<PropertyResult>> =>
+    client.get<PropertyResult>(`/api/sites/${siteId}/stats/properties`, {
+      ...statsQuery(params),
+      event,
+      ...(property === null ? {} : { property }),
+    }),
 
   realtime: (client: Client, siteId: string): Promise<Answer<RealtimeSnapshot>> =>
     client.get<RealtimeSnapshot>(`/api/sites/${siteId}/realtime`),
