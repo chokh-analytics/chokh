@@ -1,8 +1,37 @@
 import { useCallback, useMemo } from 'react';
 import { useLocation, useSearch } from 'wouter';
 
-import { parseQuery, requestedGoal, toSearch, type ViewQuery } from '../lib/query.js';
+import { PARAM, parseQuery, requestedGoal, toSearch, type ViewQuery } from '../lib/query.js';
 import { useApp } from './context.js';
+
+const VIEW_PARAMS = new Set<string>(Object.values(PARAM));
+
+// The parameters a page keeps for itself, carried through a change of view.
+//
+// Which tab of a card is open, which funnel is drawn and how many branches a
+// flow keeps are not part of the view, but they are part of what somebody is
+// looking at. Dropped on every range or filter change, a click on a row of the
+// Referrers tab filtered Sources and put the card back on Channels, and a
+// funnel chosen in a link was forgotten the moment the range moved. They go
+// after the view's own, in the order they were in.
+export function withPageParams(view: string, current: string): string {
+  const params = new URLSearchParams(view);
+  for (const [key, value] of new URLSearchParams(current)) {
+    if (!VIEW_PARAMS.has(key)) {
+      params.append(key, value);
+    }
+  }
+  const text = params.toString();
+  return text === '' ? '' : `?${text}`;
+}
+
+function sameParams(left: string, right: string): boolean {
+  const one = new URLSearchParams(left);
+  const other = new URLSearchParams(right);
+  one.sort();
+  other.sort();
+  return one.toString() === other.toString();
+}
 
 // The URL is the state, and this is the only way to read or change it.
 //
@@ -39,15 +68,17 @@ export function useViewQuery(): ViewQueryHandle {
 
   const go = useCallback(
     (next: ViewQuery, replace: boolean) => {
-      const target = `${location}${toSearch(next)}`;
+      const nextSearch = withPageParams(toSearch(next), search);
       // A choice that changes nothing is not a step. Pressing the metric tile
       // that is already selected, or re-applying the range that is already on,
       // used to push the same URL again: back then went to the same page, and
       // a person pressing back four times sat on the same screen four times.
-      if (target === `${location}${search === '' ? '' : `?${search}`}`) {
+      // Compared as a set of parameters, because a page parameter typed ahead
+      // of the view's own is the same link in another order.
+      if (sameParams(nextSearch, search)) {
         return;
       }
-      navigate(target, { replace });
+      navigate(`${location}${nextSearch}`, { replace });
     },
     [location, navigate, search],
   );

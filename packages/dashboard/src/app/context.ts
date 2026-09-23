@@ -38,3 +38,11 @@ export function useApp(): AppContextValue {
 export function useTimezone(): string {
   return useApp().site.settings.timezone;
 }
+
+// Whether this person owns the team the site belongs to. Adding or removing a
+// goal or a funnel changes what every report of the site says, so the server
+// asks for the admin scope, which only an owner holds, and a page that draws
+// those controls draws them disabled with the reason for anybody else.
+export function isOwner(teams: readonly { id: string; role: string }[], teamId: string): boolean {
+  return teams.some((team) => team.id === teamId && team.role === 'owner');
+}

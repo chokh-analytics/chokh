@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AppContext, type AppContextValue } from './context.js';
 import { createClient } from '../lib/client.js';
-import { useViewQuery } from './useViewQuery.js';
+import { useViewQuery, withPageParams } from './useViewQuery.js';
 
 // The URL is the state, so every press that changes it is a step somebody can
 // walk back through. The corollary is the thing tested here: a press that
@@ -94,5 +94,24 @@ describe('useViewQuery', () => {
     await userEvent.click(screen.getByRole('button', { name: 'pageviews' }));
 
     expect(window.history.length).toBe(before + 1);
+  });
+
+  // A tab, a funnel, a branch count: what a page keeps in the link for itself
+  // survives a change of view, and a press that changes nothing is still no
+  // step when one is in the link.
+  it('carries the page own parameters through a change of view', async () => {
+    window.history.replaceState(null, '', '/s_test/pages?pages=journeys&branches=3&metric=pageviews');
+    render(show());
+    const before = window.history.length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'pageviews' }));
+    expect(window.history.length).toBe(before);
+
+    await userEvent.click(screen.getByRole('button', { name: 'visitors' }));
+    expect(window.location.search).toBe('?pages=journeys&branches=3');
+    expect(withPageParams('?range=30d', '?pages=entry&range=7d&funnel=f_1')).toBe(
+      '?range=30d&pages=entry&funnel=f_1',
+    );
+    expect(withPageParams('', '?range=today')).toBe('');
   });
 });

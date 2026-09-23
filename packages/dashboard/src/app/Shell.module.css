@@ -1,8 +1,8 @@
 /*
  * One top bar, no sidebar.
  *
- * There are nine destinations. A sidebar would take 240px from the chart,
- * which is the product, in order to show nine words that fit in a row. Plausible
+ * There are ten destinations. A sidebar would take 240px from the chart,
+ * which is the product, in order to show ten words that fit in a row. Plausible
  * and Fathom both go without one; PostHog has one and feels like a console
  * because of it.
  */
@@ -105,7 +105,7 @@
  * Two rows on a phone, and exactly two.
  *
  * The mark, the site switcher, the theme toggle and the account go on one row;
- * the nine destinations get their own scrolling row underneath. The flexible
+ * the ten destinations get their own scrolling row underneath. The flexible
  * spacer is what broke this: it took the space before the tools could wrap with
  * the switcher, so the toggle and the account name landed on a third row of
  * their own. A margin on the tools pushes them to the end of row one instead,
@@ -128,9 +128,34 @@
     order: 3;
     width: 100%;
     padding-bottom: var(--s1);
-    /* Edge to edge, so a scrolling row of nine looks like one rather than
+    /* Edge to edge, so a scrolling row of ten looks like one rather than
      * stopping short of the gutter. */
     margin-inline: calc(var(--gutter) * -1);
     padding-inline: var(--gutter);
+  }
+}
+
+/*
+ * One row on anything wider than a phone, and exactly one.
+ *
+ * Ten destinations beside the mark, the site and the account are wider than a
+ * 1024 pixel laptop, and a wrapping bar put the theme toggle and the account on
+ * a second row of their own, a bar twice the height the range bar sticks
+ * under. So here the bar never wraps: everything but the destinations keeps its
+ * width, and the destinations scroll inside their own row, the way they already
+ * do on a phone, with the current one scrolled into view by the shell.
+ */
+@media (min-width: 721px) {
+  .barInner {
+    flex-wrap: nowrap;
+  }
+
+  .barInner > * {
+    flex-shrink: 0;
+  }
+
+  .barInner > .nav {
+    flex-shrink: 1;
+    min-width: 0;
   }
 }

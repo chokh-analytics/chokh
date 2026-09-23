@@ -26,8 +26,8 @@ export const OPEN_SHORTCUTS = 'chokh:shortcuts';
 // letter of each destination, except that Geo and Overview both want their own
 // and "g g" for Geo is what every tool with this convention does, People is u,
 // for users, because p is Pages, and Goals is c, for conversions, because g is
-// taken twice over.
-const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'c', 'u'];
+// taken twice over. Funnels is its own first letter.
+const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'c', 'f', 'u'];
 
 // One binding, described once: what it is called, which group it belongs in,
 // and what it does. The keys run this table and the card lists it, so a card

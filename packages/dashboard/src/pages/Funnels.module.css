@@ -1,0 +1,242 @@
+.lede {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+/* Said once, above the list, when a link named a funnel that is not here. */
+.gone {
+  margin: 0 var(--s3) var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--t-label);
+}
+
+/* A list and not a table: a funnel is a name, a window and a line of steps,
+ * and the line wraps on a phone rather than pushing a table past its edge. */
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+/* The funnel's own name is the control. Accent ink when it is the one drawn,
+ * rather than a status colour: a chosen funnel is a choice, not good news. */
+.pick {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: var(--s1) var(--s2);
+  margin-left: calc(var(--s2) * -1);
+  border: 0;
+  border-radius: var(--r1);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background var(--fast) ease-out;
+}
+
+.pick:hover {
+  background: var(--soft);
+}
+
+.chosen .pick {
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.window {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.stepLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-label);
+  color: var(--muted);
+  min-width: 0;
+}
+
+.stepChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.stepName {
+  overflow-wrap: anywhere;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.confirm {
+  margin-top: var(--s1);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  background: var(--soft);
+}
+
+.confirm p {
+  margin: 0 0 var(--s2);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.problem {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--warn);
+}
+
+.note {
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.empty {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  color: var(--muted);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.emptyTitle {
+  color: var(--ink);
+}
+
+.form {
+  padding: 0 var(--s3) var(--s3);
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--s3);
+  max-width: 640px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.steps {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One step, its fields beside each other on a laptop and stacked on a phone,
+ * and its three controls underneath. Buttons with words and no dragging: a
+ * drag handle is a control a keyboard and a screen reader cannot use. */
+.step {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s3) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  min-width: 0;
+}
+
+.stepLegend {
+  padding: 0 var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stepFields {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+}
+
+.stepActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.noGoals {
+  margin: 0;
+  align-self: end;
+  padding-bottom: var(--s2);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.addStep {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.form .mono input {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 560px) {
+  .stepFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .noGoals {
+    padding-bottom: 0;
+  }
+}

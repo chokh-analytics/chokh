@@ -35,8 +35,8 @@ test('never downloads the world map for a page that has no map on it', async ({ 
   await expect(page.getByRole('heading', { name: 'Pages', level: 1 })).toBeAttached();
   expect(seen.filter(isMap)).toEqual([]);
 
-  // Events and Goals are lists of names and never a picture of the world.
-  for (const name of ['Events', 'Goals']) {
+  // Events, Goals and Funnels are lists of names and never a picture of the world.
+  for (const name of ['Events', 'Goals', 'Funnels']) {
     await page.getByRole('link', { name, exact: true }).click();
     await expect(page.getByRole('heading', { name, level: 1 })).toBeAttached();
     await page.waitForLoadState('networkidle');

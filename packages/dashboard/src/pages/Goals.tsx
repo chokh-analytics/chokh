@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent, type JSX } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { MAX_GOALS_PER_SITE, type Conversion, type Goal, type GoalKind } from '@chokh/store/contract';
 
-import { useApp } from '../app/context.js';
+import { isOwner, useApp } from '../app/context.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { api } from '../lib/api.js';
 import { ChokhError } from '../lib/client.js';
@@ -35,10 +35,6 @@ import styles from './Goals.module.css';
 // The names a page is really sending, offered as the event name is typed. A
 // goal on a name nothing sends is a goal that reads zero for ever.
 const SUGGESTIONS = 50;
-
-function isOwner(teams: { id: string; role: string }[], teamId: string): boolean {
-  return teams.some((team) => team.id === teamId && team.role === 'owner');
-}
 
 function useRefreshGoals(): () => Promise<void> {
   const queryClient = useQueryClient();

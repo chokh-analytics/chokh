@@ -55,6 +55,7 @@ export function Field({ label, help, problem, className, ...rest }: FieldProps):
 interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label: string;
   help?: ReactNode;
+  problem?: string;
   options: { value: string; label: string }[];
 }
 
@@ -66,12 +67,17 @@ interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
 export function SelectField({
   label,
   help,
+  problem,
   options,
   className,
   ...rest
 }: SelectFieldProps): JSX.Element {
   const id = useId();
   const helpId = `${id}-help`;
+  const problemId = `${id}-problem`;
+  const described = [help === undefined ? '' : helpId, problem === undefined ? '' : problemId]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className={[styles.field, className ?? ''].filter(Boolean).join(' ')}>
@@ -81,7 +87,8 @@ export function SelectField({
       <select
         id={id}
         className={styles.input}
-        aria-describedby={help === undefined ? undefined : helpId}
+        aria-describedby={described === '' ? undefined : described}
+        aria-invalid={problem === undefined ? undefined : true}
         {...rest}
       >
         {options.map((option) => (
@@ -93,6 +100,11 @@ export function SelectField({
       {help !== undefined && (
         <p className={styles.help} id={helpId}>
           {help}
+        </p>
+      )}
+      {problem !== undefined && (
+        <p className={styles.problem} id={problemId} role="alert">
+          {problem}
         </p>
       )}
     </div>

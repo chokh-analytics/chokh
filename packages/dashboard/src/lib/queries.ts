@@ -115,6 +115,21 @@ export function useGoals(client: Client, siteId: string) {
   });
 }
 
+// A site's funnels, for the Funnels page. On the goal list's clock and refreshed
+// by hand after every create and delete, for the goal list's reason.
+export function funnelsKey(siteId: string): unknown[] {
+  return ['funnels', siteId];
+}
+
+export function useFunnels(client: Client, siteId: string) {
+  return useQuery({
+    queryKey: funnelsKey(siteId),
+    queryFn: () => api.funnels(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
 // The totals, and with a goal chosen the share of them that reached it. The
 // only other read that takes the goal is a breakdown that draws it.
 export function useAggregate(context: ReportContext) {

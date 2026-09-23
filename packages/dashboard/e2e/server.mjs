@@ -195,4 +195,20 @@ await must(
 
 await seed(store, Date.now());
 
+// One funnel, made over HTTP like the site, so the Funnels page the suite and
+// the accessibility audit open has a funnel on it rather than only the
+// builder. Pages only, so no goal case in the suite ever meets it.
+await must(
+  'create a funnel',
+  await fetch(`${base}/api/sites/${SITE_ID}/funnels`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({
+      name: 'Home to pricing',
+      window: '1d',
+      steps: [{ page: '/' }, { page: '/pricing' }],
+    }),
+  }),
+);
+
 console.warn(`chokh e2e server on ${base}`);

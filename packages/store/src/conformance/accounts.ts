@@ -418,6 +418,15 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
             ),
           ),
         ).toBe('FUNNEL_LIMIT');
+        // A funnel the full site already has is refused as existing, not as one
+        // too many, in every adapter: the same request reads the same refusal.
+        expect(
+          await refusal(() =>
+            store.createFunnel(
+              funnel('s_funnels', [HOME, { kind: 'page', match: `/step/${have}`, name: 'n' }]),
+            ),
+          ),
+        ).toBe('FUNNEL_EXISTS');
         // Another site's allowance is its own.
         await store.createFunnel(funnel('s_else', [HOME, PRICING]));
       });

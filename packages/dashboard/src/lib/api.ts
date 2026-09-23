@@ -3,6 +3,8 @@ import type {
   BreakdownResult,
   EngagementResult,
   EventsResult,
+  Funnel,
+  FunnelWindow,
   Goal,
   GoalKind,
   GoalStatsResult,
@@ -97,6 +99,9 @@ export interface GoalStatsView extends Omit<GoalStatsResult, 'rows'> {
   rows: { goal?: Goal; conversion: GoalStatsResult['rows'][number]['conversion'] }[];
 }
 
+// A funnel step as it is asked for: a goal of this site by id, or a typed path.
+export type FunnelStepInput = { goalId: string } | { page: string };
+
 function statsQuery(params: StatsParams): Params {
   return { ...params };
 }
@@ -174,6 +179,29 @@ export const api = {
   ): Promise<Answer<{ deleted: boolean }>> =>
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/goals/${encodeURIComponent(goalId)}`,
+    ),
+
+  // The site's funnels, oldest first, readable by anybody who can read a
+  // report. Adding and deleting one need an owner, like a goal.
+  funnels: (client: Client, siteId: string): Promise<Answer<{ funnels: Funnel[] }>> =>
+    client.get<{ funnels: Funnel[] }>(`/api/sites/${siteId}/funnels`),
+
+  // A step is a goal of this site, copied into the funnel when it is created,
+  // or a typed path. The window is left out to take the site's default.
+  createFunnel: (
+    client: Client,
+    siteId: string,
+    input: { name: string; window?: FunnelWindow; steps: FunnelStepInput[] },
+  ): Promise<Answer<{ funnel: Funnel }>> =>
+    client.post<{ funnel: Funnel }>(`/api/sites/${siteId}/funnels`, input),
+
+  deleteFunnel: (
+    client: Client,
+    siteId: string,
+    funnelId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/funnels/${encodeURIComponent(funnelId)}`,
     ),
 
   // Every goal of the site at once, each with its record and one conversion.

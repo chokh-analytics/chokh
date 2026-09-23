@@ -96,6 +96,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Devices', 'Devices'],
     ['Events', 'Events'],
     ['Goals', 'Goals'],
+    ['Funnels', 'Funnels'],
     ['People', 'People'],
   ] as const) {
     await page.getByRole('link', { name: label, exact: true }).click();
@@ -130,8 +131,15 @@ test('runs the keys on a page that is really rendered', async ({ page }) => {
 test('says what it cannot see rather than nothing', async ({ page }) => {
   await boot(page, `/${SITE}/pages`);
   const engagement = page.getByRole('region', { name: 'How far people read' });
-  // Seeded leaves carry a quartile, so this is the percentage a tracker sends.
-  await expect(engagement.getByText(/^(25|50|75|100)%$/).first()).toBeVisible();
+  // Seeded leaves carry a quartile, so every row is an average of quartiles:
+  // a percentage from 25 to 100, never the hundredfold one a rate formatter
+  // printed. Not an exact quartile, which a row is only when its leaves agree,
+  // and which of them do moves with the hour the suite runs at.
+  const depth = engagement.getByText(/^\d{1,3}%$/).first();
+  await expect(depth).toBeVisible();
+  const percent = Number((await depth.textContent())?.replace('%', ''));
+  expect(percent).toBeGreaterThanOrEqual(25);
+  expect(percent).toBeLessThanOrEqual(100);
   await expect(page.getByRole('region', { name: 'Pages that were not found' })).toBeVisible();
 });
 
@@ -154,10 +162,14 @@ test('serves its own fonts and nothing from anywhere else', async ({ page }) => 
   expect(fonts).toBeGreaterThan(0);
 });
 
-// Nine destinations do not fit in 390 pixels, so they are one row that scrolls
-// sideways under the bar. The header stays two rows, and the page somebody is
-// on is scrolled into the row rather than left past its right edge.
-test('keeps nine destinations in one row on a phone, with the current one in view', async ({
+// Ten destinations fit neither in 390 pixels nor beside the mark and the
+// account at 1024, so they are one row that scrolls sideways inside the bar.
+// On a phone the bar is two rows, the mark and the account over the
+// destinations; at 1024 it is one row, destinations included, because a bar
+// that wrapped put the account on a row of its own under a range bar stuck at
+// the one row height. Either way the page somebody is on is scrolled into the
+// row rather than left past its edge, and the page itself never moves sideways.
+test('keeps ten destinations in one row at 390 and at 1024, with the current one in view', async ({
   page,
 }) => {
   // A goal in the list first. The Goals page with nothing in it is one
@@ -173,52 +185,80 @@ test('keeps nine destinations in one row on a phone, with the current one in vie
   const goalId = body.data?.goal.id ?? body.error?.details?.goalId;
   expect(goalId, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  for (const [path, label] of [
-    ['goals', 'Goals'],
-    ['people', 'People'],
-    ['events', 'Events'],
-  ] as const) {
-    await boot(page, `/${SITE}/${path}`);
-    if (path === 'goals') {
-      // The row is drawn, so the overflow below is measured over a real list.
-      await expect(
-        page.getByRole('button', { name: 'Read the pricing page on a phone' }),
-      ).toBeVisible();
+  for (const width of [390, 1024]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 768 });
+    for (const [path, label] of [
+      ['goals', 'Goals'],
+      ['funnels', 'Funnels'],
+      ['people', 'People'],
+      ['events', 'Events'],
+    ] as const) {
+      await boot(page, `/${SITE}/${path}`);
+      if (path === 'goals') {
+        // The row is drawn, so the overflow below is measured over a real list.
+        await expect(
+          page.getByRole('button', { name: 'Read the pricing page on a phone' }),
+        ).toBeVisible();
+      }
+      if (path === 'funnels') {
+        // The seeded funnel listed, and the builder opened out to three steps,
+        // so the overflow is measured over the widest this page gets.
+        await expect(page.getByRole('button', { name: 'Home to pricing' })).toBeVisible();
+        await page.getByRole('button', { name: 'Add a step' }).click();
+        await expect(page.getByRole('group', { name: 'Step 3' })).toBeVisible();
+      }
+      const nav = page.getByRole('navigation', { name: 'Report' });
+      const row = await nav.boundingBox();
+      const current = await nav.getByRole('link', { name: label, exact: true }).boundingBox();
+      const mark = await page.getByRole('link', { name: 'Chokh', exact: true }).boundingBox();
+      const bar = await page.locator('header').first().boundingBox();
+      expect(row, 'the navigation has no box').not.toBeNull();
+      expect(current, `${label} has no box`).not.toBeNull();
+      expect(mark, 'the mark has no box').not.toBeNull();
+      expect(bar, 'the bar has no box').not.toBeNull();
+      if (row === null || current === null || mark === null || bar === null) {
+        return;
+      }
+      // One row of links, not a wrapped block of them.
+      expect(row.height, `the destinations wrapped at ${width}`).toBeLessThan(current.height * 2);
+      expect(current.x).toBeGreaterThanOrEqual(row.x - 1);
+      expect(current.x + current.width).toBeLessThanOrEqual(row.x + row.width + 1);
+      if (width === 390) {
+        // Two rows: the destinations under the mark, and nothing on a third.
+        expect(row.y).toBeGreaterThanOrEqual(mark.y + mark.height - 1);
+        expect(bar.height).toBeLessThan(mark.height + row.height + 48);
+      } else {
+        // One row: the destinations beside the mark, and a bar one row tall.
+        expect(Math.abs(row.y + row.height / 2 - (mark.y + mark.height / 2))).toBeLessThan(4);
+        expect(bar.height, `the bar wrapped at ${width}`).toBeLessThan(current.height * 2);
+      }
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `/${path} scrolls sideways at ${width}`).toBeLessThanOrEqual(0);
+      if (path === 'goals' && width === 390) {
+        // And the columns are a scroll away inside the card rather than gone.
+        const inner = await page
+          .getByRole('group', { name: 'Goals' })
+          .evaluate((box) => box.scrollWidth - box.clientWidth);
+        expect(inner, 'the goal list dropped its columns rather than scrolling them').toBeGreaterThan(0);
+      }
     }
-    const nav = page.getByRole('navigation', { name: 'Report' });
-    const row = await nav.boundingBox();
-    const current = await nav.getByRole('link', { name: label, exact: true }).boundingBox();
-    expect(row, 'the navigation has no box').not.toBeNull();
-    expect(current, `${label} has no box`).not.toBeNull();
-    if (row === null || current === null) {
-      return;
-    }
-    // One row of links, not a wrapped block of them.
-    expect(row.height).toBeLessThan(current.height * 2);
-    expect(current.x).toBeGreaterThanOrEqual(row.x - 1);
-    expect(current.x + current.width).toBeLessThanOrEqual(row.x + row.width + 1);
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow, `/${path} scrolls sideways`).toBeLessThanOrEqual(0);
-    if (path === 'goals') {
-      // And the columns are a scroll away inside the card rather than gone.
-      const inner = await page
-        .getByRole('group', { name: 'Goals' })
-        .evaluate((box) => box.scrollWidth - box.clientWidth);
-      expect(inner, 'the goal list dropped its columns rather than scrolling them').toBeGreaterThan(0);
-    }
-  }
 
-  // And the range bar stays two rows with the goal control in it: the goal and
-  // the zone share the second row rather than the zone falling to a third.
-  const goal = await page.getByRole('button', { name: 'Goal', exact: true }).boundingBox();
-  const zone = await page.getByText('Asia/Dhaka', { exact: true }).boundingBox();
-  expect(goal).not.toBeNull();
-  expect(zone).not.toBeNull();
-  if (goal !== null && zone !== null) {
-    expect(Math.abs(goal.y + goal.height / 2 - (zone.y + zone.height / 2))).toBeLessThan(goal.height);
+    if (width === 390) {
+      // And the range bar stays two rows with the goal control in it: the goal
+      // and the zone share the second row rather than the zone falling to a
+      // third.
+      const goal = await page.getByRole('button', { name: 'Goal', exact: true }).boundingBox();
+      const zone = await page.getByText('Asia/Dhaka', { exact: true }).boundingBox();
+      expect(goal).not.toBeNull();
+      expect(zone).not.toBeNull();
+      if (goal !== null && zone !== null) {
+        expect(Math.abs(goal.y + goal.height / 2 - (zone.y + zone.height / 2))).toBeLessThan(
+          goal.height,
+        );
+      }
+    }
   }
 
   // Left as it was found, so no later case counts this goal.
@@ -478,4 +518,55 @@ test('keeps the visitor table inside a phone screen once somebody is here', asyn
     const inner = await table.evaluate((box) => box.scrollWidth - box.clientWidth);
     expect(inner, `${path} lost its columns rather than scrolling them`).toBeGreaterThan(0);
   }
+});
+
+// A funnel made the way a person makes one: on the Funnels page, from a goal
+// and a typed path, chosen into the link the moment it exists, and deleted
+// with the confirmation that says nothing is lost. The goal is made over HTTP
+// first because the goal form has its own case; this one is about the builder.
+test('builds a funnel from a goal and a path, and deletes it', async ({ page }) => {
+  const created = await page.request.post(`/api/sites/${SITE}/goals`, {
+    data: { name: 'Signed up in the funnel case', kind: 'event', match: 'e2e_funnel_signup' },
+  });
+  const body = (await created.json()) as {
+    data?: { goal: { id: string } };
+    error?: { details?: { goalId?: string } };
+  };
+  const goalId = body.data?.goal.id ?? body.error?.details?.goalId;
+  expect(goalId, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
+
+  await boot(page, `/${SITE}/funnels?range=today`);
+  const builder = page.getByRole('region', { name: 'Add a funnel' });
+  await builder.getByLabel('Name', { exact: true }).fill('Pricing then signup in the suite');
+  const first = builder.getByRole('group', { name: 'Step 1' });
+  await first.getByLabel('Page path').fill('/pricing');
+  const second = builder.getByRole('group', { name: 'Step 2' });
+  await second.getByLabel('Counts when').selectOption('goal');
+  await second
+    .getByLabel('Goal', { exact: true })
+    .selectOption({ label: 'Signed up in the funnel case' });
+  await builder.getByRole('button', { name: 'Add the funnel' }).click();
+
+  // Chosen into the link, and pressed in the list.
+  await expect(page).toHaveURL(/funnel=f_/);
+  const list = page.getByRole('region', { name: 'Funnels', exact: true });
+  const made = list.getByRole('button', { name: 'Pricing then signup in the suite' });
+  await expect(made).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    list.getByRole('list', { name: 'Steps of Pricing then signup in the suite' }),
+  ).toHaveText(/\/pricing.*Signed up in the funnel case/);
+
+  // Deleted, and the link stops naming it.
+  const item = list
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: 'Pricing then signup in the suite' }) });
+  await item.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(item.getByText(/Nothing is lost/)).toBeVisible();
+  await item.getByRole('button', { name: 'Delete it' }).click();
+  await expect(made).toHaveCount(0);
+  await expect(page).not.toHaveURL(/funnel=/);
+  await expect(page).toHaveURL(/range=today/);
+
+  const removed = await page.request.delete(`/api/sites/${SITE}/goals/${goalId as string}`);
+  expect(removed.ok()).toBe(true);
 });

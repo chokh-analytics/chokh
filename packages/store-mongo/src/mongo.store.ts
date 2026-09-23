@@ -662,6 +662,13 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async createFunnel(funnel: Funnel): Promise<void> {
       await siteOrThrow(funnel.siteId);
       if ((await funnels.countDocuments({ siteId: funnel.siteId })) >= MAX_FUNNELS_PER_SITE) {
+        // A full site asked for a funnel it already has is told it has it, the
+        // answer the memory adapter gives: which refusal a caller reads must
+        // not depend on the adapter. Only a full site pays for this read.
+        const asked = { siteId: funnel.siteId, id: funnel.id };
+        if ((await funnels.countDocuments(asked, { limit: 1 })) > 0) {
+          throw new StoreQueryError('FUNNEL_EXISTS', 'A funnel already asks that question');
+        }
         throw new StoreQueryError(
           'FUNNEL_LIMIT',
           `A site can have at most ${MAX_FUNNELS_PER_SITE} funnels`,

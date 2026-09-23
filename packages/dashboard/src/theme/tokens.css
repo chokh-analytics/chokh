@@ -133,6 +133,7 @@
   --accent: #3bc9b8;
   --accent-ink: #7fe0d3;
   --accent-soft: #12312f;
+  --on-accent: #08201e;
 
   --live: #5bcf7a;
   --live-soft: #15301d;
@@ -143,6 +144,8 @@
 
   --chart-fill: 0.14;
   --shadow-pop: 0 8px 24px rgb(0 0 0 / 45%), 0 1px 2px rgb(0 0 0 / 30%);
+  --scrim: rgb(5 8 9 / 62%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
 
   color-scheme: dark;
 }

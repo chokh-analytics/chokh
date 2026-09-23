@@ -119,10 +119,13 @@ export function goalIdFor(siteId: string, kind: GoalKind, match: string): string
 // the second is refused by the unique index on {siteId, id} with no read before
 // the write. The name is not part of it, and a step's goalId is not either: a
 // step is the question it copied, wherever the question came from.
+//
+// Encoded as JSON rather than joined with separators. A typed path may hold any
+// character, a tab and a newline included, so a joined spelling lets one step
+// holding both read as two steps; JSON quotes every string, and no two
+// different questions spell the same text.
 export function funnelIdFor(siteId: string, window: FunnelWindow, steps: GoalMatch[]): string {
-  const question = steps.map((step) => `${step.kind}\t${step.match}`).join('\n');
-  const digest = createHash('sha256')
-    .update(`${siteId}\n${window}\n${question}`)
-    .digest('base64url');
+  const question = JSON.stringify([siteId, window, steps.map((step) => [step.kind, step.match])]);
+  const digest = createHash('sha256').update(question).digest('base64url');
   return `f_${digest.slice(0, 16)}`;
 }

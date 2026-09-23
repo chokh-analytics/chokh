@@ -20,7 +20,7 @@ import { AppContext, type AppContextValue } from './context.js';
 import { OPEN_SHORTCUTS, Shortcuts } from './shortcuts.js';
 import styles from './Shell.module.css';
 
-// The frame every report is drawn in: the mark, the site being read, nine
+// The frame every report is drawn in: the mark, the site being read, ten
 // destinations, and the three controls that are about the reader rather than
 // about the numbers.
 
@@ -39,6 +39,7 @@ export function destinationsFor(siteId: string): Destination[] {
     { path: `/${siteId}/devices`, label: messages.nav.devices },
     { path: `/${siteId}/events`, label: messages.nav.events },
     { path: `/${siteId}/goals`, label: messages.nav.goals },
+    { path: `/${siteId}/funnels`, label: messages.nav.funnels },
     { path: `/${siteId}/people`, label: messages.nav.people },
   ];
 }
@@ -273,9 +274,10 @@ export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element
   const nav = useRef<HTMLElement>(null);
   const [location] = useLocation();
 
-  // On a phone the destinations are one row that scrolls sideways, and nine of
-  // them do not fit in 390 pixels. The page somebody is on has to be in view,
-  // or the row says nothing about where they are: Goals and People start past
+  // The destinations are one row that scrolls sideways wherever ten of them do
+  // not fit: in 390 pixels on a phone, and beside the mark and the account on a
+  // 1024 pixel laptop. The page somebody is on has to be in view, or the row
+  // says nothing about where they are: Goals, Funnels and People start past
   // the right edge. Only the row scrolls, never the page.
   useEffect(() => {
     const row = nav.current;

@@ -78,6 +78,34 @@ describe('colour tokens', () => {
   });
 });
 
+// Dark is written twice in tokens.css, once for the system's preference and
+// once for a person's own choice, and the two are one palette. They drifted:
+// the chosen dark lacked --on-accent, --scrim and --shadow-sm, so somebody who
+// picked dark read every primary button as white on the light teal, 2.05:1,
+// while somebody whose system was dark read it correctly. Only a page audited
+// with a primary button on it, the Funnels builder, showed it.
+describe('the two declarations of dark', () => {
+  function declarations(text: string, selector: string): Map<string, string> {
+    const start = text.indexOf(selector);
+    expect(start, `${selector} is not in tokens.css`).toBeGreaterThan(-1);
+    const body = text.slice(start, text.indexOf('}', start));
+    return new Map(
+      [...body.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)].map((match) => [
+        match[1] ?? '',
+        (match[2] ?? '').replace(/\s+/g, ' ').trim(),
+      ]),
+    );
+  }
+
+  it('declares the same tokens with the same values, chosen or preferred', () => {
+    const text = readFileSync(resolve(HERE, 'tokens.css'), 'utf8');
+    const preferred = declarations(text, ":root:not([data-theme='light']) {");
+    const chosen = declarations(text, ":root[data-theme='dark'] {");
+    expect(preferred.size).toBeGreaterThan(10);
+    expect(Object.fromEntries(chosen)).toEqual(Object.fromEntries(preferred));
+  });
+});
+
 describe('where a colour may be written', () => {
   // Only the token file. A colour written into a component is a colour with
   // one value, and this product has two palettes: the sheet's scrim was the

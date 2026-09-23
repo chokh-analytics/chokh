@@ -38,10 +38,12 @@ const BUDGETS = [
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
-  // One chunk per report, plus the two pieces more than one report shares.
+  // One chunk per report, plus the pieces more than one report shares.
   // Measured 2026-09-20 at 12,591 B for the eight together, the largest being
-  // Realtime at 3,256 B.
-  { name: 'routes', pattern: /\.js$/, bytes: 20 * 1024 },
+  // Realtime at 3,256 B. Raised from 20 KB on 2026-09-23 by the commit that
+  // spent it, the Funnels page: measured at 21,493 B for twelve chunks, the
+  // largest now Funnels at 3,615 B with its list, builder and delete.
+  { name: 'routes', pattern: /\.js$/, bytes: 24 * 1024 },
   { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
