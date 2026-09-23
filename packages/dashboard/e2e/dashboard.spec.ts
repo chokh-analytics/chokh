@@ -160,6 +160,19 @@ test('serves its own fonts and nothing from anywhere else', async ({ page }) => 
 test('keeps nine destinations in one row on a phone, with the current one in view', async ({
   page,
 }) => {
+  // A goal in the list first. The Goals page with nothing in it is one
+  // sentence wide, which is why this case once passed over a table that pushed
+  // the page 71 px sideways the moment it had a row.
+  const created = await page.request.post(`/api/sites/${SITE}/goals`, {
+    data: { name: 'Read the pricing page on a phone', kind: 'page', match: '/pricing' },
+  });
+  const body = (await created.json()) as {
+    data?: { goal: { id: string } };
+    error?: { details?: { goalId?: string } };
+  };
+  const goalId = body.data?.goal.id ?? body.error?.details?.goalId;
+  expect(goalId, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
+
   await page.setViewportSize({ width: 390, height: 844 });
   for (const [path, label] of [
     ['goals', 'Goals'],
@@ -167,6 +180,12 @@ test('keeps nine destinations in one row on a phone, with the current one in vie
     ['events', 'Events'],
   ] as const) {
     await boot(page, `/${SITE}/${path}`);
+    if (path === 'goals') {
+      // The row is drawn, so the overflow below is measured over a real list.
+      await expect(
+        page.getByRole('button', { name: 'Read the pricing page on a phone' }),
+      ).toBeVisible();
+    }
     const nav = page.getByRole('navigation', { name: 'Report' });
     const row = await nav.boundingBox();
     const current = await nav.getByRole('link', { name: label, exact: true }).boundingBox();
@@ -182,7 +201,14 @@ test('keeps nine destinations in one row on a phone, with the current one in vie
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
-    expect(overflow).toBeLessThanOrEqual(0);
+    expect(overflow, `/${path} scrolls sideways`).toBeLessThanOrEqual(0);
+    if (path === 'goals') {
+      // And the columns are a scroll away inside the card rather than gone.
+      const inner = await page
+        .getByRole('group', { name: 'Goals' })
+        .evaluate((box) => box.scrollWidth - box.clientWidth);
+      expect(inner, 'the goal list dropped its columns rather than scrolling them').toBeGreaterThan(0);
+    }
   }
 
   // And the range bar stays two rows with the goal control in it: the goal and
@@ -194,6 +220,10 @@ test('keeps nine destinations in one row on a phone, with the current one in vie
   if (goal !== null && zone !== null) {
     expect(Math.abs(goal.y + goal.height / 2 - (zone.y + zone.height / 2))).toBeLessThan(goal.height);
   }
+
+  // Left as it was found, so no later case counts this goal.
+  const removed = await page.request.delete(`/api/sites/${SITE}/goals/${goalId as string}`);
+  expect(removed.ok()).toBe(true);
 });
 
 test('reads on a phone without a sideways scrollbar', async ({ page }) => {

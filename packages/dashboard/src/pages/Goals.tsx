@@ -125,10 +125,10 @@ function GoalRow({
         <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
           {formatRate(conversion.rate) ?? <Absent />}
         </td>
-        <td className={[styles.cell, styles.right, styles.mono, styles.wide].join(' ')}>
+        <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
           {formatCount(conversion.completions)}
         </td>
-        <td className={[styles.cell, styles.right, styles.mono, styles.wide].join(' ')}>
+        <td className={[styles.cell, styles.right, styles.mono].join(' ')}>
           {conversion.value === null ? <Absent /> : formatValue(conversion.value)}
         </td>
         <td className={[styles.cell, styles.right].join(' ')}>
@@ -203,62 +203,76 @@ function GoalList({ owner }: { owner: boolean }): JSX.Element {
     }
     return (
       <>
-        <table className={styles.table}>
-          <caption className="sr-only">{messages.goals.title}</caption>
-          <thead className={styles.head}>
-            <tr>
-              <th scope="col">{messages.goals.picker}</th>
-              <th scope="col" className={styles.match}>
-                {messages.goals.matches}
-              </th>
-              <th scope="col" className={styles.right}>
-                {messages.metrics.converted}
-              </th>
-              <th scope="col" className={styles.right}>
-                <span className={styles.withHelp}>
-                  {messages.metrics.conversionRate}
-                  <InfoDot
-                    label={format(messages.a11y.metricHelp, { metric: messages.metrics.conversionRate })}
-                    text={messages.metricHelp.conversionRate}
-                  />
-                </span>
-              </th>
-              <th scope="col" className={[styles.right, styles.wide].join(' ')}>
-                <span className={styles.withHelp}>
-                  {messages.metrics.completions}
-                  <InfoDot
-                    label={format(messages.a11y.metricHelp, { metric: messages.metrics.completions })}
-                    text={messages.metricHelp.completions}
-                  />
-                </span>
-              </th>
-              <th scope="col" className={[styles.right, styles.wide].join(' ')}>
-                <span className={styles.withHelp}>
-                  {messages.metrics.value}
-                  <InfoDot
-                    label={format(messages.a11y.metricHelp, { metric: messages.metrics.value })}
-                    text={messages.metricHelp.value}
-                  />
-                </span>
-              </th>
-              <th scope="col">
-                <span className="sr-only">{messages.goals.delete}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <GoalRow
-                key={row.goal.id}
-                goal={row.goal}
-                conversion={row.conversion}
-                top={top}
-                chosen={query.goal === row.goal.id}
-                owner={owner}
-              />
-            ))}
-          </tbody>
-        </table>
+        {/*
+          The list scrolls inside its card rather than the page scrolling
+          under it: seven columns are wider than a phone, and a page that
+          moves sideways drags the navigation and the range bar with it. No
+          column is hidden, every one is a scroll away, and the box takes
+          focus so a keyboard can scroll it. The visitor table does the same.
+        */}
+        <div
+          className={styles.scroll}
+          tabIndex={0}
+          role="group"
+          aria-label={messages.goals.title}
+        >
+          <table className={styles.table}>
+            <caption className="sr-only">{messages.goals.title}</caption>
+            <thead className={styles.head}>
+              <tr>
+                <th scope="col">{messages.goals.picker}</th>
+                <th scope="col" className={styles.match}>
+                  {messages.goals.matches}
+                </th>
+                <th scope="col" className={styles.right}>
+                  {messages.metrics.converted}
+                </th>
+                <th scope="col" className={styles.right}>
+                  <span className={styles.withHelp}>
+                    {messages.metrics.conversionRate}
+                    <InfoDot
+                      label={format(messages.a11y.metricHelp, { metric: messages.metrics.conversionRate })}
+                      text={messages.metricHelp.conversionRate}
+                    />
+                  </span>
+                </th>
+                <th scope="col" className={styles.right}>
+                  <span className={styles.withHelp}>
+                    {messages.metrics.completions}
+                    <InfoDot
+                      label={format(messages.a11y.metricHelp, { metric: messages.metrics.completions })}
+                      text={messages.metricHelp.completions}
+                    />
+                  </span>
+                </th>
+                <th scope="col" className={styles.right}>
+                  <span className={styles.withHelp}>
+                    {messages.metrics.value}
+                    <InfoDot
+                      label={format(messages.a11y.metricHelp, { metric: messages.metrics.value })}
+                      text={messages.metricHelp.value}
+                    />
+                  </span>
+                </th>
+                <th scope="col">
+                  <span className="sr-only">{messages.goals.delete}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <GoalRow
+                  key={row.goal.id}
+                  goal={row.goal}
+                  conversion={row.conversion}
+                  top={top}
+                  chosen={query.goal === row.goal.id}
+                  owner={owner}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
         {top === 0 && <p className={styles.note}>{messages.goals.noConversions}</p>}
       </>
     );

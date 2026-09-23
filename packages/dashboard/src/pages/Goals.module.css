@@ -11,6 +11,17 @@
   padding: var(--s2) var(--s3);
 }
 
+/* The one part of the page allowed to be wider than a phone scrolls here,
+ * inside its card, and never takes the page with it. Relative, so a visually
+ * hidden heading (the Delete column's) is placed inside the box and scrolls
+ * with it: absolute against the body, it sat at 813 px and pushed the page. */
+.scroll {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -174,14 +185,4 @@
 
 .form .mono input {
   font-family: var(--font-mono);
-}
-
-/* On a phone the list keeps what a goal is called, how many reached it and
- * the rate; what it matches, the completions and the value are one tap away
- * on a wider screen. */
-@media (max-width: 720px) {
-  .match,
-  .wide {
-    display: none;
-  }
 }
