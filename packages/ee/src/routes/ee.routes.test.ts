@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildExtension } from '../extension.js';
 import { requireLicense } from '../license/guard.js';
 import { ALL_FEATURES, type LicensePayload } from '../license/payload.js';
-import { createLicenseState } from '../license/state.js';
+import { createLicenseState, type LicenseState } from '../license/state.js';
 import { publicKeyToBase64, signLicense } from '../license/token.js';
 import { PING_FEATURE } from './ee.routes.js';
 
@@ -252,15 +252,33 @@ describe('a paid route on an install with a key', () => {
 
   // The clock is read per request and the signature is not. A process that has
   // been up since before midnight has to stop at midnight.
+  //
+  // The clock is the test's, not the machine's. An earlier shape minted a key
+  // that expired one second after Date.now() and slept past it, and under a
+  // parallel gate the register, the site and the first request took longer
+  // than the second, so the first request already met expired (AN-EE02). The
+  // real state is built once, so the signature is verified once; the wrapper
+  // hands it the instant the test chose instead of the one the guard read, and
+  // counts the readings, so a request that did not ask the clock would show.
   it('stops serving the moment the key expires, without a restart', async () => {
     const issuer = pair();
-    const expiresAt = Math.floor(Date.now() / 1000) + 1;
-    const here = await install([
-      buildExtension({
-        raw: signLicense(issuer.privateKey, payload({ expiresAt })),
-        publicKeys: [issuer.publicKey],
-      }),
-    ]);
+    const expiresAt = payload().expiresAt;
+    const real = createLicenseState({
+      raw: signLicense(issuer.privateKey, payload({ expiresAt })),
+      publicKeys: [issuer.publicKey],
+    });
+
+    const clock = { now: expiresAt * 1000 - 1_000, readings: 0 };
+    const state: LicenseState = {
+      allows(feature) {
+        clock.readings += 1;
+        return real.allows(feature, clock.now);
+      },
+      status() {
+        return real.status(clock.now);
+      },
+    };
+    const here = await install([buildExtension(state)]);
 
     const before = await here.app.inject({
       method: 'GET',
@@ -268,8 +286,9 @@ describe('a paid route on an install with a key', () => {
       headers: { cookie: here.cookie },
     });
     expect(before.statusCode).toBe(200);
+    expect(clock.readings).toBe(1);
 
-    await new Promise((wake) => setTimeout(wake, 1_100));
+    clock.now += 1_000;
 
     const after = await here.app.inject({
       method: 'GET',
@@ -278,6 +297,7 @@ describe('a paid route on an install with a key', () => {
     });
     expect(after.statusCode).toBe(403);
     expect(refusal(after.body).details.reason).toBe('expired');
+    expect(clock.readings).toBe(2);
 
     // And the dashboard is told the date rather than "you never had one", so a
     // renewal does not read as a purchase.
