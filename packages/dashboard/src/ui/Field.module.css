@@ -37,3 +37,9 @@
   font-size: var(--t-label);
   color: var(--warn);
 }
+
+.textarea {
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  resize: vertical;
+}

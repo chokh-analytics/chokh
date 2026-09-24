@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { JSX } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +34,7 @@ const SITE = {
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
+    routeGroups: [],
   },
 };
 
@@ -120,6 +122,36 @@ afterEach(() => {
 });
 
 describe('Pages', () => {
+  // The Routes tab is always there. With no rule on the site it reads the
+  // same rows as All pages and says where a rule goes, rather than being
+  // missing; with one, it asks for the route dimension.
+  it('draws the Routes tab, says where a rule goes when there is none, and asks for routes', async () => {
+    const fetcher = serve();
+    render(show());
+    const card = await screen.findByRole('region', { name: 'Top pages' });
+    await userEvent.click(within(card).getByRole('tab', { name: 'Routes' }));
+    await waitFor(() => expect(window.location.search).toBe('?pages=routes'));
+    expect(await within(card).findByText(/No route rules yet/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(([input]) =>
+          new URL(String(input), 'http://x').searchParams.get('dim') === 'route',
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it('says nothing about rules on the Routes tab once the site has one', async () => {
+    serve();
+    window.history.replaceState(null, '', '/s_test/pages?pages=routes');
+    render(
+      show({ site: { ...SITE, settings: { ...SITE.settings, routeGroups: ['/courses/:slug'] } } }),
+    );
+    const card = await screen.findByRole('region', { name: 'Top pages' });
+    await within(card).findByText('/read');
+    expect(within(card).queryByText(/No route rules yet/)).toBeNull();
+  });
+
   it('shows how far people read, and how many exits it was measured over', async () => {
     serve();
     render(show());

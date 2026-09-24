@@ -233,6 +233,9 @@ export const messages = {
     pagesTitle: 'Pages',
     topPages: 'Top pages',
     tabAll: 'All pages',
+    tabRoutes: 'Routes',
+    routesEmpty:
+      'No route rules yet. Add one such as /courses/:slug under Site settings in the site menu, and every course reads as one row here.',
     tabEntry: 'Entry',
     tabExit: 'Exit',
     tabJourneys: 'Journeys',
@@ -608,6 +611,70 @@ export const messages = {
     retention: 'Raw events kept for {days} days',
     visitorIdMode: 'Visitor id: {mode}',
     ipMode: 'Addresses: {mode}',
+  },
+
+  // The settings page. Three forms in three cards, every control drawn for
+  // everybody and disabled with the reason for anybody who is not an owner.
+  settings: {
+    title: 'Settings for {name}',
+    lede: 'What this site is called, how it keeps its numbers, and what it keeps out.',
+    ownerOnly:
+      'Only an owner of this site can change its settings. What is here is what they chose.',
+    general: 'Site',
+    name: 'Name',
+    domains: 'Domains',
+    domainsHelp:
+      'One per line, without the protocol. The tracker is refused from any other host, and www and the apex are two entries.',
+    timezone: 'Timezone',
+    timezoneHelp:
+      'Every day boundary, every rollup and every chart bucket is drawn in this zone. It cannot be changed once there is history, so it is not a control here.',
+    retention: 'Raw events kept for',
+    retentionHelp:
+      'Days. The daily numbers are kept for ever; a filtered report and a profile see only this far back.',
+    retentionRange: 'Between 1 and 3650 days.',
+    ipMode: 'Addresses',
+    ipFull: 'Stored in full',
+    ipAnonymized: 'Last part removed',
+    ipNone: 'Not stored',
+    visitorIdMode: 'Visitor id',
+    visitorCookieless: 'Cookieless: the address and the browser, salted daily',
+    visitorPersistent: 'Persistent: an id the browser keeps for thirteen months',
+    botFilter: 'Crawlers',
+    botOn: 'Kept out of the reports',
+    botOff: 'Counted like everybody else',
+    unsignedIdentify: 'An identify with no signature',
+    unsignedHelp:
+      'A page can name any user it likes. Refusing an unsigned one means only your server, holding the identify secret, can say who somebody is.',
+    unsignedYes: 'Believed',
+    unsignedNo: 'Refused',
+    exclusions: 'Keep your own traffic out',
+    exclusionsLede:
+      'Applied as a batch arrives, before anything is counted. Nothing already stored changes.',
+    excludeIps: 'Addresses',
+    excludeIpsHelp:
+      'One per line: an address, or a range such as 10.0.0.0/8. A batch from one of these is dropped before it counts.',
+    excludePaths: 'Paths',
+    excludePathsHelp:
+      'One per line, starting with /. A * stands for one part of the path, so /preview/* is every preview page.',
+    excludeQueryParams: 'Query parameters',
+    excludeQueryParamsHelp:
+      "One per line. Taken off any path or referrer that carries them. The tracker never sends a page's own query string, so this is for hash routes, server events and referrers.",
+    routes: 'Route groups',
+    routesLede: 'Fold the pages of one kind into one row of the Routes tab on Pages.',
+    routeGroups: 'Rules',
+    routeGroupsHelp:
+      'One per line, in order; the first that matches wins. A :name stands for exactly one part of the path and a * for any run of characters inside one, so /courses/:slug is every course.',
+    routeGroupsPlaceholder: '/courses/:slug',
+    regrouping:
+      'The rules changed. Every stored pageview and the route rollups within retention are regrouped on the next hourly pass.',
+    save: 'Save',
+    saving: 'Saving',
+    saved: 'Saved.',
+    required: 'This needs a value.',
+    oneDomain: 'A site needs at least one domain.',
+    invalidPath: 'A path starts with /.',
+    invalidRule:
+      'A rule is an absolute path with no query or fragment, such as /courses/:slug.',
   },
 
   identity: {

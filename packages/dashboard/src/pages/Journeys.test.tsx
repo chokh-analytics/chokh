@@ -34,6 +34,7 @@ const SITE = {
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
+    routeGroups: [],
   },
 };
 
@@ -130,7 +131,7 @@ describe('Journeys', () => {
 
     const card = await screen.findByRole('region', { name: 'Top pages' });
     const tabs = within(card).getAllByRole('tab').map((tab) => tab.textContent);
-    expect(tabs).toEqual(['All pages', 'Entry', 'Exit', 'Journeys']);
+    expect(tabs).toEqual(['All pages', 'Routes', 'Entry', 'Exit', 'Journeys']);
     // Nothing is asked for a tab nobody opened.
     expect(server.journeyReads()).toHaveLength(0);
 

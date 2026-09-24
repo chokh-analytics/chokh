@@ -4,6 +4,7 @@ import {
   type JSX,
   type ReactNode,
   type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
 } from 'react';
 
 import styles from './Field.module.css';
@@ -97,6 +98,54 @@ export function SelectField({
           </option>
         ))}
       </select>
+      {help !== undefined && (
+        <p className={styles.help} id={helpId}>
+          {help}
+        </p>
+      )}
+      {problem !== undefined && (
+        <p className={styles.problem} id={problemId} role="alert">
+          {problem}
+        </p>
+      )}
+    </div>
+  );
+}
+
+interface TextareaFieldProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  help?: ReactNode;
+  problem?: string;
+}
+
+// The same three parts, around a textarea: a list somebody types one entry
+// per line, in the mono face so a path reads as a path.
+export function TextareaField({
+  label,
+  help,
+  problem,
+  className,
+  ...rest
+}: TextareaFieldProps): JSX.Element {
+  const id = useId();
+  const helpId = `${id}-help`;
+  const problemId = `${id}-problem`;
+  const described = [help === undefined ? '' : helpId, problem === undefined ? '' : problemId]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className={[styles.field, className ?? ''].filter(Boolean).join(' ')}>
+      <label className={styles.label} htmlFor={id}>
+        {label}
+      </label>
+      <textarea
+        id={id}
+        className={[styles.input, styles.textarea].join(' ')}
+        aria-describedby={described === '' ? undefined : described}
+        aria-invalid={problem === undefined ? undefined : true}
+        {...rest}
+      />
       {help !== undefined && (
         <p className={styles.help} id={helpId}>
           {help}

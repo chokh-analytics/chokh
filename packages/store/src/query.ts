@@ -7,6 +7,10 @@ import type { GeoLocation } from '@chokh/geo/types';
 // can read, so the two consumers get two doors and one set of types.
 
 import { addDays, dayBounds, dayKey, shiftYears, type Interval } from './time.js';
+
+// The route rule grammar, reachable from the browser: a settings page checks a
+// rule the way the collector will read it before it sends one.
+export { MAX_ROUTE_GROUPS, isRouteRule } from './routes.js';
 import type { Attributes, EventType, StoredEvent, StoredSession, Touch } from './types.js';
 
 // One query shape for every read. from is inclusive, to is exclusive, both in

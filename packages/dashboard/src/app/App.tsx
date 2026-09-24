@@ -42,6 +42,9 @@ const Events = lazy(async () => ({ default: (await import('../pages/Events.js'))
 const Goals = lazy(async () => ({ default: (await import('../pages/Goals.js')).Goals }));
 const Funnels = lazy(async () => ({ default: (await import('../pages/Funnels.js')).Funnels }));
 const People = lazy(async () => ({ default: (await import('../pages/People.js')).People }));
+const Settings = lazy(async () => ({
+  default: (await import('../pages/Settings.js')).Settings,
+}));
 
 // What is on screen while a report's chunk is on its way.
 //
@@ -97,6 +100,11 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
         </Route>
         <Route path="/:siteId/people">
           <People />
+        </Route>
+        {/* Reached from the site menu rather than the report navigation: it is
+            about the site, not a report of it. */}
+        <Route path="/:siteId/settings">
+          <Settings />
         </Route>
         {/*
           Two segments, and both of them matter: a visitor id is a browser and

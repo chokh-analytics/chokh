@@ -46,7 +46,11 @@ export interface PublicSite {
     excludeIps: string[];
     excludePaths: string[];
     excludeQueryParams: string[];
+    routeGroups: string[];
   };
+  // Present while the site waits for the jobs to regroup its routes after a
+  // change to the rules.
+  routesChangedAt?: number;
 }
 
 export interface PublicUser {
@@ -146,6 +150,19 @@ export const api = {
       settings?: { timezone?: string };
     },
   ): Promise<Answer<CreatedSite>> => client.post<CreatedSite>('/api/sites', input),
+
+  // What an owner may change about a site. Only the fields named are touched;
+  // the identify secret is never one of them, and the timezone is not offered.
+  patchSite: (
+    client: Client,
+    siteId: string,
+    input: {
+      name?: string;
+      domains?: string[];
+      settings?: Partial<Omit<PublicSite['settings'], 'timezone'>>;
+    },
+  ): Promise<Answer<{ site: PublicSite }>> =>
+    client.patch<{ site: PublicSite }>(`/api/sites/${siteId}`, input),
 
   aggregate: (client: Client, siteId: string, params: StatsParams): Promise<Answer<AggregateResult>> =>
     client.get<AggregateResult>(`/api/sites/${siteId}/stats/aggregate`, statsQuery(params)),

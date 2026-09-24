@@ -56,6 +56,7 @@ export interface ClientOptions {
 export interface Client {
   get<T>(path: string, params?: Params): Promise<Answer<T>>;
   post<T>(path: string, body?: unknown): Promise<Answer<T>>;
+  patch<T>(path: string, body: unknown): Promise<Answer<T>>;
   delete<T>(path: string): Promise<Answer<T>>;
   // The URL a browser should navigate to for a download or a stream, which is
   // the one case where the answer is not JSON this file parses.
@@ -145,6 +146,12 @@ export function createClient(options: ClientOptions = {}): Client {
         method: 'POST',
         headers: body === undefined ? {} : { 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    patch: <T,>(path: string, body: unknown) =>
+      send<T>(path, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
       }),
     delete: <T,>(path: string) => send<T>(path, { method: 'DELETE' }),
     url,

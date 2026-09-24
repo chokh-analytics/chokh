@@ -23,8 +23,12 @@ import styles from './Pages.module.css';
 // third is a card about a thing this product cannot see at all, which is worth
 // a card of its own rather than silence.
 
+// The Routes tab is the page list with the site's route rules applied: every
+// course under /courses/:slug as one row. Drawn always, and with no rule on
+// the site it says so and where to add one, rather than being missing.
 const PAGE_TABS = [
   { id: 'all', dim: 'page' as const, label: messages.reports.tabAll },
+  { id: 'routes', dim: 'route' as const, label: messages.reports.tabRoutes },
   { id: 'entry', dim: 'entry' as const, label: messages.reports.tabEntry },
   { id: 'exit', dim: 'exit' as const, label: messages.reports.tabExit },
 ];
@@ -33,7 +37,7 @@ const PAGE_TABS = [
 // other. It is not a breakdown, so it is not a DimensionCard tab: the card
 // draws it in its head, and this page draws the flow in the card's place.
 const JOURNEYS_TAB = { id: 'journeys', label: messages.reports.tabJourneys };
-const TAB_IDS = ['all', 'entry', 'exit', 'journeys'] as const;
+const TAB_IDS = ['all', 'routes', 'entry', 'exit', 'journeys'] as const;
 const ALL_TABS = [...PAGE_TABS.map(({ id, label }) => ({ id, label })), JOURNEYS_TAB];
 
 // Its own chunk, fetched the first time somebody opens the tab and never by a
@@ -41,7 +45,9 @@ const ALL_TABS = [...PAGE_TABS.map(({ id, label }) => ({ id, label })), JOURNEYS
 const Journeys = lazy(async () => ({ default: (await import('./Journeys.js')).Journeys }));
 
 function TopPages(): JSX.Element {
+  const { site } = useApp();
   const { tab, set } = useTabParam('pages', TAB_IDS);
+  const noRules = tab === 'routes' && site.settings.routeGroups.length === 0;
   const choose = (id: string): void =>
     set(TAB_IDS.find((candidate) => candidate === id) ?? 'all');
   if (tab === 'journeys') {
@@ -66,6 +72,7 @@ function TopPages(): JSX.Element {
       param="pages"
       secondary="pageviews"
       moreTabs={[JOURNEYS_TAB]}
+      {...(noRules ? { note: messages.reports.routesEmpty } : {})}
     />
   );
 }

@@ -37,6 +37,7 @@ const SITE = {
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
+    routeGroups: [],
   },
 };
 

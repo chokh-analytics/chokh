@@ -186,6 +186,12 @@ function SiteList({
         );
       })}
       {sites.length === 1 && <p className={popover.heading}>{messages.nav.noOtherSites}</p>}
+      <div className={popover.divider} />
+      {/* The site's own settings, under the site's own name and not among the
+          ten reports: it is about the site rather than a report of it. */}
+      <Link to={`/${value.site.id}/settings`} className={popover.item} onClick={onPicked}>
+        <span>{messages.sites.settings}</span>
+      </Link>
     </>
   );
 }
