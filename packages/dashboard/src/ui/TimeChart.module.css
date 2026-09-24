@@ -41,6 +41,12 @@
   color: var(--muted);
 }
 
+/* The one control in the head, pushed to the right edge. */
+.headExtra {
+  margin-left: auto;
+  display: inline-flex;
+}
+
 /* The measured box the chart draws itself into. */
 .box {
   position: relative;

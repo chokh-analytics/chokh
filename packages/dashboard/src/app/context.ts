@@ -49,3 +49,11 @@ export function useTimezone(): string {
 export function isOwner(teams: readonly { id: string; role: string }[], teamId: string): boolean {
   return teams.some((team) => team.id === teamId && team.role === 'owner');
 }
+
+// Whether this person may state a fact about the site: a mark on the chart
+// takes write:events, which an owner and an editor hold and a viewer does not.
+export function canWrite(teams: readonly { id: string; role: string }[], teamId: string): boolean {
+  return teams.some(
+    (team) => team.id === teamId && (team.role === 'owner' || team.role === 'editor'),
+  );
+}

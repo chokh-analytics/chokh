@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { bucketIndexAt, type Interval } from '@chokh/store/time';
 
 import { formatClock, formatCount, formatDate, formatDateTime } from '../lib/format.js';
@@ -120,6 +120,9 @@ export interface TimeChartProps {
   // the range up to its end, and outside it past that.
   marks?: ChartMark[];
   rangeEnd?: number;
+  // One control at the right of the head, beside the peak: the Overview puts
+  // the annotations panel there, because the marks it lists are on this chart.
+  headExtra?: ReactNode;
 }
 
 function scaleY(value: number, max: number, plot: Plot): number {
@@ -291,6 +294,7 @@ export function TimeChart({
   live = false,
   marks = [],
   rangeEnd,
+  headExtra,
 }: TimeChartProps): JSX.Element {
   const exact = formatExactValue ?? formatValue;
   const [hover, setHover] = useState<number | null>(null);
@@ -348,6 +352,7 @@ export function TimeChart({
             })}
           </span>
         )}
+        {headExtra !== undefined && <span className={styles.headExtra}>{headExtra}</span>}
       </div>
 
       <div className={styles.box} ref={box}>

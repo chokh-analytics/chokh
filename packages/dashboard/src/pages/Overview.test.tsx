@@ -782,3 +782,26 @@ describe('Overview, the marks on the chart', () => {
     expect(screen.getAllByRole('table').length).toBeGreaterThan(0);
   });
 });
+
+describe('Overview, the annotations panel', () => {
+  it('opens the panel from the chart head, naming how many marks the range has', async () => {
+    serve({
+      annotations: () =>
+        ok({
+          annotations: [
+            { siteId: 's_test', id: 'an_1', at: TODAY_START + 60 * 60_000, kind: 'note', text: 'Odd hour', createdBy: 'u_1', createdAt: NOW },
+          ],
+        }),
+    });
+    const user = userEvent.setup();
+    render(show());
+    await totalsLanded();
+    const trigger = await screen.findByRole('button', { name: 'Annotations (1)' });
+    await user.click(trigger);
+    // A reader with no role on the team sees the list and the sentence.
+    expect(await screen.findByText('Odd hour')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Only an owner or an editor of this site can add or delete a mark.'),
+    ).toBeInTheDocument();
+  });
+});

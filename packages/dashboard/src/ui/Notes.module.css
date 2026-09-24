@@ -1,0 +1,86 @@
+/*
+ * The marks of the range as a list, and the form under a rule. Sized to the
+ * popover it hangs in, and the list scrolls inside it rather than pushing the
+ * form off the bottom of a phone.
+ */
+
+.panel {
+  display: grid;
+  gap: var(--s1);
+  width: min(360px, calc(100vw - 2 * var(--s4)));
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s2);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.row {
+  display: grid;
+  gap: var(--s1);
+  padding: 0 var(--s3);
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.kind {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.when {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.text {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--accent-ink);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.note {
+  margin: 0;
+  padding: var(--s1) var(--s3) var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.form {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s2);
+}
+
+.when2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}

@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from 'react';
+import { Suspense, lazy, useMemo, type JSX } from 'react';
 import type { Dimension, Metrics } from '@chokh/store/contract';
 
 import { useApp } from '../app/context.js';
@@ -30,12 +30,19 @@ import { defaultInterval, isLive } from '../lib/range.js';
 import { METRICS, type MetricName } from '../lib/query.js';
 import { format, messages } from '../messages/en.js';
 import { Breakdown, Code, conversionColumn, type BreakdownRowView } from '../ui/Breakdown.js';
+import { Button } from '../ui/Button.js';
 import { Card } from '../ui/Card.js';
+import { Popover } from '../ui/Popover.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
 import { Waiting } from './Waiting.js';
 import { CHART_HEIGHT, TimeChart, type ChartMark, type ChartPoint } from '../ui/TimeChart.js';
 import styles from './Overview.module.css';
+
+// The annotations panel: the list and the form, loaded when it opens. The
+// marks themselves are drawn by the chart from a read this page already makes,
+// so the first paint pays for the guides and not for a form nobody opened.
+const NotesPanel = lazy(() => import('../ui/Notes.js'));
 
 // Six numbers, one chart, four cards. Nothing else on the first screen.
 //
@@ -413,6 +420,30 @@ export function Overview(): JSX.Element {
               live={isLive(query.range, now)}
               marks={marks}
               rangeEnd={query.range.to}
+              headExtra={
+                <Popover
+                  align="right"
+                  label={messages.annotations.picker}
+                  trigger={({ open, toggle }) => (
+                    <Button
+                      variant="quiet"
+                      onClick={toggle}
+                      aria-expanded={open}
+                      aria-haspopup="true"
+                    >
+                      {marks.length === 0
+                        ? messages.annotations.picker
+                        : format(messages.annotations.pickerCount, { count: marks.length })}
+                    </Button>
+                  )}
+                >
+                  {({ close }) => (
+                    <Suspense fallback={<p className={styles.note}>{messages.states.loading}</p>}>
+                      <NotesPanel close={close} />
+                    </Suspense>
+                  )}
+                </Popover>
+              }
             />
           )}
         </div>
