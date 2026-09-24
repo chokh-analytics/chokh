@@ -767,9 +767,10 @@ survives the purge; only the per-visitor detail ages out.
   and null. For the same reason, a filter naming one of them leaves the visit
   numbers unanswered.
 - **`entry`, `exit` and `channel` are read off sessions**, because no event
-  carries them. A filter on one of those three is refused with
-  `UNSUPPORTED_FILTER` rather than quietly matching nothing; AN-SEG01 owns the
-  segment that resolves it.
+  carries them. A filter on one of those three narrows a report to the stays
+  that match it: the rows of those stays are what is counted, and the visit
+  numbers come off the stays themselves. A row written before stays were
+  stamped belongs to no stay and is out of such a report.
 
 ## Things to know before you point a site at this
 

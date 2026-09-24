@@ -331,14 +331,27 @@ describe('the reports', () => {
       );
     });
 
-    // Refused rather than answered with an empty report, because an empty report is
-    // a silent wrong number. AN-SEG01 owns the segment that answers it.
-    it('refuses a filter raw rows cannot answer', async () => {
-      expectFailure(
-        await get(`/api/sites/${SITE_ID}/stats/aggregate?${today}&filters=entry==/pricing`),
-        400,
-        'UNSUPPORTED_FILTER',
+    // A dimension only a stay carries narrows the whole report to the stays
+    // that match: their rows are what is counted, and their visit numbers.
+    it('narrows a report by a dimension only a stay carries', async () => {
+      const pricing = await get(
+        `/api/sites/${SITE_ID}/stats/aggregate?${today}&filters=entry==/pricing`,
       );
+      expect(pricing.statusCode).toBe(200);
+      // Both of today's visitors came in on /pricing, and every row today is theirs.
+      expect(envelope<{ metrics: Metrics }>(pricing.body).data?.metrics).toMatchObject({
+        visitors: 2,
+        pageviews: 3,
+        visits: 2,
+        bounces: 1,
+      });
+
+      const home = await get(`/api/sites/${SITE_ID}/stats/aggregate?${today}&filters=entry==/`);
+      expect(envelope<{ metrics: Metrics }>(home.body).data?.metrics).toMatchObject({
+        visitors: 0,
+        pageviews: 0,
+        visits: 0,
+      });
     });
   });
 

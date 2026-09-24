@@ -30,7 +30,6 @@ import {
   splitVisitFilters,
   conversionMatcher,
   assertIntervalRange,
-  assertFilterable,
   botSelector,
   bucketsBetween,
   comparisonRange,
@@ -168,8 +167,28 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
   // Raw rows of a span that pass the query's filters, bots included only when
   // the query asked for them.
+  //
+  // A filter only a stay carries is answered by the row's stay: the ids of
+  // every stay of the site that matches all of them, looked up per row. There
+  // is no window on the stay, on purpose: a row at ten past midnight belongs
+  // to the stay that began before it, whichever day that was. A row written
+  // before stays were stamped has no stay and is out, the rule the funnel
+  // read already applies.
   function rawRows(query: Query, span: Range): StoredEvent[] {
     const wantsBots = botSelector(query.filters);
+    const split = splitVisitFilters(query.filters);
+    const stays =
+      split.stay.length === 0
+        ? null
+        : new Set(
+            sessions
+              .filter(
+                (session) =>
+                  session.siteId === query.siteId &&
+                  split.stay.every((filter) => matchesSessionFilter(session, filter)),
+              )
+              .map((session) => session.id),
+          );
     return events.filter((event) => {
       if (event.siteId !== query.siteId || event.ts < span.from || event.ts >= span.to) {
         return false;
@@ -177,7 +196,10 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       if (event.bot !== wantsBots) {
         return false;
       }
-      return (query.filters ?? []).every((filter) => matchesFilter(event, filter));
+      if (stays !== null && (event.sessionId === undefined || !stays.has(event.sessionId))) {
+        return false;
+      }
+      return split.event.every((filter) => matchesFilter(event, filter));
     });
   }
 
@@ -833,7 +855,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async aggregate(query: Query): Promise<AggregateResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       const range: Range = { from: query.from, to: query.to };
       const result: AggregateResult = {
         range,
@@ -872,7 +893,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async timeseries(query: Query): Promise<TimeseriesResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'timeseries');
       const interval: Interval = query.interval ?? 'day';
       assertIntervalRange(interval, query.from, query.to);
@@ -895,7 +915,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async breakdown(query: Query): Promise<BreakdownResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       if (query.dim === undefined) {
         throw new StoreQueryError('MISSING_DIMENSION', 'A breakdown needs a dim');
       }
@@ -905,7 +924,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async engagement(query: Query): Promise<EngagementResult> {
       siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'engagement');
       const dim = assertEngageable(query.dim);
       const tallies = new Map<string, EngagementTally>();
@@ -927,7 +945,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async events(query: Query): Promise<EventsResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'events');
       const timezone = site.settings.timezone;
       const rows = rawRows(query, { from: query.from, to: query.to });
@@ -946,7 +963,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async properties(query: PropertyQuery): Promise<PropertyResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'properties');
       const timezone = site.settings.timezone;
       const rows = rawRows(query, { from: query.from, to: query.to });
@@ -988,7 +1004,6 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     async goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult> {
       const site = siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       const timezone = site.settings.timezone;
       const range: Range = { from: query.from, to: query.to };
       const counted = visitorsByDay(rawRows(query, range), timezone);

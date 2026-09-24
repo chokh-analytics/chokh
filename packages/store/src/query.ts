@@ -998,22 +998,6 @@ export function matchesSessionFilter(session: StoredSession, filter: Filter): bo
   return matches(sessionDimensionValue(session, filter.dim), filter);
 }
 
-// A filter has to be answerable by the rows it is put to. Every dimension an
-// event carries can narrow an event read, and the three only a session carries
-// cannot: the events of a stay do not know which page it came in on. Answering
-// that with an empty report would be a silent wrong number, so it is refused
-// instead, and AN-SEG01 owns the segment that resolves it properly.
-export function assertFilterable(filters: Filter[] | undefined): void {
-  for (const filter of filters ?? []) {
-    if (SESSION_DIMENSIONS.includes(filter.dim)) {
-      throw new StoreQueryError(
-        'UNSUPPORTED_FILTER',
-        `A raw event does not carry ${filter.dim}, so a report cannot be filtered by it yet`,
-      );
-    }
-  }
-}
-
 // How long a range may be for the interval it asked for. Both caps exist for
 // the same reason: neither a minute nor an hour has a rollup, so both read raw
 // rows for the whole range, and a chart nobody can read is not worth the scan.

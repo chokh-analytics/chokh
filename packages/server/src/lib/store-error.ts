@@ -41,7 +41,6 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   // The caller asked for something the store cannot answer as asked.
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,
-  UNSUPPORTED_FILTER: 400,
   UNSUPPORTED_DIMENSION: 400,
   MISSING_DIMENSION: 400,
   UNSUPPORTED_GOAL: 400,

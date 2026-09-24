@@ -15,7 +15,6 @@ import {
   assertEngageable,
   assertFunnelSteps,
   assertNoGoal,
-  assertFilterable,
   assertIntervalRange,
   botSelector,
   bucketIndexAt,
@@ -820,7 +819,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async aggregate(query: Query): Promise<AggregateResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       const range: Range = { from: query.from, to: query.to };
       const result: AggregateResult = {
         range,
@@ -865,7 +863,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async timeseries(query: Query): Promise<TimeseriesResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'timeseries');
       const interval: Interval = query.interval ?? 'day';
       assertIntervalRange(interval, query.from, query.to);
@@ -955,7 +952,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async breakdown(query: Query): Promise<BreakdownResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       if (query.dim === undefined) {
         throw new StoreQueryError('MISSING_DIMENSION', 'A breakdown needs a dim');
       }
@@ -965,7 +961,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async engagement(query: Query): Promise<EngagementResult> {
       await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'engagement');
       const dim = assertEngageable(query.dim);
       // One aggregation over the whole range. A leave lives in events and
@@ -996,7 +991,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async events(query: Query): Promise<EventsResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'events');
       const base = await rawVisitors(query, site);
       const rows = await events
@@ -1028,7 +1022,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async properties(query: PropertyQuery): Promise<PropertyResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       assertNoGoal(query, 'properties');
       const span: Range = { from: query.from, to: query.to };
       const wantsBots = botSelector(query.filters);
@@ -1076,7 +1069,6 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult> {
       const site = await siteOrThrow(query.siteId);
-      assertFilterable(query.filters);
       const base = await rawVisitors(query, site);
       const reached = new Map<string, { visitors: number; completions: number }>();
       if (goals.length > 0) {

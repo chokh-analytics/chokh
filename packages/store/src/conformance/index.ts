@@ -637,12 +637,96 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(result.metrics.bounceRate).toBeNull();
       });
 
-      it('refuses a filter raw rows cannot answer rather than reporting nothing', async () => {
-        for (const dim of ['entry', 'exit', 'channel'] as const) {
-          await expect(
-            store.aggregate({ ...today, filters: [{ dim, op: 'is', value: '/home' }] }),
-          ).rejects.toMatchObject({ code: 'UNSUPPORTED_FILTER' });
-        }
+      // A filter only a stay carries narrows the report to the stays that
+      // match: visitors and pageviews off the rows of those stays, the visit
+      // numbers off the stays themselves.
+      it('narrows a report by where a stay came in', async () => {
+        const home = await store.aggregate({
+          ...wholeRange,
+          filters: [{ dim: 'entry', op: 'is', value: '/home' }],
+        });
+        // The same four stays the entry breakdown files under /home.
+        expect(home.metrics).toMatchObject({ visitors: 4, pageviews: 5, visits: 4, bounces: 3 });
+
+        const docs = await store.aggregate({
+          ...wholeRange,
+          filters: [{ dim: 'entry', op: 'is', value: '/docs' }],
+        });
+        // v3's two stays, with their signups and the leave beacon in them.
+        expect(docs.metrics).toMatchObject({ visitors: 2, pageviews: 4, visits: 2, bounces: 0 });
+      });
+
+      it('narrows a report by where a stay went out and by the channel that brought it', async () => {
+        const pages = rowsByKey(
+          await store.breakdown({
+            ...wholeRange,
+            dim: 'page',
+            filters: [{ dim: 'exit', op: 'is', value: '/pricing' }],
+          }),
+        );
+        // v1 on the 16th, v2 today and v3 today all left from /pricing.
+        expect(pages.get('/pricing')).toMatchObject({ visitors: 3, pageviews: 3 });
+        expect(pages.get('/home')).toMatchObject({ visitors: 1, pageviews: 1 });
+        expect(pages.get('/docs')).toMatchObject({ visitors: 1, pageviews: 1 });
+        expect(pages.size).toBe(3);
+
+        const organic = await store.timeseries({
+          ...wholeRange,
+          interval: 'day',
+          filters: [{ dim: 'channel', op: 'is', value: 'organic' }],
+        });
+        // v3's stay from Google on the 17th, and nothing on the other two days.
+        expect(organic.points.map((point) => point.metrics.pageviews)).toEqual([0, 2, 0]);
+        expect(organic.points.map((point) => point.metrics.visits)).toEqual([0, 1, 0]);
+      });
+
+      it('counts the events of the stays a filter chose', async () => {
+        const result = await store.events({
+          ...wholeRange,
+          filters: [{ dim: 'entry', op: 'is', value: '/docs' }],
+        });
+        expect(result.visitors).toBe(2);
+        expect(result.rows).toHaveLength(1);
+        expect(result.rows[0]).toMatchObject({ key: F.SIGNUP, visitors: 2, events: 2 });
+      });
+
+      // Two filters on one dimension are two conditions, on both sides of the
+      // line. Written beside each other as fields they would overwrite, and the
+      // report would answer only the last.
+      it('applies two filters on one dimension, both of them', async () => {
+        const neither = await store.aggregate({
+          ...today,
+          filters: [
+            { dim: 'page', op: 'is_not', value: '/docs' },
+            { dim: 'page', op: 'is_not', value: '/pricing' },
+          ],
+        });
+        // Only v1's boundary pageview of /home is left: v2's rows are all on
+        // /pricing, v3's on /docs and /pricing.
+        expect(neither.metrics.visitors).toBe(1);
+        expect(neither.metrics.pageviews).toBe(1);
+
+        const none = await store.aggregate({
+          ...today,
+          filters: [
+            { dim: 'page', op: 'contains', value: 'ric' },
+            { dim: 'page', op: 'is_not', value: '/pricing' },
+          ],
+        });
+        expect(none.metrics.pageviews).toBe(0);
+
+        const stays = await store.aggregate({
+          ...today,
+          filters: [
+            { dim: 'entry', op: 'is_not', value: '/docs' },
+            { dim: 'entry', op: 'is_not', value: '/pricing' },
+          ],
+        });
+        // v1's three stays today: the one that came in on /home and the two
+        // with no page at all, which "not /docs" and "not /pricing" are true of.
+        expect(stays.metrics.visits).toBe(3);
+        expect(stays.metrics.visitors).toBe(1);
+        expect(stays.metrics.pageviews).toBe(1);
       });
 
       it('leaves bots out unless the query asks for them', async () => {
