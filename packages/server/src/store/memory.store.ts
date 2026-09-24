@@ -49,6 +49,9 @@ import {
   profileFrom,
   readPlan,
   rollupTotalSelector,
+  routeMatchers,
+  sameRouteRules,
+  withRoute,
   sessionDimensionValue,
   sessionsAnswerFilters,
   snapshotFrom,
@@ -89,6 +92,7 @@ import {
   type Range,
   type RealtimeSnapshot,
   type RollupDim,
+  type RegroupSummary,
   type RollupRecord,
   type RollupSummary,
   type Site,
@@ -163,6 +167,40 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       throw new StoreQueryError('UNKNOWN_SITE', `No site answers to ${siteId}`);
     }
     return site;
+  }
+
+  // The route rollup of one day, rebuilt from its raw rows: what rollupDay
+  // writes for that one dimension, and nothing else touched.
+  function rerollRoute(siteId: string, date: string, timezone: string): void {
+    const bounds = dayBounds(date, timezone);
+    const byValue = new Map<string, StoredEvent[]>();
+    for (const event of events) {
+      if (
+        event.siteId !== siteId ||
+        event.bot ||
+        event.ts < bounds.start ||
+        event.ts >= bounds.end
+      ) {
+        continue;
+      }
+      const value = dimensionValue(event, 'route');
+      if (value === undefined) continue;
+      const list = byValue.get(value);
+      if (list === undefined) byValue.set(value, [event]);
+      else list.push(event);
+    }
+    const rows: RollupRecord[] = [...byValue].map(([key, picked]) => ({
+      siteId,
+      date,
+      dim: 'route',
+      key,
+      ...zeroTotals(),
+      visitors: new Set(picked.map((event) => event.visitorId)).size,
+      pageviews: picked.filter((event) => event.type === 'pageview').length,
+    }));
+    rollups = rollups
+      .filter((row) => !(row.siteId === siteId && row.date === date && row.dim === 'route'))
+      .concat(rows);
   }
 
   // Raw rows of a span that pass the query's filters, bots included only when
@@ -588,6 +626,14 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         // Field by field, so a patch naming one setting does not reset the rest.
         settings: { ...current.settings, ...patch.settings },
       };
+      // A change to the route rules is a change to what every stored row and
+      // every route rollup says, so the site is marked and the jobs regroup it.
+      if (
+        patch.settings?.routeGroups !== undefined &&
+        !sameRouteRules(current.settings.routeGroups, patch.settings.routeGroups)
+      ) {
+        updated.routesChangedAt = now();
+      }
       bySiteId.set(siteId, updated);
       return Promise.resolve(updated);
     },
@@ -784,10 +830,12 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         const first = group[0];
         if (first === undefined) continue;
         const { siteId, visitorId } = first;
+        // The route each row is reported under, from the site's rules now.
+        const matchers = routeMatchers(bySiteId.get(siteId)?.settings.routeGroups ?? []);
         const folded = foldVisitor({
           siteId,
           visitorId,
-          events: group,
+          events: group.map((event) => withRoute(event, matchers)),
           open: latestSession(siteId, visitorId),
           visitor: visitors.find((row) => row.siteId === siteId && row.id === visitorId) ?? null,
         });
@@ -1311,6 +1359,30 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         visitors: totals.visitors,
         pageviews: totals.pageviews,
       };
+    },
+
+    async regroupRoutes(siteId: string): Promise<RegroupSummary> {
+      const site = siteOrThrow(siteId);
+      const timezone = site.settings.timezone;
+      const matchers = routeMatchers(site.settings.routeGroups);
+      // Every row of the site takes the route the rules give it now; then the
+      // route rollups of every past day that still has rows, and only those.
+      const today = dayKey(now(), timezone);
+      const days = new Set<string>();
+      let considered = 0;
+      events = events.map((event) => {
+        if (event.siteId !== siteId) return event;
+        considered += 1;
+        const day = dayKey(event.ts, timezone);
+        if (day !== today) days.add(day);
+        return withRoute(event, matchers);
+      });
+      for (const date of [...days].sort()) {
+        rerollRoute(siteId, date, timezone);
+      }
+      const { routesChangedAt: _routesChangedAt, ...cleared } = site;
+      bySiteId.set(siteId, cleared);
+      return { siteId, events: considered, days: days.size };
     },
 
     purge(siteId: string, before: number): Promise<PurgeSummary> {

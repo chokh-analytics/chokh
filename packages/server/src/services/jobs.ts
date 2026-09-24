@@ -1,10 +1,11 @@
 import { addDays, dayKey, type AnalyticsStore, type Site } from '../store/AnalyticsStore.js';
 
-// The three background jobs, in one place, because "is the rollup running" is
-// a question an operator asks about the process and not about a module.
+// The background jobs, in one place, because "is the rollup running" is a
+// question an operator asks about the process and not about a module.
 //
-// All three are idempotent. Running the rollup twice writes the same numbers,
-// running the purge twice deletes nothing the second time, and the geo refresh
+// All of them are idempotent. Running the rollup twice writes the same
+// numbers, running the purge twice deletes nothing the second time, the route
+// regroup writes what the rules say however often it runs, and the geo refresh
 // checks the file's age before it downloads. Nothing here holds a lock: two
 // processes running the same rollup hour is harmless, which is what lets an
 // install scale out without electing a leader.
@@ -53,12 +54,25 @@ export function rollableDays(site: Site, at: number, backfill: number): string[]
   return days;
 }
 
-// One pass of the hourly work: roll up what can be rolled up, then take away
-// what the site's retention no longer covers.
+// One pass of the hourly work: regroup a site whose route rules changed, roll
+// up what can be rolled up, then take away what the site's retention no
+// longer covers.
 export async function runJobsOnce(deps: JobDeps, backfill: number): Promise<void> {
   const at = deps.now();
   const sites = await deps.store.sites();
   for (const site of sites) {
+    // First, so the rollups below are drawn from rows that already carry the
+    // new routes. The mark stays on the site if this fails, and the next tick
+    // tries again.
+    if (site.routesChangedAt !== undefined) {
+      try {
+        const summary = await deps.store.regroupRoutes(site.id);
+        deps.log.info(summary, 'regrouped the routes');
+      } catch (error) {
+        deps.log.warn({ err: error, siteId: site.id }, 'route regroup failed');
+      }
+    }
+
     for (const day of rollableDays(site, at, backfill)) {
       try {
         const summary = await deps.store.rollupDay(site.id, day);

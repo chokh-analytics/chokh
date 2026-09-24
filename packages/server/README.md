@@ -209,6 +209,22 @@ it starts is refused rather than answered with zeroes, because zeroes read as
 `meta` carries the site, its timezone and the range that was read, so a chart can
 label itself without drawing a day boundary a second time.
 
+### Route grouping
+
+A site with dynamic pages, `/courses/competitive-programming` and a hundred
+like it, reads better as one row. `settings.routeGroups` is an ordered list of
+path patterns such as `/courses/:slug`, where `:name` is exactly one segment
+and `*` is any run of characters inside one, and the `route` dimension reports
+every pageview under the first pattern its path matches, or under the path
+itself when none does: the route report is the page report with the dynamic
+pages folded, and a filter on `route` is a filter like any other. The route is
+stamped on each row as it is collected, from the rules as they were then. When
+the rules change, the site carries `routesChangedAt` until the hourly job has
+rewritten every stored row and rebuilt the `route` rollups of every past day
+that still has rows, so history within retention regroups and nothing older
+changes. A second process reads a changed rule up to a minute late, the site
+row being cached that long.
+
 ### Goals and conversions
 
 A goal is a page being viewed or a custom event being sent, counted as a
@@ -621,9 +637,14 @@ Redis costs the online count for a minute and nothing else.
 
 ## The jobs
 
-Three, all idempotent, all safe to run twice, none holding a lock, so two
+Four, all idempotent, all safe to run twice, none holding a lock, so two
 processes of one install need no leader between them.
 
+- **The route regroup**, on the hourly tick, for a site whose route rules
+  changed since the last one: every stored row takes the route the rules give
+  it now, the `route` rollups of every past day that still has rows are
+  rebuilt, and the mark comes off the site. It runs before the rollup, so the
+  day rolled on the same tick already carries the new routes.
 - **The rollup**, hourly. It rolls the site's yesterday, which its own timezone
   decides, and never a day older than `retentionDays - 1`: a day whose raw rows
   have begun to expire would roll up smaller than it was, and the rollup is the

@@ -22,6 +22,8 @@ import {
   comparisonRange,
   createMemoryPresence,
   dayBounds,
+  dayKey,
+  defaultSiteSettings,
   finishConversion,
   finishFunnel,
   finishJourneys,
@@ -37,6 +39,9 @@ import {
   profileFrom,
   readPlan,
   rollupTotalSelector,
+  routeMatchers,
+  sameRouteRules,
+  withRoute,
   sessionsAnswerFilters,
   snapshotFrom,
   sortBreakdownRows,
@@ -75,6 +80,7 @@ import {
   type Range,
   type RealtimeSnapshot,
   type RollupDim,
+  type RegroupSummary,
   type RollupRecord,
   type RollupSummary,
   type Site,
@@ -119,7 +125,9 @@ import {
   rawTotalsByBucketPipeline,
   rollupTotalsByDatePipeline,
   sessionTotalsByBucketPipeline,
+  dayExpression,
   rawBreakdownPipeline,
+  routeExpression,
   rawTotalsPipeline,
   rollupBreakdownPipeline,
   rollupTotalsPipeline,
@@ -520,6 +528,14 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         // Field by field, so a patch naming one setting does not reset the rest.
         settings: { ...current.settings, ...patch.settings },
       };
+      // A change to the route rules is a change to what every stored row and
+      // every route rollup says, so the site is marked and the jobs regroup it.
+      if (
+        patch.settings?.routeGroups !== undefined &&
+        !sameRouteRules(current.settings.routeGroups, patch.settings.routeGroups)
+      ) {
+        updated.routesChangedAt = now();
+      }
       await sites.replaceOne({ id: siteId }, updated);
       siteCache.delete(siteId);
       return updated;
@@ -714,12 +730,15 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       if (batch.length === 0) {
         return;
       }
-      const retention = new Map<string, number>();
-      const days = async (siteId: string): Promise<number> => {
-        let found = retention.get(siteId);
+      // One site read per site in the batch, for its retention and its route
+      // rules. A site nobody registered keeps its rows for ever and groups
+      // nothing, which the collector has refused before this anyway.
+      const known = new Map<string, Site | null>();
+      const siteIn = async (siteId: string): Promise<Site | null> => {
+        let found = known.get(siteId);
         if (found === undefined) {
-          found = (await readSite(siteId))?.settings.retentionDays ?? 0;
-          retention.set(siteId, found);
+          found = await readSite(siteId);
+          known.set(siteId, found);
         }
         return found;
       };
@@ -738,7 +757,9 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         const first = group[0];
         if (first === undefined) continue;
         const { siteId, visitorId } = first;
-        const keep = await days(siteId);
+        const site = await siteIn(siteId);
+        const keep = site?.settings.retentionDays ?? 0;
+        const matchers = routeMatchers(site?.settings.routeGroups ?? []);
 
         // Read, fold, write. Two batches of one visitor arriving at the same
         // moment can both read the same open stay and the later write wins, so
@@ -760,7 +781,13 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
             { projection: { _id: 0, expiresAt: 0 } },
           ),
         ]);
-        const folded = foldVisitor({ siteId, visitorId, events: group, open, visitor });
+        const folded = foldVisitor({
+          siteId,
+          visitorId,
+          events: group.map((event) => withRoute(event, matchers)),
+          open,
+          visitor,
+        });
 
         // The merge: everything this visitor did before they were named takes
         // the name now, so a user lookup finds the anonymous history too.
@@ -1280,6 +1307,44 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       };
     },
 
+    async regroupRoutes(siteId: string): Promise<RegroupSummary> {
+      const site = await siteOrThrow(siteId);
+      const timezone = site.settings.timezone;
+      // Every row of the site takes the route the rules give it now, in one
+      // pipeline update over the site; then the route rollups of every past
+      // day that still has rows, and only those: a day whose rows have expired
+      // keeps the rollup it had.
+      const rewritten = await events.updateMany({ siteId }, [
+        { $set: { route: routeExpression(site.settings.routeGroups) } },
+      ]);
+      const today = dayKey(now(), timezone);
+      const days = (
+        await events
+          .aggregate([{ $match: { siteId } }, { $group: { _id: dayExpression(timezone) } }])
+          .toArray()
+      )
+        .map((row) => String(row._id))
+        .filter((day) => day !== today)
+        .sort();
+      for (const date of days) {
+        const bounds = dayBounds(date, timezone);
+        const span: Range = { from: bounds.start, to: bounds.end };
+        const rows: RollupRecord[] = [];
+        for (const row of await events
+          .aggregate(rawBreakdownPipeline(siteId, span, timezone, 'route', false, undefined))
+          .toArray()) {
+          rows.push({ siteId, date, dim: 'route', key: String(row._id), ...totalsFrom([row]) });
+        }
+        await rollups.deleteMany({ siteId, date, dim: 'route' });
+        if (rows.length > 0) {
+          await rollups.insertMany(rows, { ordered: false });
+        }
+      }
+      await sites.updateOne({ id: siteId }, { $unset: { routesChangedAt: '' } });
+      siteCache.delete(siteId);
+      return { siteId, events: rewritten.matchedCount, days: days.length };
+    },
+
     async purge(siteId: string, before: number): Promise<PurgeSummary> {
       const removedEvents = await events.deleteMany({ siteId, ts: { $lt: before } });
       const removedSessions = await sessions.deleteMany({ siteId, lastSeenAt: { $lt: before } });
@@ -1310,9 +1375,12 @@ function siteOf(doc: Site): Site {
     id: doc.id,
     name: doc.name,
     domains: doc.domains,
-    settings: doc.settings,
+    // Over the defaults, so a document written before a setting existed reads
+    // it as the default rather than as undefined; the document wins.
+    settings: defaultSiteSettings(doc.settings),
   };
   if (doc.teamId !== undefined) site.teamId = doc.teamId;
+  if (doc.routesChangedAt !== undefined) site.routesChangedAt = doc.routesChangedAt;
   return site;
 }
 

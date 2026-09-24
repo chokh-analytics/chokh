@@ -11,6 +11,7 @@ runStoreConformance('memory', () => {
   return Promise.resolve({
     store,
     addSite: (site) => store.createSite(site),
+    updateSite: (siteId, patch) => store.updateSite(siteId, patch),
     reset: () => {
       store.clear();
       return Promise.resolve();

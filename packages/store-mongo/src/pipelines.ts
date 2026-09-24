@@ -9,6 +9,7 @@ import {
   MAX_PROPERTY_KEYS,
   goalIsPattern,
   goalPattern,
+  routePattern,
   splitVisitFilters,
   type Dimension,
   type Filter,
@@ -147,6 +148,26 @@ export function eventStages(
     { $match: { ...eventMatch(siteId, span, wantsBots, filters), ...extra } },
     ...stayJoinStages(siteId, filters),
   ];
+}
+
+// The route of a row from a site's rules, as regroupRoutes runs it over every
+// stored row in one pipeline update: the first rule the path matches, else
+// the path itself, and no route at all on a row with no path. The same
+// patterns routeOf compiles for the other adapter.
+export function routeExpression(rules: readonly string[]): Document {
+  const grouped: Document | string =
+    rules.length === 0
+      ? '$path'
+      : {
+          $switch: {
+            branches: rules.map((rule) => ({
+              case: { $regexMatch: { input: '$path', regex: routePattern(rule) } },
+              then: rule,
+            })),
+            default: '$path',
+          },
+        };
+  return { $cond: [{ $eq: [{ $type: '$path' }, 'string'] }, grouped, '$$REMOVE'] };
 }
 
 export function dayExpression(timezone: string, field = '$ts'): Document {

@@ -219,6 +219,39 @@ describe('reading and changing a site', () => {
     );
   });
 
+  it('takes route rules, marks the site for a regroup, and refuses a rule that is not a path', async () => {
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/sites/${SITE_ID}`,
+      headers: { cookie: harness.owner.cookie },
+      payload: { settings: { routeGroups: ['/courses/:slug', '/learn/:course/:lesson'] } },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = envelope<{
+      site: { settings: { routeGroups: string[] }; routesChangedAt?: number };
+    }>(response.body);
+    expect(body.data?.site.settings.routeGroups).toEqual([
+      '/courses/:slug',
+      '/learn/:course/:lesson',
+    ]);
+    expect(typeof body.data?.site.routesChangedAt).toBe('number');
+
+    expectFailure(
+      await harness.app.inject({
+        method: 'PATCH',
+        url: `/api/sites/${SITE_ID}`,
+        headers: { cookie: harness.owner.cookie },
+        payload: { settings: { routeGroups: ['courses/:slug'] } },
+      }),
+      400,
+      'INVALID_BODY',
+    );
+    expect((await harness.store.site(SITE_ID))?.settings.routeGroups).toEqual([
+      '/courses/:slug',
+      '/learn/:course/:lesson',
+    ]);
+  });
+
   it('refuses a patch that would leave the site with no domain', async () => {
     expectFailure(
       await harness.app.inject({

@@ -101,6 +101,23 @@ describe('the hourly pass', () => {
     );
   });
 
+  it('regroups the routes of a site whose rules changed, then takes the mark off', async () => {
+    await runJobsOnce(deps(), ROLLUP_BACKFILL_DAYS);
+    await store.updateSite(fixture.SITE_ID, { settings: { routeGroups: ['/:page'] } });
+    expect((await store.site(fixture.SITE_ID))?.routesChangedAt).toBe(fixture.NOW);
+
+    await runJobsOnce(deps(), 1);
+    expect((await store.site(fixture.SITE_ID))?.routesChangedAt).toBeUndefined();
+    const rolled = await store.breakdown({
+      siteId: fixture.SITE_ID,
+      from: fixture.YESTERDAY_START,
+      to: fixture.TODAY_START,
+      dim: 'route',
+    });
+    expect(rolled.rows.map((row) => row.key)).toEqual(['/:page']);
+    expect(rolled.rows[0]?.metrics.pageviews).toBe(fixture.EXPECTED.yesterday.pageviews);
+  });
+
   it('takes away the detail the site retention no longer covers', async () => {
     const short = createMemoryStore([site({ retentionDays: 2, timezone: 'UTC' })], {
       now: () => fixture.NOW,

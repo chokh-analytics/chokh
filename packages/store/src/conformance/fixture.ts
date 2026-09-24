@@ -234,6 +234,12 @@ export function heartbeatOf(visitor: 'v1' | 'v2' | 'v3', ts: number, path: strin
   return build({ ts, type: 'heartbeat', visitor, path });
 }
 
+// One more pageview from a visitor the fixture already knows, for the cases
+// that prove what ingest stamps on a row.
+export function pageviewOf(visitor: 'v1' | 'v2' | 'v3', ts: number, path: string): StoredEvent {
+  return build({ ts, type: 'pageview', visitor, path });
+}
+
 // The counts the suite asserts against, stated rather than derived.
 //
 // The stays the gap rule cuts out of the drafts above, in the site's calendar:

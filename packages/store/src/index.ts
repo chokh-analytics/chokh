@@ -11,4 +11,5 @@ export * from './journey.js';
 export * from './profile.js';
 export * from './AnalyticsStore.js';
 export * from './accounts.js';
+export * from './routes.js';
 export * from './AccountStore.js';

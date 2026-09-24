@@ -169,6 +169,24 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
         expect((await store.site('s_one'))?.settings.ipMode).toBe('full');
       });
 
+      it('marks a site whose route rules changed, and only then', async () => {
+        const changed = await store.updateSite('s_one', {
+          settings: { routeGroups: ['/courses/:slug'] },
+        });
+        expect(typeof changed.routesChangedAt).toBe('number');
+        const mark = changed.routesChangedAt;
+
+        // The same rules again, and a patch of something else, leave the mark.
+        const same = await store.updateSite('s_one', {
+          settings: { routeGroups: ['/courses/:slug'] },
+        });
+        expect(same.routesChangedAt).toBe(mark);
+        const other = await store.updateSite('s_one', { settings: { retentionDays: 45 } });
+        expect(other.routesChangedAt).toBe(mark);
+        expect((await store.site('s_one'))?.routesChangedAt).toBe(mark);
+        expect((await store.site('s_one'))?.settings.routeGroups).toEqual(['/courses/:slug']);
+      });
+
       it('refuses a patch that would leave a site with no domain', async () => {
         expect(await refusal(() => store.updateSite('s_one', { domains: [] }))).toBe(
           'DOMAIN_REQUIRED',

@@ -79,6 +79,8 @@ export interface PublicSite {
   domains: string[];
   teamId: string;
   settings: PublicSiteSettings;
+  // Present while the site waits for the jobs to regroup its routes.
+  routesChangedAt?: number;
 }
 
 // A site as it appears in GET /api/me and GET /api/sites: what it is, plus what
@@ -119,5 +121,6 @@ export function publicSite(site: Site): PublicSite {
     domains: site.domains,
     teamId: teamIdOf(site),
     settings,
+    ...(site.routesChangedAt === undefined ? {} : { routesChangedAt: site.routesChangedAt }),
   };
 }

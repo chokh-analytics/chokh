@@ -17,6 +17,7 @@ import {
 } from '../query.js';
 import { MAX_FUNNEL_ROWS_PER_VISITOR } from '../funnel.js';
 import { dayKey } from '../time.js';
+import type { SitePatch } from '../AccountStore.js';
 import { defaultSiteSettings, type Site, type StoredEvent } from '../types.js';
 import * as F from './fixture.js';
 
@@ -36,6 +37,10 @@ export {
 export interface StoreHarness {
   store: AnalyticsStore;
   addSite(site: Site): Promise<void>;
+  // Through the adapter's real updateSite, for the same reason addSite is:
+  // the route grouping cases change a site's rules and read the mark that
+  // leaves, which the account side owns.
+  updateSite(siteId: string, patch: SitePatch): Promise<Site>;
   reset(): Promise<void>;
   close(): Promise<void>;
 }
@@ -95,6 +100,7 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(site?.settings.excludeIps).toEqual([]);
         expect(site?.settings.excludePaths).toEqual([]);
         expect(site?.settings.excludeQueryParams).toEqual([]);
+        expect(site?.settings.routeGroups).toEqual([]);
       });
 
       it('answers null for a site nobody registered', async () => {
@@ -1670,6 +1676,77 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect((await store.aggregate(today)).metrics.pageviews).toBe(
           F.EXPECTED.today.pageviews,
         );
+      });
+    });
+
+    // Route grouping: a site's dynamic pages reported as one row. The route is
+    // stamped at ingest and rewritten by regroupRoutes, so the raw day and a
+    // rolled one both answer from the rules as they are now.
+    describe('route grouping', () => {
+      beforeAll(seed);
+      afterAll(seed);
+
+      it('reports every page as its own route until the site has a rule', async () => {
+        const routes = rowsByKey(await store.breakdown({ ...wholeRange, dim: 'route' }));
+        const pages = rowsByKey(await store.breakdown({ ...wholeRange, dim: 'page' }));
+        expect([...routes.keys()].sort()).toEqual([...pages.keys()].sort());
+        for (const [key, metrics] of pages) {
+          expect(routes.get(key)).toEqual(metrics);
+        }
+      });
+
+      it('folds the pages a rule matches into one row, on the raw day and on a rolled one', async () => {
+        const marked = await harness.updateSite(F.SITE_ID, {
+          settings: { routeGroups: ['/:page'] },
+        });
+        expect(marked.routesChangedAt).toBe(F.NOW);
+
+        const summary = await store.regroupRoutes(F.SITE_ID);
+        // Every stored row of the site was considered (a heartbeat is never
+        // stored), and the two past days were re-rolled; today is raw.
+        expect(summary).toEqual({
+          siteId: F.SITE_ID,
+          events: F.fixtureEvents().filter((event) => event.type !== 'heartbeat').length,
+          days: 2,
+        });
+        expect((await store.site(F.SITE_ID))?.routesChangedAt).toBeUndefined();
+
+        const whole = rowsByKey(await store.breakdown({ ...wholeRange, dim: 'route' }));
+        expect([...whole.keys()]).toEqual(['/:page']);
+        expect(whole.get('/:page')).toMatchObject({
+          pageviews: F.EXPECTED_RANGE.pageviews,
+          visitors: F.EXPECTED_RANGE.visitors,
+        });
+
+        const rolled = rowsByKey(await store.breakdown({ ...yesterday, dim: 'route' }));
+        expect(rolled.get('/:page')).toMatchObject({
+          pageviews: F.EXPECTED.yesterday.pageviews,
+          visitors: 2,
+        });
+
+        // A filter on the dimension is an ordinary filter on an ordinary field.
+        const filtered = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'route', op: 'is', value: '/:page' }],
+        });
+        expect(filtered.metrics.pageviews).toBe(F.EXPECTED.today.pageviews);
+      });
+
+      it('stamps the route on a row as it is ingested', async () => {
+        await store.ingest([F.pageviewOf('v2', F.NOW - 1_000, '/home')]);
+        const filtered = await store.aggregate({
+          ...today,
+          filters: [{ dim: 'route', op: 'is', value: '/:page' }],
+        });
+        expect(filtered.metrics.pageviews).toBe(F.EXPECTED.today.pageviews + 1);
+      });
+
+      it('unfolds them again when the rules are taken away', async () => {
+        await harness.updateSite(F.SITE_ID, { settings: { routeGroups: [] } });
+        await store.regroupRoutes(F.SITE_ID);
+        const routes = rowsByKey(await store.breakdown({ ...yesterday, dim: 'route' }));
+        const pages = rowsByKey(await store.breakdown({ ...yesterday, dim: 'page' }));
+        expect([...routes.keys()].sort()).toEqual([...pages.keys()].sort());
       });
     });
 

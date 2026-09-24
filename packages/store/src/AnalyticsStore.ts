@@ -14,6 +14,7 @@ import type {
   PurgeSummary,
   Query,
   RealtimeSnapshot,
+  RegroupSummary,
   RollupSummary,
   TimeseriesResult,
   UserProfile,
@@ -110,6 +111,12 @@ export interface AnalyticsStore {
   // Roll one date key of the site's calendar into rollups_daily. Safe to run
   // twice: the second run writes the same numbers.
   rollupDay(siteId: string, date: string): Promise<RollupSummary>;
+
+  // Give every stored row of the site the route its rules say now, and rebuild
+  // the route rollups of every past day that still has rows; a day whose rows
+  // have expired keeps the rollup it had. Clears the site's routesChangedAt.
+  // The jobs run it while the mark is set; see routes.ts.
+  regroupRoutes(siteId: string): Promise<RegroupSummary>;
 
   // Delete raw rows older than an instant: events, the sessions that ended
   // before it and the visitors last seen before it. Retention, and the erasure

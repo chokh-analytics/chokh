@@ -40,6 +40,9 @@ export interface SiteSettings {
   excludeIps: string[];
   excludePaths: string[];
   excludeQueryParams: string[];
+  // Path patterns whose pageviews are reported as one row in the route
+  // dimension, in order, first match wins: /courses/:slug. See routes.ts.
+  routeGroups: string[];
 }
 
 export interface Site {
@@ -51,6 +54,10 @@ export interface Site {
   // either; a site without one is read as the default team's.
   teamId?: string;
   settings: SiteSettings;
+  // Set by updateSite when routeGroups changed, cleared by regroupRoutes,
+  // which the jobs run while it is set. Until then the stored route of every
+  // row and the route rollups are from the rules as they were.
+  routesChangedAt?: number;
 }
 
 // What a site gets when nobody has chosen. The public defaults, not Progsity's:
@@ -66,6 +73,7 @@ export function defaultSiteSettings(overrides: Partial<SiteSettings> = {}): Site
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
+    routeGroups: [],
     ...overrides,
   };
 }
@@ -93,6 +101,10 @@ export interface StoredEvent {
   sessionId?: string;
   userId?: string;
   path?: string;
+  // The route the path is reported under: the first of the site's route rules
+  // it matches, else the path itself. Stamped by ingest and rewritten by
+  // regroupRoutes when the rules change; see routes.ts.
+  route?: string;
   hostname?: string;
   title?: string;
   referrer?: string;

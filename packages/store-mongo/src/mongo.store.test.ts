@@ -2,6 +2,7 @@ import { createMemoryPresence } from '@chokh/store';
 import { fixture, runAccountConformance, runStoreConformance } from '@chokh/store/conformance';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient } from 'mongodb';
+import { describe, expect, it } from 'vitest';
 
 import { apply } from './migrate.js';
 import { createMongoStore } from './mongo.store.js';
@@ -25,6 +26,7 @@ runStoreConformance('mongodb', async () => {
   return {
     store,
     addSite: (site) => store.createSite(site),
+    updateSite: (siteId, patch) => store.updateSite(siteId, patch),
     reset: async () => {
       for (const name of ['events', 'sessions', 'visitors', 'rollups_daily', 'sites']) {
         await store.db.collection(name).deleteMany({});
@@ -62,4 +64,45 @@ runAccountConformance('mongodb', async () => {
       await server.stop();
     },
   };
+});
+
+// A site document written before a setting existed. The adapter reads the
+// missing ones as their defaults rather than as undefined, and the document
+// wins for the ones it has.
+describe('a site document from before a setting existed', () => {
+  it('reads the missing settings as their defaults, the document winning', async () => {
+    const server = await MongoMemoryServer.create();
+    const client = new MongoClient(server.getUri('chokh_legacy'));
+    await client.connect();
+    const store = await createMongoStore({ client, now: () => fixture.NOW });
+    try {
+      await apply(store.db);
+      await store.db.collection('sites').insertOne({
+        id: 's_old',
+        name: 'Old',
+        domains: ['old.example'],
+        settings: {
+          ipMode: 'full',
+          visitorIdMode: 'persistent',
+          botFilter: true,
+          retentionDays: 30,
+          timezone: 'Asia/Dhaka',
+          allowUnsignedIdentify: false,
+        },
+      });
+      const site = await store.site('s_old');
+      expect(site?.settings.timezone).toBe('Asia/Dhaka');
+      expect(site?.settings.ipMode).toBe('full');
+      expect(site?.settings.allowUnsignedIdentify).toBe(false);
+      expect(site?.settings.excludeIps).toEqual([]);
+      expect(site?.settings.excludePaths).toEqual([]);
+      expect(site?.settings.excludeQueryParams).toEqual([]);
+      expect(site?.settings.routeGroups).toEqual([]);
+      expect(site?.routesChangedAt).toBeUndefined();
+    } finally {
+      await store.close();
+      await client.close();
+      await server.stop();
+    }
+  });
 });

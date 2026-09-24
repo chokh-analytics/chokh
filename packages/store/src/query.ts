@@ -38,6 +38,9 @@ export interface Filter {
 
 export type Dimension =
   | 'page'
+  // The page with the site's route rules applied: /courses/:slug for every
+  // course, the path itself where no rule matches. See routes.ts.
+  | 'route'
   | 'entry'
   | 'exit'
   | 'referrer'
@@ -64,6 +67,7 @@ export type Dimension =
 
 export const DIMENSIONS: readonly Dimension[] = [
   'page',
+  'route',
   'entry',
   'exit',
   'referrer',
@@ -95,6 +99,7 @@ export const SESSION_DIMENSIONS: readonly Dimension[] = ['entry', 'exit', 'chann
 // two adapters would file a year of history under different keys.
 export const ROLLED_DIMENSIONS: readonly Dimension[] = [
   'page',
+  'route',
   'entry',
   'exit',
   'channel',
@@ -371,6 +376,14 @@ export interface RollupSummary {
   rows: number;
   visitors: number;
   pageviews: number;
+}
+
+// What regroupRoutes did: the rows of the site it considered, and the past
+// days whose route rollups it rebuilt.
+export interface RegroupSummary {
+  siteId: string;
+  events: number;
+  days: number;
 }
 
 // A goal: a page being viewed or a custom event being sent, counted as a
@@ -883,6 +896,7 @@ export function botSelector(filters: Filter[] | undefined): boolean {
 // AN-SES01 writes.
 export const EVENT_PATH_BY_DIMENSION: Readonly<Partial<Record<Dimension, string>>> = {
   page: 'path',
+  route: 'route',
   referrer: 'referrer',
   // The tracker strips the utm_ prefix before it sends the object, so a
   // campaign arrives as utm.source and not utm.utm_source. The dimension keeps

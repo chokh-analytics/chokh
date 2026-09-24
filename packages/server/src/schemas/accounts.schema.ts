@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
-import { ROLES, SCOPES, type Role, type Scope } from '../store/AnalyticsStore.js';
+import {
+  MAX_ROUTE_GROUPS,
+  MAX_ROUTE_RULE_LENGTH,
+  ROLES,
+  SCOPES,
+  isRouteRule,
+  type Role,
+  type Scope,
+} from '../store/AnalyticsStore.js';
 
 // Every body an account or a site route accepts. Zod at the boundary, AGENTS.md
 // section 5, so no handler ever reads request.body.
@@ -73,6 +81,18 @@ export const siteSettingsPatchSchema = z
     excludeIps: z.array(z.string().min(1).max(64)).max(200),
     excludePaths: z.array(z.string().min(1).max(512)).max(200),
     excludeQueryParams: z.array(z.string().min(1).max(64)).max(200),
+    // Ordered, first match wins; the grammar is in the store's routes.ts.
+    routeGroups: z
+      .array(
+        z
+          .string()
+          .max(MAX_ROUTE_RULE_LENGTH)
+          .refine(
+            isRouteRule,
+            'A route rule is an absolute path such as /courses/:slug, with no query or fragment',
+          ),
+      )
+      .max(MAX_ROUTE_GROUPS),
   })
   .partial()
   // Deliberately absent: identifySecret. It is generated when the site is created
