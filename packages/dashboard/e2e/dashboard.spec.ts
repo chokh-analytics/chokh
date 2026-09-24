@@ -98,6 +98,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Goals', 'Goals'],
     ['Funnels', 'Funnels'],
     ['People', 'People'],
+    ['Alerts', 'Alerts'],
   ] as const) {
     await page.getByRole('link', { name: label, exact: true }).click();
     await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeAttached();
@@ -169,7 +170,7 @@ test('serves its own fonts and nothing from anywhere else', async ({ page }) => 
 // that wrapped put the account on a row of its own under a range bar stuck at
 // the one row height. Either way the page somebody is on is scrolled into the
 // row rather than left past its edge, and the page itself never moves sideways.
-test('keeps ten destinations in one row at 390 and at 1024, with the current one in view', async ({
+test('keeps eleven destinations in one row at 390 and at 1024, with the current one in view', async ({
   page,
 }) => {
   // A goal in the list first. The Goals page with nothing in it is one
@@ -187,7 +188,10 @@ test('keeps ten destinations in one row at 390 and at 1024, with the current one
 
   for (const width of [390, 1024]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 768 });
+    // Alerts first: it has no range bar, and the range bar is measured on
+    // whichever page the loop ends on.
     for (const [path, label] of [
+      ['alerts', 'Alerts'],
       ['goals', 'Goals'],
       ['funnels', 'Funnels'],
       ['people', 'People'],
@@ -751,4 +755,77 @@ test('reads the settings page and the segments popover on a phone without a side
   await page.getByRole('button', { name: 'Segments' }).click();
   await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
   expect(await overflow(), 'the segments popover pushes the page sideways').toBeLessThanOrEqual(0);
+});
+
+// Annotations and the Alerts page, over the real server.
+//
+// A mark posted through the API the way a deploy pipeline posts one, drawn on
+// the chart and named in the hidden list; one added and deleted through the
+// panel. And the first paid feature on an install with no key, which is the
+// rule-10 case AN-EE01 left owed: the page is here, named, described, and
+// there is nothing to fill in.
+test('draws a deploy posted through the API as a mark, and adds and deletes one through the panel', async ({
+  page,
+}) => {
+  await boot(page);
+  const at = Date.now() - 2 * 60 * 60_000;
+  const posted = await page.request.post(`/api/sites/${SITE}/annotations`, {
+    data: { at, kind: 'deploy', text: 'v2.3.0 from the pipeline', url: 'https://example.test/r/2.3.0' },
+  });
+  expect(posted.status(), 'the annotation was refused').toBe(201);
+  // The same statement again is one mark, not two.
+  const again = await page.request.post(`/api/sites/${SITE}/annotations`, {
+    data: { at, kind: 'deploy', text: 'v2.3.0 from the pipeline' },
+  });
+  expect(again.status()).toBe(409);
+
+  await boot(page, `/${SITE}?range=today`);
+  await expect(page.getByRole('button', { name: 'Annotations (1)' })).toBeVisible();
+  await expect(page.locator('[class*="markGlyph"]')).toHaveCount(1);
+  await expect(page.getByText('The marks on the chart above.')).toBeAttached();
+  // Named twice on purpose: the guide's own tooltip and the hidden list.
+  await expect(page.getByText(/Deploy: v2\.3\.0 from the pipeline/)).toHaveCount(2);
+
+  // Through the panel: the owner adds a note and deletes it again.
+  await page.getByRole('button', { name: 'Annotations (1)' }).click();
+  await expect(page.getByRole('link', { name: 'Open the link' })).toBeVisible();
+  await page.getByLabel('What happened').fill('Traffic looked odd');
+  const [created] = await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().includes('/annotations') && response.request().method() === 'POST',
+    ),
+    page.getByRole('button', { name: 'Add the mark' }).click(),
+  ]);
+  expect(created.status(), await created.text()).toBe(201);
+  await expect(page.getByRole('button', { name: 'Annotations (2)' })).toBeVisible();
+  await page.getByRole('button', { name: 'Annotations (2)' }).click();
+  await page.getByRole('button', { name: 'Delete' }).last().click();
+  await page.getByRole('button', { name: 'Delete it' }).click();
+  await expect(page.getByRole('button', { name: 'Annotations (1)' })).toBeVisible();
+
+  // Left as it was found.
+  const body = (await posted.json()) as { data: { annotation: { id: string } } };
+  const removed = await page.request.delete(`/api/sites/${SITE}/annotations/${body.data.annotation.id}`);
+  expect(removed.ok()).toBe(true);
+});
+
+test('shows the Alerts page on an install with no key: named, described, and nothing to fill in', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/alerts`);
+  await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeAttached();
+  await expect(page.getByText('Part of Chokh Pro', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Alerts is part of Chokh Pro. It is here, and a licence key turns it on.'),
+  ).toBeVisible();
+  // The fixture server runs the core with no packages/ee loaded, so the
+  // refusal is a 404 and no reason is drawn; the four kinds are.
+  await expect(page.getByText('Silence', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Add an alert' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add the alert' })).toHaveCount(0);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'the Alerts page scrolls sideways at 390').toBeLessThanOrEqual(0);
 });

@@ -140,8 +140,17 @@ export function annotationsKey(siteId: string, from?: number, to?: number): unkn
   return from === undefined ? ['annotations', siteId] : ['annotations', siteId, from, to];
 }
 
+// The span the marks are read over. A live range ends at the clock, which
+// the shell floors to the minute, and a mark somebody adds "now" lands on
+// that very instant; the read is half open, so the edge is pushed a minute
+// out on a live range and the newest mark is on the chart it was added to.
+export function annotationSpan(query: ViewQuery, now: number): { from: number; to: number } {
+  const { from, to } = query.range;
+  return { from, to: isLive(query.range, now) ? to + 60_000 : to };
+}
+
 export function useAnnotations(context: ReportContext) {
-  const { from, to } = context.query.range;
+  const { from, to } = annotationSpan(context.query, context.now);
   return useQuery({
     queryKey: annotationsKey(context.siteId, from, to),
     queryFn: () => api.annotations(context.client, context.siteId, from, to),

@@ -61,6 +61,8 @@ const PAGES = [
   { name: '11-journeys', path: `/${SITE}/pages?pages=journeys` },
   // The site's own settings, three forms.
   { name: '12-settings', path: `/${SITE}/settings` },
+  // The first paid feature, as an install with no key sees it.
+  { name: '13-alerts', path: `/${SITE}/alerts` },
 ];
 const THEMES = ['light', 'dark'];
 

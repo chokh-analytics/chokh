@@ -44,6 +44,8 @@ const PAGES = [
   { name: 'journeys', path: '/s_demo/pages?pages=journeys' },
   // Three forms, every control labelled, the timezone as a fact.
   { name: 'settings', path: '/s_demo/settings' },
+  // The first paid feature, described on an install with no key.
+  { name: 'alerts', path: '/s_demo/alerts' },
 ];
 const THEMES = ['light', 'dark'];
 

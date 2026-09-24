@@ -768,15 +768,25 @@ describe('Overview, the marks on the chart', () => {
 
   it('asks for the marks of the range on screen, and draws the chart without them when the read fails', async () => {
     const calls: string[] = [];
+    const fetcher = vi.fn();
     serve({
       annotations: () => {
         calls.push('annotations');
         return broken();
       },
     });
+    const stubbed = globalThis.fetch;
+    vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
+      fetcher(String(input));
+      return stubbed(input, init);
+    });
     render(show());
     await totalsLanded();
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    // A live range ends at the clock, so the marks are read a minute past it:
+    // one added "now" is on the chart it was added to.
+    const asked = fetcher.mock.calls.map(([url]) => String(url)).find((url) => url.includes('/annotations'));
+    expect(new URL(asked ?? '', 'http://x').searchParams.get('to')).toBe(String(NOW + 60_000));
     expect(document.querySelectorAll('[class*="markGlyph"]')).toHaveLength(0);
     // The chart is still the report: its hidden table is there with the numbers.
     expect(screen.getAllByRole('table').length).toBeGreaterThan(0);

@@ -18,6 +18,7 @@ import {
   GOOD_WHEN,
 } from '../lib/format.js';
 import {
+  annotationSpan,
   useAggregate,
   useAnnotations,
   useBreakdown,
@@ -419,7 +420,7 @@ export function Overview(): JSX.Element {
               comparing={compared !== undefined || query.compare !== null}
               live={isLive(query.range, now)}
               marks={marks}
-              rangeEnd={query.range.to}
+              rangeEnd={annotationSpan(query, now).to}
               headExtra={
                 <Popover
                   align="right"

@@ -142,17 +142,17 @@ cross-origin request.
 
 ### What it costs to load
 
-One run of `pnpm size:dashboard` on 2026-09-23, which walks `dist/` and gzips
+One run of `pnpm size:dashboard` on 2026-09-24, which walks `dist/` and gzips
 every file that gzip does anything to. Bytes, because a kilobyte means two
 things and half a table in each is how a figure stops being checkable:
 
 | | bytes, gzipped |
 | --- | --- |
-| The first paint: the shell, the Overview and what they share | 31,133 |
+| The first paint: the shell, the Overview and what they share | 37,220 |
 | Libraries: React, the router, the query cache | 84,611 |
 | The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
-| The nine other reports and the Journeys tab, one file each, loaded when opened | 25,248 |
-| Stylesheets | 13,226 |
+| The ten other reports, the Journeys tab and the annotations panel, one file each, loaded when opened | 33,359 |
+| Stylesheets | 14,994 |
 | Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
@@ -163,8 +163,9 @@ and CI fails a build that puts any group over its own.
 ### Accessibility
 
 Lighthouse scores it 1 on the Overview, on Realtime, on Funnels with a funnel
-drawn, on the Journeys tab and on the settings page, in both the light and the
-dark palette, against the real server rather than a fixture. CI fails under 1, and the run also asserts
+drawn, on the Journeys tab, on the settings page and on the Alerts page as an
+install with no key sees it, in both the light and the dark palette, against
+the real server rather than a fixture. CI fails under 1, and the run also asserts
 that the page it audited had the dashboard rendered in it, because Lighthouse
 scores a blank page 1. Every chart carries its numbers as a table for a screen
 reader, including the world map.
@@ -189,6 +190,26 @@ traffic out by address or range, by path and by query parameter, applied as a
 batch arrives; and it holds the name, the domains, the retention and the
 privacy modes. The timezone is shown there and is not a control, because a
 year of daily numbers is keyed by it.
+
+### Annotations and alerts
+
+A deploy, a campaign, an outage or a note is a mark on the chart: a dotted
+guide at the bucket it happened in, named in the hover and in a hidden list,
+so a step in the line has its reason beside it. Marks are added from the panel
+in the chart head by an owner or an editor, or posted by a deploy pipeline
+with the key it already holds (`POST /api/sites/:siteId/annotations`); the id
+is derived from the fact, so a retried post is one mark.
+
+Alerts are part of Chokh Pro and the eleventh destination on every install: on
+one with no key the page names the feature, says so in one sentence and
+describes the four kinds and the three ways out in words, with nothing
+pretending to be numbers. With a key, an alert is a question asked every five
+minutes (traffic against the same weekday's hour, a goal count, an error
+burst, silence) and a message to Telegram, to an address or to a signed
+webhook once when it starts and once when it is back to normal. The page
+lists each alert with what it watches, where it goes and what happened last,
+and sends a test on every channel so a bot token is proved before the night
+it matters. The rest is in [packages/ee](packages/ee/README.md#alerts).
 
 ### Keyboard
 
