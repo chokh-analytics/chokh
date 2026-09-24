@@ -35,8 +35,11 @@ const BUDGETS = [
   // it. The last 410 B are the licence read and the "part of Chokh Pro" label,
   // which live in the shell because the account menu names the licence.
   // Measured 2026-09-24 at 33,885 B after the segments popover and the save
-  // form joined the range bar, 931 B under the line.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 34 * 1024 },
+  // form joined the range bar, 931 B under the line. Raised to 35 KB the same
+  // day by the commit that spent it, the marks on the chart: measured at
+  // 34,907 B with the guides, the glyphs, the hover lines and the hidden list
+  // in TimeChart, which the Overview shares with the shell.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 35 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },

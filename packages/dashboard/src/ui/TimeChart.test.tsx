@@ -149,4 +149,85 @@ describe('TimeChart', () => {
     );
     expect(screen.getByText(/Peak 96 at 01:00/)).toBeInTheDocument();
   });
+
+  // A mark lands on the bucket its instant falls in, by the rule the store
+  // folds a row into one: a deploy at 20 past the hour sits on that hour's
+  // point, and one after the range's end is not drawn at all.
+  describe('the marks', () => {
+    const marks = [
+      { at: START + HOUR + 20 * 60_000, kind: 'Deploy', label: 'v2.3.0' },
+      { at: START + 3 * HOUR + 59 * 60_000, kind: 'Note', label: 'Traffic looked odd' },
+      { at: START + 4 * HOUR + 1, kind: 'Downtime', label: 'Past the end' },
+      { at: START - 1, kind: 'Campaign', label: 'Before the start' },
+    ];
+
+    it('draws one guide per bucket that has a mark, inside the range only', () => {
+      const { container } = render(
+        <TimeChart
+          title="Visitors"
+          metricLabel="Visitors"
+          points={series([4, 9, 6, 12])}
+          interval="hour"
+          timezone={DHAKA}
+          marks={marks}
+          rangeEnd={START + 4 * HOUR}
+        />,
+      );
+      const guides = container.querySelectorAll('[class*="markGlyph"]');
+      expect(guides).toHaveLength(2);
+      // The native tooltip carries the words.
+      expect(container.querySelector('title')?.textContent).toBe('Deploy: v2.3.0');
+    });
+
+    it('lists the marks it drew for anybody who cannot see a guide, in the site zone', () => {
+      render(
+        <TimeChart
+          title="Visitors"
+          metricLabel="Visitors"
+          points={series([4, 9, 6, 12])}
+          interval="hour"
+          timezone={DHAKA}
+          marks={marks}
+          rangeEnd={START + 4 * HOUR}
+        />,
+      );
+      const items = screen.getAllByRole('listitem').map((item) => item.textContent);
+      // 18:00 UTC is midnight in Dhaka, so the deploy an hour and twenty in is 01:20.
+      expect(items).toEqual(['18 Sept, 01:20, Deploy: v2.3.0', '18 Sept, 03:59, Note: Traffic looked odd']);
+    });
+
+    it('folds two marks in one bucket into one guide and names both', () => {
+      const { container } = render(
+        <TimeChart
+          title="Visitors"
+          metricLabel="Visitors"
+          points={series([4, 9, 6, 12])}
+          interval="hour"
+          timezone={DHAKA}
+          marks={[
+            { at: START + HOUR, kind: 'Deploy', label: 'v2.3.0' },
+            { at: START + HOUR + 30 * 60_000, kind: 'Deploy', label: 'v2.3.1' },
+          ]}
+          rangeEnd={START + 4 * HOUR}
+        />,
+      );
+      expect(container.querySelectorAll('[class*="markGlyph"]')).toHaveLength(1);
+      expect(container.querySelector('title')?.textContent).toBe('Deploy: v2.3.0; Deploy: v2.3.1');
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    });
+
+    it('draws no mark and no list on a range with none', () => {
+      const { container } = render(
+        <TimeChart
+          title="Visitors"
+          metricLabel="Visitors"
+          points={series([4, 9, 6, 12])}
+          interval="hour"
+          timezone={DHAKA}
+        />,
+      );
+      expect(container.querySelectorAll('[class*="markGlyph"]')).toHaveLength(0);
+      expect(screen.queryByRole('list')).toBeNull();
+    });
+  });
 });

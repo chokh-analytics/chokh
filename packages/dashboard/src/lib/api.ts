@@ -13,6 +13,7 @@ import type {
   PropertyResult,
   RealtimeSnapshot,
   Segment,
+  Annotation,
   TimeseriesResult,
   UserProfile,
   VisitorProfile,
@@ -227,6 +228,33 @@ export const api = {
   ): Promise<Answer<{ deleted: boolean }>> =>
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/segments/${encodeURIComponent(segmentId)}`,
+    ),
+
+  // The marks on the chart: the site's annotations with `at` inside the range
+  // the chart is drawing, oldest first. Readable by anybody who can read the
+  // chart; adding and deleting take write:events, which an editor holds.
+  annotations: (
+    client: Client,
+    siteId: string,
+    from: number,
+    to: number,
+  ): Promise<Answer<{ annotations: Annotation[] }>> =>
+    client.get<{ annotations: Annotation[] }>(`/api/sites/${siteId}/annotations`, { from, to }),
+
+  createAnnotation: (
+    client: Client,
+    siteId: string,
+    input: { at: number; kind: Annotation['kind']; text: string; url?: string },
+  ): Promise<Answer<{ annotation: Annotation }>> =>
+    client.post<{ annotation: Annotation }>(`/api/sites/${siteId}/annotations`, input),
+
+  deleteAnnotation: (
+    client: Client,
+    siteId: string,
+    annotationId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/annotations/${encodeURIComponent(annotationId)}`,
     ),
 
   // The site's funnels, oldest first, readable by anybody who can read a

@@ -89,6 +89,7 @@ interface Routes {
   realtime?: () => Response;
   segments?: () => Response;
   createSegment?: () => Response;
+  annotations?: () => Response;
 }
 
 function serve(routes: Routes = {}): void {
@@ -96,6 +97,9 @@ function serve(routes: Routes = {}): void {
     'fetch',
     vi.fn((input: string, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes('/annotations')) {
+        return Promise.resolve((routes.annotations ?? (() => ok({ annotations: [] })))());
+      }
       if (url.includes('/segments')) {
         return Promise.resolve(
           init?.method === 'POST'
@@ -735,5 +739,46 @@ describe('Overview, the segments', () => {
     expect(screen.getByText('That segment no longer exists.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Stop comparing' }));
     await waitFor(() => expect(window.location.search).not.toContain('vs='));
+  });
+});
+
+describe('Overview, the marks on the chart', () => {
+  it('draws an annotation inside the range as a mark and names it in the hidden list', async () => {
+    serve({
+      annotations: () =>
+        ok({
+          annotations: [
+            {
+              siteId: 's_test',
+              id: 'an_deploy',
+              at: TODAY_START + 3 * 60 * 60_000,
+              kind: 'deploy',
+              text: 'v2.3.0',
+              createdBy: 'k_pipeline',
+              createdAt: NOW,
+            },
+          ],
+        }),
+    });
+    render(show());
+    await totalsLanded();
+    expect(await screen.findByText('18 Sept, 03:00, Deploy: v2.3.0')).toBeInTheDocument();
+    expect(document.querySelectorAll('[class*="markGlyph"]')).toHaveLength(1);
+  });
+
+  it('asks for the marks of the range on screen, and draws the chart without them when the read fails', async () => {
+    const calls: string[] = [];
+    serve({
+      annotations: () => {
+        calls.push('annotations');
+        return broken();
+      },
+    });
+    render(show());
+    await totalsLanded();
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+    expect(document.querySelectorAll('[class*="markGlyph"]')).toHaveLength(0);
+    // The chart is still the report: its hidden table is there with the numbers.
+    expect(screen.getAllByRole('table').length).toBeGreaterThan(0);
   });
 });

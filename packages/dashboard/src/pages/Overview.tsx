@@ -19,6 +19,7 @@ import {
 } from '../lib/format.js';
 import {
   useAggregate,
+  useAnnotations,
   useBreakdown,
   useHasAnyData,
   useRealtime,
@@ -33,7 +34,7 @@ import { Card } from '../ui/Card.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
 import { Waiting } from './Waiting.js';
-import { CHART_HEIGHT, TimeChart, type ChartPoint } from '../ui/TimeChart.js';
+import { CHART_HEIGHT, TimeChart, type ChartMark, type ChartPoint } from '../ui/TimeChart.js';
 import styles from './Overview.module.css';
 
 // Six numbers, one chart, four cards. Nothing else on the first screen.
@@ -214,6 +215,18 @@ export function Overview(): JSX.Element {
   const compared = query.vs === null ? undefined : segments?.find((each) => each.id === query.vs);
   const segmentSeries = useSegmentTimeseries(context, compared);
   const live = useRealtime(client, site.id, 10_000);
+  // The marks for the range: a deploy, a campaign, an outage, a note. A read
+  // that failed draws no marks and says nothing; the chart is the report.
+  const notes = useAnnotations(context);
+  const marks: ChartMark[] = useMemo(
+    () =>
+      (notes.data?.data.annotations ?? []).map((annotation) => ({
+        at: annotation.at,
+        kind: messages.annotations.kinds[annotation.kind],
+        label: annotation.text,
+      })),
+    [notes.data],
+  );
 
   const metrics = totals.data?.data.metrics;
   const previous = totals.data?.data.previous ?? null;
@@ -398,6 +411,8 @@ export function Overview(): JSX.Element {
               loading={series.isPending || (compared !== undefined && segmentSeries.isPending)}
               comparing={compared !== undefined || query.compare !== null}
               live={isLive(query.range, now)}
+              marks={marks}
+              rangeEnd={query.range.to}
             />
           )}
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import type { Interval } from '@chokh/store/time';
+import { bucketIndexAt, type Interval } from '@chokh/store/time';
 
-import { formatClock, formatCount, formatDate } from '../lib/format.js';
+import { formatClock, formatCount, formatDate, formatDateTime } from '../lib/format.js';
 import { format, messages } from '../messages/en.js';
 import { Skeleton } from './State.js';
 import styles from './TimeChart.module.css';
@@ -74,6 +74,16 @@ export interface ChartPoint {
   value: number;
 }
 
+// A mark: a fact stated about the site at an instant, drawn as one thin guide
+// at the bucket the instant falls in, so a step in the line has its reason
+// beside it. The kind is a word for the hover and the hidden list; the label
+// is what was said.
+export interface ChartMark {
+  at: number;
+  kind: string;
+  label: string;
+}
+
 export interface TimeChartProps {
   title: string;
   points: ChartPoint[];
@@ -105,6 +115,11 @@ export interface TimeChartProps {
   // fraction of a bucket, so the final point is marked as "now" rather than
   // being allowed to look like a fall.
   live?: boolean;
+  // The marks inside the range, and where the range ends, which the points
+  // alone cannot say: a mark after the last bucket's start is still inside
+  // the range up to its end, and outside it past that.
+  marks?: ChartMark[];
+  rangeEnd?: number;
 }
 
 function scaleY(value: number, max: number, plot: Plot): number {
@@ -274,6 +289,8 @@ export function TimeChart({
   loading = false,
   comparing = false,
   live = false,
+  marks = [],
+  rangeEnd,
 }: TimeChartProps): JSX.Element {
   const exact = formatExactValue ?? formatValue;
   const [hover, setHover] = useState<number | null>(null);
@@ -302,6 +319,22 @@ export function TimeChart({
   const hasComparison = !loading && previous !== null && previous !== undefined && previous.length > 1;
   const hovered = hover === null ? null : points[hover];
   const hoveredPrevious = hover === null ? null : previous?.[hover];
+
+  // Each mark's bucket, by the same rule the store folds a row into one. A
+  // mark outside the range gets -1 and is not drawn; one inside it is drawn
+  // at its bucket's x, so a deploy at 14:20 sits on the 14:00 point.
+  const placedMarks = useMemo(() => {
+    const starts = points.map((point) => point.start);
+    const end = rangeEnd ?? (starts.length > 0 ? (starts[starts.length - 1] ?? 0) + 1 : 0);
+    return marks
+      .map((mark) => ({ ...mark, index: bucketIndexAt(starts, mark.at, end) }))
+      .filter((mark) => mark.index >= 0);
+  }, [marks, points, rangeEnd]);
+  const markedBuckets = useMemo(
+    () => [...new Set(placedMarks.map((mark) => mark.index))],
+    [placedMarks],
+  );
+  const hoveredMarks = hover === null ? [] : placedMarks.filter((mark) => mark.index === hover);
 
   return (
     <div className={styles.chart}>
@@ -388,6 +421,33 @@ export function TimeChart({
             </>
           )}
 
+          {/*
+            The marks: one thin guide per bucket that has any, and a small
+            glyph at the axis so a guide is a thing and not a gridline. Behind
+            the hover guide and in front of the area, so the line stays the
+            line. The title is the native tooltip for a mouse that stops on
+            one; the hidden list below is the same words for everybody else.
+          */}
+          {hasData &&
+            markedBuckets.map((index) => {
+              const x = scaleX(index, points.length, plot);
+              const base = PAD.top + plot.height;
+              const words = placedMarks
+                .filter((mark) => mark.index === index)
+                .map((mark) => format(messages.overview.chartMark, { kind: mark.kind, text: mark.label }))
+                .join('; ');
+              return (
+                <g key={`mark-${index}`} className={styles.markGroup}>
+                  <title>{words}</title>
+                  <line className={styles.mark} x1={x} x2={x} y1={PAD.top} y2={base} />
+                  <path
+                    className={styles.markGlyph}
+                    d={`M${(x - 3.5).toFixed(2)} ${(base + 1).toFixed(2)} L${x.toFixed(2)} ${(base - 4).toFixed(2)} L${(x + 3.5).toFixed(2)} ${(base + 1).toFixed(2)} Z`}
+                  />
+                </g>
+              );
+            })}
+
           {hovered !== undefined && hovered !== null && hasData && (
             <>
               <line
@@ -444,6 +504,11 @@ export function TimeChart({
                 })}
               </span>
             )}
+            {hoveredMarks.map((mark, index) => (
+              <span key={`${mark.at}-${index}`} className={styles.hoverMark}>
+                {format(messages.overview.chartMark, { kind: mark.kind, text: mark.label })}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -487,6 +552,24 @@ export function TimeChart({
           ))}
         </tbody>
       </table>
+
+      {/* The marks, for anybody who cannot see a guide: when, what kind, what it said. */}
+      {placedMarks.length > 0 && (
+        <div className="sr-only">
+          <p>{messages.a11y.chartMarks}</p>
+          <ul>
+            {placedMarks.map((mark, index) => (
+              <li key={`${mark.at}-${index}`}>
+                {format(messages.annotations.listItem, {
+                  when: formatDateTime(mark.at, timezone),
+                  kind: mark.kind,
+                  text: mark.label,
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

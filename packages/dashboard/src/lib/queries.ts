@@ -131,6 +131,25 @@ export function useSegments(client: Client, siteId: string) {
   });
 }
 
+// The marks on the chart for the range on screen. Keyed by the range and not
+// by the whole query, because a filter or a metric changes nothing about when
+// a deploy happened. Refreshed by hand after every add and delete, for the
+// goal list's reason, and otherwise on the history clock: a mark is a fact
+// somebody stated, not a number that moves.
+export function annotationsKey(siteId: string, from?: number, to?: number): unknown[] {
+  return from === undefined ? ['annotations', siteId] : ['annotations', siteId, from, to];
+}
+
+export function useAnnotations(context: ReportContext) {
+  const { from, to } = context.query.range;
+  return useQuery({
+    queryKey: annotationsKey(context.siteId, from, to),
+    queryFn: () => api.annotations(context.client, context.siteId, from, to),
+    staleTime: HISTORY_STALE_MS,
+    retry: false,
+  });
+}
+
 // A site's funnels, for the Funnels page. On the goal list's clock and refreshed
 // by hand after every create and delete, for the goal list's reason.
 export function funnelsKey(siteId: string): unknown[] {

@@ -189,6 +189,8 @@ export const messages = {
     chartPeak: 'Peak {value} at {when}',
     chartPrevious: '{label}: {value}',
     chartNow: 'now',
+    // The hover card names the marks of the hovered bucket, one line each.
+    chartMark: '{kind}: {text}',
     topPages: 'Top pages',
     sources: 'Sources',
     countries: 'Countries',
@@ -416,6 +418,18 @@ export const messages = {
 
   // Saved filter lists. A segment is exactly what a report can already be
   // narrowed by, so applying one is writing its filters into the link.
+  annotations: {
+    // What a mark is, in a word. The kind is the first thing a hover says.
+    kinds: {
+      deploy: 'Deploy',
+      campaign: 'Campaign',
+      downtime: 'Downtime',
+      note: 'Note',
+    },
+    // The hidden list, one line per mark: when, what kind, what it says.
+    listItem: '{when}, {kind}: {text}',
+  },
+
   segments: {
     picker: 'Segments',
     empty: 'No segments yet.',
@@ -689,6 +703,7 @@ export const messages = {
     rangeFromTo: '{from} to {to}',
     metricHelp: 'What {metric} means',
     chartTable: 'The numbers behind the chart above.',
+    chartMarks: 'The marks on the chart above.',
     bucket: 'Time',
     liveCount: '{count} online now,',
     mainLandmark: 'Report',
