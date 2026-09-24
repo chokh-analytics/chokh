@@ -28,6 +28,14 @@ services:
       # Unset means the keyless DB-IP Lite database. Set it to a MaxMind
       # license key to read GeoLite2-City instead.
       GEOIP_LICENSE_KEY: ${GEOIP_LICENSE_KEY:-}
+      # Chokh Pro. The key turns the paid features on; the other four say where
+      # alerts go and are read by packages/ee alone. All unset is a complete
+      # install of the free product.
+      CHOKH_LICENSE_KEY: ${CHOKH_LICENSE_KEY:-}
+      CHOKH_SMTP_URL: ${CHOKH_SMTP_URL:-}
+      CHOKH_MAIL_FROM: ${CHOKH_MAIL_FROM:-}
+      CHOKH_TELEGRAM_BOT_TOKEN: ${CHOKH_TELEGRAM_BOT_TOKEN:-}
+      CHOKH_PUBLIC_URL: ${CHOKH_PUBLIC_URL:-}
     volumes:
       - geo-data:/app/data/geo
     depends_on:

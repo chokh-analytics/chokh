@@ -21,6 +21,9 @@ a collector, a stats API, a realtime stream and a dashboard.
   against the chart as a second line; route groups that fold `/courses/:slug`
   into one row; and the site's own traffic kept out by address, path or query
   parameter
+- Annotations: a deploy, a campaign, an outage or a note drawn as a mark on the
+  chart, posted from the dashboard or by a deploy pipeline with the key it
+  already holds
 - Privacy as configuration: cookieless or persistent visitor ids, full, anonymised or
   no IP storage, bot filtering, per-site retention
 - A JSON API for all of it, with a CSV export and a live stream of who is here
