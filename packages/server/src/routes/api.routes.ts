@@ -7,6 +7,11 @@ import {
   createRegisterController,
   createSetMemberController,
 } from '../controllers/accounts.controller.js';
+import {
+  createCreateAnnotationController,
+  createDeleteAnnotationController,
+  createListAnnotationsController,
+} from '../controllers/annotations.controller.js';
 import { createServerEventsController } from '../controllers/events.controller.js';
 import {
   createCreateGoalController,
@@ -73,8 +78,8 @@ import type { AuthDeps } from '../services/auth.service.js';
 //
 // The whole authorization model is readable here, which is the point of putting
 // them in one file: read:stats for the reports, read:identity for the two routes
-// that name a person, write:events for what a backend sends, admin for keys,
-// settings, goals and funnels. A route with no hook is a route anybody may call, and there are four:
+// that name a person, write:events for what a backend sends and for a mark on
+// the chart, admin for keys, settings, goals and funnels. A route with no hook is a route anybody may call, and there are four:
 // registration (open only while there is nobody), login, and the two SSO forms,
 // all four rate limited by address.
 //
@@ -225,6 +230,25 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/segments/:segmentId',
     { preHandler: scope('admin') },
     createDeleteSegmentController(deps),
+  );
+
+  // Annotations: the range's marks are read:stats like the chart they sit on;
+  // adding and deleting are write:events, the scope a fact stated about the
+  // site takes, so a deploy pipeline's key and an editor can both post one.
+  app.get(
+    '/api/sites/:siteId/annotations',
+    { preHandler: scope('read:stats') },
+    createListAnnotationsController(deps),
+  );
+  app.post(
+    '/api/sites/:siteId/annotations',
+    { preHandler: scope('write:events') },
+    createCreateAnnotationController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/annotations/:annotationId',
+    { preHandler: scope('write:events') },
+    createDeleteAnnotationController(deps),
   );
 
   // Funnels, the same split: reading the list is read:stats, adding and

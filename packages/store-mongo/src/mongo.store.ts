@@ -3,6 +3,7 @@ import {
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
+  MAX_ANNOTATIONS_PER_SITE,
   PROFILE_EVENT_LIMIT,
   JOURNEY_STEPS,
   REALTIME_WINDOW_MS,
@@ -85,6 +86,7 @@ import {
   type RollupRecord,
   type RollupSummary,
   type Segment,
+  type Annotation,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -146,6 +148,7 @@ import {
   FUNNELS,
   GOALS,
   SEGMENTS,
+  ANNOTATIONS,
   ROLLUPS_DAILY,
   SESSIONS,
   SITES,
@@ -224,6 +227,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const goals = db.collection<Goal>(GOALS);
   const funnels = db.collection<Funnel>(FUNNELS);
   const segments = db.collection<Segment>(SEGMENTS);
+  const annotations = db.collection<Annotation>(ANNOTATIONS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -699,6 +703,49 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async deleteSegment(siteId: string, segmentId: string): Promise<boolean> {
       const result = await segments.deleteOne({ siteId, id: segmentId });
+      return result.deletedCount > 0;
+    },
+
+    annotations(siteId: string, from: number, to: number): Promise<Annotation[]> {
+      // The {siteId, id} unique index answers the site by its prefix and the
+      // instant is filtered from there: a site holds at most a thousand, which
+      // is fewer rows than an index of its own would be worth.
+      return annotations
+        .find({ siteId, at: { $gte: from, $lt: to } }, { projection: { _id: 0 } })
+        .toArray()
+        .then((rows) => rows.sort((left, right) => left.at - right.at || left.id.localeCompare(right.id)));
+    },
+
+    annotation(siteId: string, annotationId: string): Promise<Annotation | null> {
+      return annotations.findOne({ siteId, id: annotationId }, { projection: { _id: 0 } });
+    },
+
+    async createAnnotation(annotation: Annotation): Promise<void> {
+      await siteOrThrow(annotation.siteId);
+      if (
+        (await annotations.countDocuments({ siteId: annotation.siteId })) >=
+        MAX_ANNOTATIONS_PER_SITE
+      ) {
+        throw new StoreQueryError(
+          'ANNOTATION_LIMIT',
+          `A site can have at most ${MAX_ANNOTATIONS_PER_SITE} annotations`,
+        );
+      }
+      try {
+        await annotations.insertOne({ ...annotation });
+      } catch (error) {
+        // The id is derived from the fact, so the unique index is what refuses
+        // the same fact stated twice, with no read before the write for a
+        // retried POST to race past.
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('ANNOTATION_EXISTS', 'That annotation is already there');
+        }
+        throw error;
+      }
+    },
+
+    async deleteAnnotation(siteId: string, annotationId: string): Promise<boolean> {
+      const result = await annotations.deleteOne({ siteId, id: annotationId });
       return result.deletedCount > 0;
     },
 

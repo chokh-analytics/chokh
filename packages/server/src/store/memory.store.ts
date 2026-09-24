@@ -5,6 +5,7 @@ import {
   MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
+  MAX_ANNOTATIONS_PER_SITE,
   MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
@@ -97,6 +98,7 @@ import {
   type RollupRecord,
   type RollupSummary,
   type Segment,
+  type Annotation,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -166,6 +168,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let auditLog: AuditRecord[] = [];
   let goals: Goal[] = [];
   let segments: Segment[] = [];
+  let annotations: Annotation[] = [];
   let funnels: Funnel[] = [];
 
   function siteOrThrow(siteId: string): Site {
@@ -815,6 +818,44 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(deleted);
     },
 
+    annotations(siteId: string, from: number, to: number): Promise<Annotation[]> {
+      return Promise.resolve(
+        annotations
+          .filter((row) => row.siteId === siteId && row.at >= from && row.at < to)
+          .sort((left, right) => left.at - right.at || left.id.localeCompare(right.id))
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    annotation(siteId: string, annotationId: string): Promise<Annotation | null> {
+      const found = annotations.find((row) => row.siteId === siteId && row.id === annotationId);
+      return Promise.resolve(found === undefined ? null : { ...found });
+    },
+
+    async createAnnotation(annotation: Annotation): Promise<void> {
+      siteOrThrow(annotation.siteId);
+      if (annotations.some((row) => row.siteId === annotation.siteId && row.id === annotation.id)) {
+        throw new StoreQueryError('ANNOTATION_EXISTS', 'That annotation is already there');
+      }
+      if (
+        annotations.filter((row) => row.siteId === annotation.siteId).length >=
+        MAX_ANNOTATIONS_PER_SITE
+      ) {
+        throw new StoreQueryError(
+          'ANNOTATION_LIMIT',
+          `A site can have at most ${MAX_ANNOTATIONS_PER_SITE} annotations`,
+        );
+      }
+      annotations.push({ ...annotation });
+    },
+
+    deleteAnnotation(siteId: string, annotationId: string): Promise<boolean> {
+      const kept = annotations.filter((row) => !(row.siteId === siteId && row.id === annotationId));
+      const deleted = kept.length !== annotations.length;
+      annotations = kept;
+      return Promise.resolve(deleted);
+    },
+
     funnels(siteId: string): Promise<Funnel[]> {
       return Promise.resolve(
         funnels
@@ -946,6 +987,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       goals = [];
       funnels = [];
       segments = [];
+      annotations = [];
       bySiteId.clear();
       ownPresence.clear();
     },

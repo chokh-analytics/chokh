@@ -689,6 +689,37 @@ export interface Segment {
 export const MAX_SEGMENTS_PER_SITE = 50;
 export const MAX_SEGMENT_FILTERS = 10;
 
+// An annotation: a fact somebody states about the site at an instant, drawn
+// as a mark on the chart so a step in the line has its reason beside it. A
+// deploy, a campaign, an outage, or a note. Configuration, like a goal: nothing
+// is counted when one is written and a purge never touches one.
+export type AnnotationKind = 'deploy' | 'campaign' | 'downtime' | 'note';
+
+export const ANNOTATION_KINDS: readonly AnnotationKind[] = ['deploy', 'campaign', 'downtime', 'note'];
+
+export interface Annotation {
+  siteId: string;
+  // Derived from the site, the instant, the kind and the text
+  // (annotationIdFor), so a deploy pipeline that retries its POST writes one
+  // row and the unique index refuses the second.
+  id: string;
+  // Unix milliseconds: when the thing happened, which is where the mark goes.
+  at: number;
+  kind: AnnotationKind;
+  text: string;
+  // Somewhere to read more: the release, the campaign, the incident.
+  url?: string;
+  // Who added it: a dashboard user's id, or the id of the key that did.
+  createdBy: string;
+  createdAt: number;
+}
+
+// How many annotations a site may hold, and how long one may say it. A range
+// read filters the site's rows on the identity index's prefix, so the cap is
+// what bounds that read rather than an index of its own.
+export const MAX_ANNOTATIONS_PER_SITE = 1000;
+export const MAX_ANNOTATION_TEXT = 200;
+
 // What a read needs of a funnel: the questions in order, and the window.
 export interface FunnelRead {
   steps: GoalMatch[];

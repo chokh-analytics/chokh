@@ -26,6 +26,8 @@ export const AUDIT_LOG = 'audit_log';
 export const GOALS = 'goals';
 export const FUNNELS = 'funnels';
 export const SEGMENTS = 'segments';
+export const ANNOTATIONS = 'annotations';
+export const ALERTS = 'alerts';
 
 export const schema: readonly CollectionSchema[] = [
   {
@@ -106,7 +108,7 @@ export const schema: readonly CollectionSchema[] = [
   // The config rows. Their identity index is settled here because the
   // migration has to create the collection anyway; their fields arrive with
   // the tickets that own them.
-  ...['goals', 'funnels', 'annotations', 'alerts', 'reports', 'segments'].map(
+  ...[GOALS, FUNNELS, ANNOTATIONS, ALERTS, 'reports', SEGMENTS].map(
     (name): CollectionSchema => ({
       name,
       purpose: `Site scoped configuration. Fields arrive with the ticket that owns ${name}.`,

@@ -1,7 +1,5 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
-import type { Funnel, Goal,
-  Segment,
-} from './query.js';
+import type { Annotation, Funnel, Goal, Segment } from './query.js';
 import type { Site, SiteSettings } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -89,6 +87,19 @@ export interface AccountStore {
   createSegment(segment: Segment): Promise<void>;
   // False when there was no such segment on this site, so a route can answer 404.
   deleteSegment(siteId: string, segmentId: string): Promise<boolean>;
+
+  // A site's annotations with `at` inside [from, to), oldest first. Read for
+  // the range a chart draws, so a mark lands beside the point it explains.
+  annotations(siteId: string, from: number, to: number): Promise<Annotation[]>;
+  annotation(siteId: string, annotationId: string): Promise<Annotation | null>;
+  // Refuses a site nobody registered with UNKNOWN_SITE, the same fact stated
+  // again with ANNOTATION_EXISTS (the id is derived from it, so the unique
+  // index refuses it), and one more than MAX_ANNOTATIONS_PER_SITE with
+  // ANNOTATION_LIMIT.
+  createAnnotation(annotation: Annotation): Promise<void>;
+  // False when there was no such annotation on this site, so a route can
+  // answer 404.
+  deleteAnnotation(siteId: string, annotationId: string): Promise<boolean>;
 
   audit(row: AuditRecord): Promise<void>;
   // The trail for a site over a range, oldest first. Read by tests today and by

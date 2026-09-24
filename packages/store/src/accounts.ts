@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { Filter, FunnelWindow, GoalKind, GoalMatch } from './query.js';
+import type { AnnotationKind, Filter, FunnelWindow, GoalKind, GoalMatch } from './query.js';
 
 // The control plane: who may read a site, with what, and who read an identity.
 //
@@ -149,6 +149,23 @@ export function segmentIdFor(siteId: string, filters: readonly Filter[]): string
   ]);
   const digest = createHash('sha256').update(question).digest('base64url');
   return `sg_${digest.slice(0, 16)}`;
+}
+
+// An annotation's id, derived from the fact it states: the site, the instant,
+// the kind and the text. A deploy pipeline that retries its POST, or a person
+// who presses Save twice, writes one mark and not two, and the unique index on
+// {siteId, id} is what refuses the second with no read before the write. The
+// link is not part of it: the same fact with a different link is still the
+// same fact.
+export function annotationIdFor(
+  siteId: string,
+  at: number,
+  kind: AnnotationKind,
+  text: string,
+): string {
+  const question = JSON.stringify([siteId, at, kind, text]);
+  const digest = createHash('sha256').update(question).digest('base64url');
+  return `an_${digest.slice(0, 16)}`;
 }
 
 // A funnel's id, derived from what it asks, for the reason a goal's is: the

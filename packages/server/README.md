@@ -250,6 +250,34 @@ does not validate is `400 INVALID_SEGMENT` with the issues, and an id that is
 not this site's is `404 SEGMENT_NOT_FOUND`. There is no edit route: delete and
 add again. `GET` lists them by name.
 
+### Annotations
+
+An annotation is a fact stated about the site at an instant, drawn as a mark
+on the chart so a step in the line has its reason beside it: a deploy, a
+campaign, an outage, or a note. Reading the range's marks needs `read:stats`,
+the scope the chart itself needs; adding and deleting need `write:events`,
+because a mark is a fact about the site in the way a server event is, so the
+key a deploy pipeline already holds can post one and an editor can note a
+campaign from the dashboard.
+
+```
+POST /api/sites/my_site/annotations
+{ "at": 1758700800000, "kind": "deploy", "text": "v2.3.0",
+  "url": "https://github.com/example/app/releases/tag/v2.3.0" }
+```
+
+`at` is Unix milliseconds, `kind` is `deploy`, `campaign`, `downtime` or
+`note`, `text` is one sentence of at most 200 characters and `url` is
+optional. The id is derived from the site, the instant, the kind and the
+text, so a pipeline that retries its POST writes one mark and is answered
+`409 ANNOTATION_EXISTS` with the existing id in `details.annotationId`. A
+site holds at most 1,000 (`409 ANNOTATION_LIMIT`), a body that does not
+validate is `400 INVALID_ANNOTATION` with the issues, and an id that is not
+this site's is `404 ANNOTATION_NOT_FOUND`. `GET
+/api/sites/my_site/annotations?from=&to=` reads the marks with `at` inside
+the half-open range, oldest first, which is what the chart asks for beside
+its points.
+
 ### Goals and conversions
 
 A goal is a page being viewed or a custom event being sent, counted as a

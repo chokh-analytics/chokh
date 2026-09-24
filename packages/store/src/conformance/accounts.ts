@@ -4,6 +4,7 @@ import type { AccountStore } from '../AccountStore.js';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   DEFAULT_TEAM_ID,
+  annotationIdFor,
   funnelIdFor,
   goalIdFor,
   segmentIdFor,
@@ -12,10 +13,13 @@ import {
   type StoredUser,
 } from '../accounts.js';
 import {
+  MAX_ANNOTATIONS_PER_SITE,
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
   StoreQueryError,
+  type Annotation,
+  type AnnotationKind,
   type Filter,
   type Segment,
   type Funnel,
@@ -104,6 +108,25 @@ function funnel(
 const HOME: FunnelStep = { kind: 'page', match: '/home', name: 'Home' };
 const PRICING: FunnelStep = { kind: 'page', match: '/*/pricing', name: 'Pricing' };
 const SIGNUP: FunnelStep = { kind: 'event', match: 'signup', name: 'Signed up', goalId: 'g_x' };
+
+function annotation(
+  siteId: string,
+  at: number,
+  kind: AnnotationKind,
+  text: string,
+  url?: string,
+): Annotation {
+  return {
+    siteId,
+    id: annotationIdFor(siteId, at, kind, text),
+    at,
+    kind,
+    text,
+    ...(url === undefined ? {} : { url }),
+    createdBy: 'u_1',
+    createdAt: NOW,
+  };
+}
 
 async function refusal(run: () => Promise<unknown>): Promise<string> {
   try {
@@ -469,6 +492,70 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
         expect(await refusal(() => store.createSegment(segment('s_nobody', MOBILE, 'Mobile')))).toBe(
           'UNKNOWN_SITE',
         );
+      });
+    });
+
+    describe('annotations', () => {
+      const HOUR = 60 * 60 * 1000;
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_notes', ['notes.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('stores an annotation and reads it back by id and in the range, oldest first', async () => {
+        const deploy = annotation('s_notes', NOW - HOUR, 'deploy', 'v2.3.0', 'https://example.test/r/2.3.0');
+        await store.createAnnotation(annotation('s_notes', NOW, 'note', 'Traffic looked odd'));
+        await store.createAnnotation(deploy);
+        await store.createAnnotation(annotation('s_notes', NOW - 3 * HOUR, 'downtime', 'Database failover'));
+
+        expect(await store.annotation('s_notes', deploy.id)).toEqual(deploy);
+        const rows = await store.annotations('s_notes', NOW - 2 * HOUR, NOW + 1);
+        expect(rows.map((row) => row.text)).toEqual(['v2.3.0', 'Traffic looked odd']);
+        // The range is half open: an instant at `to` is outside it.
+        expect(await store.annotations('s_notes', NOW - 2 * HOUR, NOW)).toHaveLength(1);
+        expect(await store.annotations('s_else', 0, NOW + 1)).toEqual([]);
+      });
+
+      it('writes a retried statement once, because the id is the fact', async () => {
+        const again = annotation('s_notes', NOW - HOUR, 'deploy', 'v2.3.0');
+        expect(again.id).toBe(annotationIdFor('s_notes', NOW - HOUR, 'deploy', 'v2.3.0'));
+        expect(await refusal(() => store.createAnnotation(again))).toBe('ANNOTATION_EXISTS');
+        // The same words a minute later, or as a note, are another fact.
+        await store.createAnnotation(annotation('s_notes', NOW - HOUR + 60_000, 'deploy', 'v2.3.0'));
+        await store.createAnnotation(annotation('s_notes', NOW - HOUR, 'note', 'v2.3.0'));
+        expect(await store.annotations('s_notes', 0, NOW + 1)).toHaveLength(5);
+      });
+
+      it('refuses one annotation more than a site may have', async () => {
+        const have = (await store.annotations('s_notes', 0, Number.MAX_SAFE_INTEGER)).length;
+        for (let index = have; index < MAX_ANNOTATIONS_PER_SITE; index += 1) {
+          await store.createAnnotation(annotation('s_notes', NOW + index, 'note', `Note ${index}`));
+        }
+        expect(await store.annotations('s_notes', 0, Number.MAX_SAFE_INTEGER)).toHaveLength(
+          MAX_ANNOTATIONS_PER_SITE,
+        );
+        expect(
+          await refusal(() => store.createAnnotation(annotation('s_notes', NOW, 'note', 'One too many'))),
+        ).toBe('ANNOTATION_LIMIT');
+        // Another site's allowance is its own.
+        await store.createAnnotation(annotation('s_else', NOW, 'campaign', 'Launch week'));
+      });
+
+      it("deletes once and says so the second time, and never another site's", async () => {
+        const id = annotationIdFor('s_notes', NOW - HOUR, 'deploy', 'v2.3.0');
+        expect(await store.deleteAnnotation('s_else', id)).toBe(false);
+        expect(await store.annotation('s_notes', id)).not.toBeNull();
+        expect(await store.deleteAnnotation('s_notes', id)).toBe(true);
+        expect(await store.deleteAnnotation('s_notes', id)).toBe(false);
+        expect(await store.annotation('s_notes', id)).toBeNull();
+      });
+
+      it('refuses an annotation on a site nobody registered', async () => {
+        expect(
+          await refusal(() => store.createAnnotation(annotation('s_nobody', NOW, 'note', 'x'))),
+        ).toBe('UNKNOWN_SITE');
       });
     });
 
