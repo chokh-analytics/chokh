@@ -6,6 +6,8 @@ import {
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
   MAX_ANNOTATIONS_PER_SITE,
+  MAX_ALERTS_PER_SITE,
+  MAX_ALERT_RECENT,
   MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
@@ -99,6 +101,9 @@ import {
   type RollupSummary,
   type Segment,
   type Annotation,
+  type Alert,
+  type AlertFiring,
+  type AlertState,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -139,6 +144,20 @@ function copySegment(segment: Segment): Segment {
   return { ...segment, filters: segment.filters.map((filter) => ({ ...filter })) };
 }
 
+function copyFiring(firing: AlertFiring): AlertFiring {
+  return { ...firing, deliveries: firing.deliveries.map((delivery) => ({ ...delivery })) };
+}
+
+function copyAlert(alert: Alert): Alert {
+  return {
+    ...alert,
+    condition: { ...alert.condition },
+    channels: alert.channels.map((channel) => ({ ...channel })),
+    state: { ...alert.state },
+    recent: alert.recent.map(copyFiring),
+  };
+}
+
 function copyFunnel(funnel: Funnel): Funnel {
   return { ...funnel, steps: funnel.steps.map((step) => ({ ...step })) };
 }
@@ -169,6 +188,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let goals: Goal[] = [];
   let segments: Segment[] = [];
   let annotations: Annotation[] = [];
+  let alerts: Alert[] = [];
   let funnels: Funnel[] = [];
 
   function siteOrThrow(siteId: string): Site {
@@ -856,6 +876,76 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(deleted);
     },
 
+    alerts(siteId: string): Promise<Alert[]> {
+      return Promise.resolve(
+        alerts
+          .filter((row) => row.siteId === siteId)
+          .sort(
+            (left, right) =>
+              left.name.localeCompare(right.name) || left.createdAt - right.createdAt,
+          )
+          .map(copyAlert),
+      );
+    },
+
+    alert(siteId: string, alertId: string): Promise<Alert | null> {
+      const found = alerts.find((row) => row.siteId === siteId && row.id === alertId);
+      return Promise.resolve(found === undefined ? null : copyAlert(found));
+    },
+
+    async createAlert(alert: Alert): Promise<void> {
+      siteOrThrow(alert.siteId);
+      if (alerts.some((row) => row.siteId === alert.siteId && row.id === alert.id)) {
+        throw new StoreQueryError('ALERT_EXISTS', 'An alert already asks that');
+      }
+      if (alerts.filter((row) => row.siteId === alert.siteId).length >= MAX_ALERTS_PER_SITE) {
+        throw new StoreQueryError('ALERT_LIMIT', `A site can have at most ${MAX_ALERTS_PER_SITE} alerts`);
+      }
+      alerts.push(copyAlert(alert));
+    },
+
+    deleteAlert(siteId: string, alertId: string): Promise<boolean> {
+      const kept = alerts.filter((row) => !(row.siteId === siteId && row.id === alertId));
+      const deleted = kept.length !== alerts.length;
+      alerts = kept;
+      return Promise.resolve(deleted);
+    },
+
+    claimAlertCheck(siteId: string, alertId: string, bucket: number): Promise<boolean> {
+      const found = alerts.find((row) => row.siteId === siteId && row.id === alertId);
+      if (found === undefined) {
+        return Promise.resolve(false);
+      }
+      const checked = found.state.checkedBucket;
+      if (checked !== undefined && checked >= bucket) {
+        return Promise.resolve(false);
+      }
+      found.state.checkedBucket = bucket;
+      return Promise.resolve(true);
+    },
+
+    recordAlertState(
+      siteId: string,
+      alertId: string,
+      state: Pick<AlertState, 'firing' | 'since'>,
+      firing?: AlertFiring,
+    ): Promise<boolean> {
+      const found = alerts.find((row) => row.siteId === siteId && row.id === alertId);
+      if (found === undefined) {
+        return Promise.resolve(false);
+      }
+      found.state.firing = state.firing;
+      if (state.since === undefined) {
+        delete found.state.since;
+      } else {
+        found.state.since = state.since;
+      }
+      if (firing !== undefined) {
+        found.recent = [...found.recent, copyFiring(firing)].slice(-MAX_ALERT_RECENT);
+      }
+      return Promise.resolve(true);
+    },
+
     funnels(siteId: string): Promise<Funnel[]> {
       return Promise.resolve(
         funnels
@@ -988,6 +1078,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       funnels = [];
       segments = [];
       annotations = [];
+      alerts = [];
       bySiteId.clear();
       ownPresence.clear();
     },

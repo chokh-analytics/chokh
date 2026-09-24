@@ -4,6 +4,8 @@ import {
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
   MAX_ANNOTATIONS_PER_SITE,
+  MAX_ALERTS_PER_SITE,
+  MAX_ALERT_RECENT,
   PROFILE_EVENT_LIMIT,
   JOURNEY_STEPS,
   REALTIME_WINDOW_MS,
@@ -87,6 +89,9 @@ import {
   type RollupSummary,
   type Segment,
   type Annotation,
+  type Alert,
+  type AlertFiring,
+  type AlertState,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -149,6 +154,7 @@ import {
   GOALS,
   SEGMENTS,
   ANNOTATIONS,
+  ALERTS,
   ROLLUPS_DAILY,
   SESSIONS,
   SITES,
@@ -202,6 +208,22 @@ function totalsFrom(rows: Document[]): Totals {
   return totals;
 }
 
+// An alert holds arrays of channels and firings, so a copy that stopped at the
+// top level would hand the driver the caller's objects to mutate.
+function copyFiring(firing: AlertFiring): AlertFiring {
+  return { ...firing, deliveries: firing.deliveries.map((delivery) => ({ ...delivery })) };
+}
+
+function copyAlert(alert: Alert): Alert {
+  return {
+    ...alert,
+    condition: { ...alert.condition },
+    channels: alert.channels.map((channel) => ({ ...channel })),
+    state: { ...alert.state },
+    recent: alert.recent.map(copyFiring),
+  };
+}
+
 export async function createMongoStore(options: MongoStoreOptions = {}): Promise<MongoStore> {
   const client = options.client ?? new MongoClient(requiredUri(options.uri));
   if (options.client === undefined) {
@@ -228,6 +250,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const funnels = db.collection<Funnel>(FUNNELS);
   const segments = db.collection<Segment>(SEGMENTS);
   const annotations = db.collection<Annotation>(ANNOTATIONS);
+  const alerts = db.collection<Alert>(ALERTS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -747,6 +770,85 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async deleteAnnotation(siteId: string, annotationId: string): Promise<boolean> {
       const result = await annotations.deleteOne({ siteId, id: annotationId });
       return result.deletedCount > 0;
+    },
+
+    alerts(siteId: string): Promise<Alert[]> {
+      // The {siteId, id} unique index answers the site by its prefix. At most
+      // twenty rows, so the order is set in memory.
+      return alerts
+        .find({ siteId }, { projection: { _id: 0 } })
+        .toArray()
+        .then((rows) =>
+          rows.sort(
+            (left, right) =>
+              left.name.localeCompare(right.name) || left.createdAt - right.createdAt,
+          ),
+        );
+    },
+
+    alert(siteId: string, alertId: string): Promise<Alert | null> {
+      return alerts.findOne({ siteId, id: alertId }, { projection: { _id: 0 } });
+    },
+
+    async createAlert(alert: Alert): Promise<void> {
+      await siteOrThrow(alert.siteId);
+      if ((await alerts.countDocuments({ siteId: alert.siteId })) >= MAX_ALERTS_PER_SITE) {
+        throw new StoreQueryError('ALERT_LIMIT', `A site can have at most ${MAX_ALERTS_PER_SITE} alerts`);
+      }
+      try {
+        await alerts.insertOne(copyAlert(alert));
+      } catch (error) {
+        // The id is derived from the question, so the unique index is what
+        // refuses the same question asked twice.
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('ALERT_EXISTS', 'An alert already asks that');
+        }
+        throw error;
+      }
+    },
+
+    async deleteAlert(siteId: string, alertId: string): Promise<boolean> {
+      const result = await alerts.deleteOne({ siteId, id: alertId });
+      return result.deletedCount > 0;
+    },
+
+    async claimAlertCheck(siteId: string, alertId: string, bucket: number): Promise<boolean> {
+      // Compared and set in one write, which is what makes the claim hold
+      // between two processes: the filter is the comparison, and a document
+      // another process moved first no longer matches it.
+      const result = await alerts.updateOne(
+        {
+          siteId,
+          id: alertId,
+          $or: [
+            { 'state.checkedBucket': { $exists: false } },
+            { 'state.checkedBucket': { $lt: bucket } },
+          ],
+        },
+        { $set: { 'state.checkedBucket': bucket } },
+      );
+      return result.matchedCount > 0;
+    },
+
+    async recordAlertState(
+      siteId: string,
+      alertId: string,
+      state: Pick<AlertState, 'firing' | 'since'>,
+      firing?: AlertFiring,
+    ): Promise<boolean> {
+      const set: Record<string, unknown> = { 'state.firing': state.firing };
+      if (state.since !== undefined) {
+        set['state.since'] = state.since;
+      }
+      const update: Record<string, unknown> = { $set: set };
+      if (state.since === undefined) {
+        update['$unset'] = { 'state.since': '' };
+      }
+      if (firing !== undefined) {
+        update['$push'] = { recent: { $each: [copyFiring(firing)], $slice: -MAX_ALERT_RECENT } };
+      }
+      const result = await alerts.updateOne({ siteId, id: alertId }, update);
+      return result.matchedCount > 0;
     },
 
     goals(siteId: string): Promise<Goal[]> {

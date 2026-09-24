@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 
-import type { AnnotationKind, Filter, FunnelWindow, GoalKind, GoalMatch } from './query.js';
+import type {
+  AlertCondition,
+  AnnotationKind,
+  Filter,
+  FunnelWindow,
+  GoalKind,
+  GoalMatch,
+} from './query.js';
 
 // The control plane: who may read a site, with what, and who read an identity.
 //
@@ -166,6 +173,23 @@ export function annotationIdFor(
   const question = JSON.stringify([siteId, at, kind, text]);
   const digest = createHash('sha256').update(question).digest('base64url');
   return `an_${digest.slice(0, 16)}`;
+}
+
+// An alert's condition with its fields in one order, so the same question
+// spelled by two forms is one string. The channels are not in it: where an
+// answer is sent is not part of the question.
+export function canonicalCondition(condition: AlertCondition): string {
+  const entries = Object.entries(condition).sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify(entries);
+}
+
+// An alert's id, derived from the question the way a goal's is: one question
+// is one alert, and the unique index on {siteId, id} refuses a second under
+// another name with no read before the write.
+export function alertIdFor(siteId: string, condition: AlertCondition): string {
+  const question = JSON.stringify([siteId, canonicalCondition(condition)]);
+  const digest = createHash('sha256').update(question).digest('base64url');
+  return `al_${digest.slice(0, 16)}`;
 }
 
 // A funnel's id, derived from what it asks, for the reason a goal's is: the

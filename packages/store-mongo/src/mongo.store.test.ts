@@ -64,6 +64,7 @@ runAccountConformance('mongodb', async () => {
         'funnels',
         'segments',
         'annotations',
+        'alerts',
       ]) {
         await store.db.collection(name).deleteMany({});
       }

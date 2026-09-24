@@ -43,6 +43,8 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   SEGMENT_LIMIT: 409,
   ANNOTATION_EXISTS: 409,
   ANNOTATION_LIMIT: 409,
+  ALERT_EXISTS: 409,
+  ALERT_LIMIT: 409,
   // The caller asked for something the store cannot answer as asked.
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,

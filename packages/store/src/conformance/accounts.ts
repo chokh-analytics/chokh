@@ -4,6 +4,7 @@ import type { AccountStore } from '../AccountStore.js';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
   DEFAULT_TEAM_ID,
+  alertIdFor,
   annotationIdFor,
   funnelIdFor,
   goalIdFor,
@@ -13,11 +14,16 @@ import {
   type StoredUser,
 } from '../accounts.js';
 import {
+  MAX_ALERTS_PER_SITE,
+  MAX_ALERT_RECENT,
   MAX_ANNOTATIONS_PER_SITE,
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
   StoreQueryError,
+  type Alert,
+  type AlertCondition,
+  type AlertFiring,
   type Annotation,
   type AnnotationKind,
   type Filter,
@@ -125,6 +131,30 @@ function annotation(
     ...(url === undefined ? {} : { url }),
     createdBy: 'u_1',
     createdAt: NOW,
+  };
+}
+
+function alert(siteId: string, condition: AlertCondition, name: string, at = NOW): Alert {
+  return {
+    siteId,
+    id: alertIdFor(siteId, condition),
+    name,
+    condition,
+    channels: [{ kind: 'email', to: 'ops@example.test' }],
+    createdBy: 'u_1',
+    createdAt: at,
+    state: { firing: false },
+    recent: [],
+  };
+}
+
+function firing(at: number, event: 'fired' | 'recovered', value: number): AlertFiring {
+  return {
+    at,
+    event,
+    value,
+    baseline: null,
+    deliveries: [{ channel: 'email', target: 'ops@example.test', ok: true }],
   };
 }
 
@@ -556,6 +586,122 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
         expect(
           await refusal(() => store.createAnnotation(annotation('s_nobody', NOW, 'note', 'x'))),
         ).toBe('UNKNOWN_SITE');
+      });
+    });
+
+    describe('alerts', () => {
+      const SILENCE: AlertCondition = { kind: 'silence', minutes: 30 };
+      const DROP: AlertCondition = {
+        kind: 'traffic',
+        metric: 'visitors',
+        direction: 'down',
+        percent: 50,
+        minimum: 20,
+      };
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_alerts', ['alerts.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('stores an alert and reads it back by id and in the list, by name', async () => {
+        const silence = alert('s_alerts', SILENCE, 'Silence', NOW + 10);
+        await store.createAlert(silence);
+        await store.createAlert(alert('s_alerts', DROP, 'Big drop', NOW));
+
+        expect(await store.alert('s_alerts', silence.id)).toEqual(silence);
+        const rows = await store.alerts('s_alerts');
+        expect(rows.map((row) => row.name)).toEqual(['Big drop', 'Silence']);
+        expect(rows[0]?.condition).toEqual(DROP);
+        expect(rows[0]?.channels).toEqual([{ kind: 'email', to: 'ops@example.test' }]);
+        expect(await store.alerts('s_else')).toEqual([]);
+      });
+
+      it('refuses the same question asked twice, because the id is the question', async () => {
+        const again = alert('s_alerts', SILENCE, 'Quiet');
+        expect(again.id).toBe(alertIdFor('s_alerts', SILENCE));
+        expect(await refusal(() => store.createAlert(again))).toBe('ALERT_EXISTS');
+        // The same fields in another order are the same question; another
+        // number is another question.
+        expect(alertIdFor('s_alerts', { minutes: 30, kind: 'silence' } as AlertCondition)).toBe(
+          alertIdFor('s_alerts', SILENCE),
+        );
+        await store.createAlert(alert('s_alerts', { kind: 'silence', minutes: 60 }, 'An hour quiet'));
+        expect(await store.alerts('s_alerts')).toHaveLength(3);
+      });
+
+      it('claims each bucket once, in order, and never for a row that is not there', async () => {
+        const id = alertIdFor('s_alerts', SILENCE);
+        expect(await store.claimAlertCheck('s_alerts', id, 100)).toBe(true);
+        // A second process arriving for the same bucket is turned away.
+        expect(await store.claimAlertCheck('s_alerts', id, 100)).toBe(false);
+        // An older bucket, arriving late, is turned away too.
+        expect(await store.claimAlertCheck('s_alerts', id, 99)).toBe(false);
+        expect(await store.claimAlertCheck('s_alerts', id, 101)).toBe(true);
+        expect((await store.alert('s_alerts', id))?.state).toEqual({ firing: false, checkedBucket: 101 });
+        expect(await store.claimAlertCheck('s_else', id, 200)).toBe(false);
+        expect(await store.claimAlertCheck('s_alerts', 'al_nobody', 200)).toBe(false);
+      });
+
+      it('records an episode and keeps the last twenty transitions, oldest first', async () => {
+        const id = alertIdFor('s_alerts', SILENCE);
+        expect(
+          await store.recordAlertState('s_alerts', id, { firing: true, since: NOW }, firing(NOW, 'fired', 0)),
+        ).toBe(true);
+        let row = await store.alert('s_alerts', id);
+        // The claimed bucket is left as it was.
+        expect(row?.state).toEqual({ firing: true, since: NOW, checkedBucket: 101 });
+        expect(row?.recent).toEqual([firing(NOW, 'fired', 0)]);
+
+        // Recovered: the episode ends and since goes with it.
+        expect(
+          await store.recordAlertState('s_alerts', id, { firing: false }, firing(NOW + 1, 'recovered', 7)),
+        ).toBe(true);
+        row = await store.alert('s_alerts', id);
+        expect(row?.state).toEqual({ firing: false, checkedBucket: 101 });
+        expect(row?.recent.map((each) => each.event)).toEqual(['fired', 'recovered']);
+
+        // A quiet check writes the state and no transition.
+        expect(await store.recordAlertState('s_alerts', id, { firing: false })).toBe(true);
+        expect((await store.alert('s_alerts', id))?.recent).toHaveLength(2);
+
+        for (let index = 0; index < MAX_ALERT_RECENT + 5; index += 1) {
+          await store.recordAlertState('s_alerts', id, { firing: true, since: NOW }, firing(NOW + 10 + index, 'fired', index));
+        }
+        row = await store.alert('s_alerts', id);
+        expect(row?.recent).toHaveLength(MAX_ALERT_RECENT);
+        expect(row?.recent[0]?.value).toBe(5);
+        expect(row?.recent[MAX_ALERT_RECENT - 1]?.value).toBe(MAX_ALERT_RECENT + 4);
+        expect(await store.recordAlertState('s_alerts', 'al_nobody', { firing: false })).toBe(false);
+      });
+
+      it('refuses one alert more than a site may have', async () => {
+        const have = (await store.alerts('s_alerts')).length;
+        for (let index = have; index < MAX_ALERTS_PER_SITE; index += 1) {
+          await store.createAlert(alert('s_alerts', { kind: 'silence', minutes: 100 + index }, `Quiet ${index}`));
+        }
+        expect(await store.alerts('s_alerts')).toHaveLength(MAX_ALERTS_PER_SITE);
+        expect(
+          await refusal(() => store.createAlert(alert('s_alerts', { kind: 'silence', minutes: 999 }, 'One too many'))),
+        ).toBe('ALERT_LIMIT');
+        // Another site's allowance is its own.
+        await store.createAlert(alert('s_else', SILENCE, 'Silence'));
+      });
+
+      it("deletes once and says so the second time, and never another site's", async () => {
+        const id = alertIdFor('s_alerts', SILENCE);
+        expect(await store.deleteAlert('s_else', id)).toBe(false);
+        expect(await store.alert('s_alerts', id)).not.toBeNull();
+        expect(await store.deleteAlert('s_alerts', id)).toBe(true);
+        expect(await store.deleteAlert('s_alerts', id)).toBe(false);
+        expect(await store.alert('s_alerts', id)).toBeNull();
+      });
+
+      it('refuses an alert on a site nobody registered', async () => {
+        expect(await refusal(() => store.createAlert(alert('s_nobody', SILENCE, 'x')))).toBe(
+          'UNKNOWN_SITE',
+        );
       });
     });
 

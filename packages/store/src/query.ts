@@ -720,6 +720,104 @@ export interface Annotation {
 export const MAX_ANNOTATIONS_PER_SITE = 1000;
 export const MAX_ANNOTATION_TEXT = 200;
 
+// An alert: a question asked of the numbers on a clock, and where to say so
+// when the answer changes. The rows are declared here, in the MIT contract,
+// because rule 3 allows no query outside an adapter and rule 5 holds every
+// adapter to the one conformance suite; what asks the question, does the
+// arithmetic and sends the message lives in packages/ee, and a core-only
+// install never writes one of these because no core route does.
+export type AlertKind = 'traffic' | 'goal' | 'errors' | 'silence';
+
+export const ALERT_KINDS: readonly AlertKind[] = ['traffic', 'goal', 'errors', 'silence'];
+
+// The sliding windows a goal or an error alert may watch, in minutes: a
+// quarter of an hour, an hour, six hours, a day.
+export type AlertWindow = 15 | 60 | 360 | 1440;
+
+export const ALERT_WINDOWS: readonly AlertWindow[] = [15, 60, 360, 1440];
+
+export type AlertCondition =
+  // The last completed hour against the median of the same weekday's same
+  // hour over the previous four weeks. `minimum` is a floor the larger side
+  // has to reach, so three visitors at 3 am becoming nine is never "up 200%".
+  | {
+      kind: 'traffic';
+      metric: 'visitors' | 'pageviews';
+      direction: 'up' | 'down';
+      percent: number;
+      minimum: number;
+    }
+  // Conversions of one goal inside the window, at or above a count, or below
+  // it: "no signup for a day" is below 1 in 1440.
+  | { kind: 'goal'; goalId: string; direction: 'above' | 'below'; count: number; window: AlertWindow }
+  // Pageviews the page labelled with a status of the class, inside the window.
+  | { kind: 'errors'; statuses: '4xx' | '5xx' | 'any'; count: number; window: AlertWindow }
+  // No pageview for this many minutes, on a site that had one in the day
+  // before the window, so a site nobody has installed yet never alarms.
+  | { kind: 'silence'; minutes: number };
+
+export type AlertChannelKind = 'email' | 'telegram' | 'webhook';
+
+export const ALERT_CHANNEL_KINDS: readonly AlertChannelKind[] = ['email', 'telegram', 'webhook'];
+
+export type AlertChannel =
+  | { kind: 'email'; to: string }
+  | { kind: 'telegram'; chatId: string }
+  // The secret signs the body (X-Chokh-Signature); absent means unsigned.
+  | { kind: 'webhook'; url: string; secret?: string };
+
+// One channel's outcome when a message went out.
+export interface AlertDelivery {
+  channel: AlertChannelKind;
+  // Who it went to: the address, the chat id, the URL's host.
+  target: string;
+  ok: boolean;
+  error?: string;
+}
+
+// One transition, kept on the row so the page can say when and what.
+export interface AlertFiring {
+  at: number;
+  event: 'fired' | 'recovered';
+  // What was measured, and what it was measured against when there is one.
+  value: number;
+  baseline: number | null;
+  deliveries: AlertDelivery[];
+}
+
+export interface AlertState {
+  firing: boolean;
+  // When the current episode began, while one is on.
+  since?: number;
+  // The last bucket any process of the install claimed, which is what makes
+  // each bucket evaluated once however many processes tick.
+  checkedBucket?: number;
+}
+
+export interface Alert {
+  siteId: string;
+  // Derived from the site and the canonical condition (alertIdFor), so one
+  // question is one alert and the unique index refuses a second under
+  // another name. The channels are not part of it.
+  id: string;
+  name: string;
+  condition: AlertCondition;
+  channels: AlertChannel[];
+  createdBy: string;
+  createdAt: number;
+  state: AlertState;
+  // The last MAX_ALERT_RECENT transitions, oldest first.
+  recent: AlertFiring[];
+}
+
+// How many alerts a site may hold, how many channels one may name, and how
+// much history a row keeps. The first bounds a tick's reads; a tick over
+// twenty alerts is at most twenty raw reads plus five an hour for each
+// traffic alert.
+export const MAX_ALERTS_PER_SITE = 20;
+export const MAX_ALERT_CHANNELS = 5;
+export const MAX_ALERT_RECENT = 20;
+
 // What a read needs of a funnel: the questions in order, and the window.
 export interface FunnelRead {
   steps: GoalMatch[];

@@ -1,5 +1,5 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
-import type { Annotation, Funnel, Goal, Segment } from './query.js';
+import type { Alert, AlertFiring, AlertState, Annotation, Funnel, Goal, Segment } from './query.js';
 import type { Site, SiteSettings } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -100,6 +100,32 @@ export interface AccountStore {
   // False when there was no such annotation on this site, so a route can
   // answer 404.
   deleteAnnotation(siteId: string, annotationId: string): Promise<boolean>;
+
+  // A site's alerts, by name. The rows only: what evaluates them and sends
+  // their messages is packages/ee, and a core-only install writes none.
+  alerts(siteId: string): Promise<Alert[]>;
+  alert(siteId: string, alertId: string): Promise<Alert | null>;
+  // Refuses a site nobody registered with UNKNOWN_SITE, the same question
+  // asked again with ALERT_EXISTS (the id is derived from it, so the unique
+  // index refuses it), and one more than MAX_ALERTS_PER_SITE with ALERT_LIMIT.
+  createAlert(alert: Alert): Promise<void>;
+  // False when there was no such alert on this site, so a route can answer 404.
+  deleteAlert(siteId: string, alertId: string): Promise<boolean>;
+  // Claim one bucket of one alert for the caller: true when the row's
+  // checkedBucket was absent or older than `bucket`, which it now is set to;
+  // false when another process already claimed this bucket or a newer one.
+  // One write, compared and set together, so two processes ticking at once
+  // evaluate each bucket once between them. False for a row that is not there.
+  claimAlertCheck(siteId: string, alertId: string, bucket: number): Promise<boolean>;
+  // Write what the evaluation decided: the episode state, and the transition
+  // when there was one, kept as the last MAX_ALERT_RECENT of them. The
+  // claimed bucket is left as it is. False for a row that is not there.
+  recordAlertState(
+    siteId: string,
+    alertId: string,
+    state: Pick<AlertState, 'firing' | 'since'>,
+    firing?: AlertFiring,
+  ): Promise<boolean>;
 
   audit(row: AuditRecord): Promise<void>;
   // The trail for a site over a range, oldest first. Read by tests today and by
