@@ -8,6 +8,7 @@ import type { CollectBatch, CollectEvent } from '../schemas/collect.schema.js';
 import type { AnalyticsStore, Attributes, Site, StoredEvent } from '../store/AnalyticsStore.js';
 import { isBot } from './bots.js';
 import type { Dedupe } from './dedupe.js';
+import { compileExclusions, type Exclusions } from './exclusions.js';
 import { confirmIdentity, type IdentityVerdict } from './identity.js';
 import type { VisitorIdSource } from './visitor-id.js';
 
@@ -69,6 +70,21 @@ export function originAllowed(hostname: string | undefined, domains: string[]): 
 
 function copy(value: Attributes | undefined): Attributes | undefined {
   return value === undefined || Object.keys(value).length === 0 ? undefined : { ...value };
+}
+
+// The event with the site's excluded query parameters taken off its path and
+// its referrer, and the event itself when there was nothing to take.
+function stripped(event: CollectEvent, excluded: Exclusions): CollectEvent {
+  const path = event.path === undefined ? undefined : excluded.strip(event.path);
+  const referrer = event.referrer === undefined ? undefined : excluded.strip(event.referrer);
+  if (path === event.path && referrer === event.referrer) {
+    return event;
+  }
+  return {
+    ...event,
+    ...(path === undefined ? {} : { path }),
+    ...(referrer === undefined ? {} : { referrer }),
+  };
 }
 
 function toStoredEvent(
@@ -152,6 +168,15 @@ export async function collect(deps: CollectDeps, input: CollectInput): Promise<C
     return { ok: false, status: 403, code: 'ORIGIN_NOT_ALLOWED', message: 'Origin is not a domain of this site' };
   }
 
+  // The site's own traffic, kept out before a row is derived from it. An
+  // excluded address answers as accepted with nothing stored, the way an
+  // empty batch does: a beacon cannot read the answer, and the rate limits
+  // above have already counted it.
+  const excluded = compileExclusions(site.settings);
+  if (excluded.ip(input.ip)) {
+    return { ok: true, accepted: 0, identity: 'anonymous' };
+  }
+
   // The raw address is what identifies a cookieless visitor and what the geo
   // database is asked about. Only what the site's IP mode allows is stored.
   const visitorId =
@@ -179,8 +204,14 @@ export async function collect(deps: CollectDeps, input: CollectInput): Promise<C
   const userId = identity.kind === 'confirmed' ? identity.userId : undefined;
 
   const stored: StoredEvent[] = [];
-  for (const event of batch.events) {
-    if (event.type === 'identify' && userId === undefined) {
+  for (const raw of batch.events) {
+    if (raw.type === 'identify' && userId === undefined) {
+      continue;
+    }
+    // Before the dedupe key is drawn, so two views of one page that differ
+    // only by an excluded parameter are one page.
+    const event = stripped(raw, excluded);
+    if (excluded.path(event.path)) {
       continue;
     }
     if (

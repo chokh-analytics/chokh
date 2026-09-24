@@ -511,3 +511,50 @@ describe('a body the collector cannot use', () => {
     expect(response.statusCode).toBe(202);
   });
 });
+
+// The site's own traffic, kept out by the three lists on the site row. Over
+// HTTP, because the point is what a batch does and does not leave behind.
+describe("the site's own traffic", () => {
+  it('drops a batch from an excluded address, answering as if it were collected', async () => {
+    await start(site({ excludeIps: ['103.87.12.0/24'] }));
+    const response = await post(batch(), { 'x-forwarded-for': '103.87.12.45' });
+    expect(response.statusCode).toBe(202);
+    expect(store.stored()).toHaveLength(0);
+
+    await post(batch(), { 'x-forwarded-for': '103.88.1.1' });
+    expect(store.stored()).toHaveLength(1);
+  });
+
+  it('drops the events on an excluded path and keeps the rest of the batch', async () => {
+    await start(site({ excludePaths: ['/admin/*'] }));
+    const now = Date.now();
+    await post(
+      batch({
+        events: [
+          { type: 'pageview', ts: now, path: '/admin/users' },
+          { type: 'pageview', ts: now + 1, path: '/pricing' },
+          { type: 'event', ts: now + 2, path: '/admin/users', name: 'saved' },
+        ],
+      }),
+    );
+    expect(store.stored().map((event) => event.path)).toEqual(['/pricing']);
+  });
+
+  it('takes an excluded parameter off a path and a referrer before either is stored', async () => {
+    await start(site({ excludeQueryParams: ['sid'] }));
+    const now = Date.now();
+    await post(
+      batch({
+        events: [
+          {
+            type: 'pageview',
+            ts: now,
+            path: '/app?sid=abc&tab=2',
+            referrer: 'https://ref.example/?sid=1&q=x',
+          },
+        ],
+      }),
+    );
+    expect(store.stored()[0]).toMatchObject({ path: '/app?tab=2', referrer: 'https://ref.example/?q=x' });
+  });
+});

@@ -99,6 +99,27 @@ describe('sendServerEvents', () => {
     expect(row?.geo).toBeUndefined();
   });
 
+  it('leaves out an event on a path the site excludes, and strips its parameters', async () => {
+    const { store, deps } = await open();
+    await store.updateSite(site.id, {
+      settings: { excludePaths: ['/internal/*'], excludeQueryParams: ['sid'] },
+    });
+    const excluding = await store.site(site.id);
+    if (excluding === null) throw new Error('the site is gone');
+    const result = await sendServerEvents(deps, excluding, {
+      userId: 'u_42',
+      events: [
+        { type: 'event', name: 'health', path: '/internal/ping' },
+        { type: 'event', name: 'order_paid', path: '/checkout?sid=abc&step=3' },
+      ],
+    });
+    expect(result.accepted).toBe(1);
+    const rows = store.stored().filter((event) => event.source === 'server');
+    expect(rows.map((event) => [event.name, event.path])).toEqual([
+      ['order_paid', '/checkout?step=3'],
+    ]);
+  });
+
   // A receipt written by a backend is not a sign that somebody is at a keyboard.
   it('puts nobody online', async () => {
     const { store, deps } = await open();

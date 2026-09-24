@@ -795,6 +795,17 @@ survives the purge; only the per-visitor detail ages out.
 
 ## Things to know before you point a site at this
 
+- **A site can keep its own traffic out.** `settings.excludeIps` (addresses
+  or CIDR ranges), `settings.excludePaths` (absolute paths, `*` for one
+  segment) and `settings.excludeQueryParams` are applied by the collector
+  before a row is derived: a batch from an excluded address answers `202` and
+  stores nothing, an event on an excluded path is dropped and the rest of its
+  batch kept, and the named parameters are stripped off any path or referrer
+  that carries a query string. The tracker never sends the page's own query
+  string, only the UTM parameters as attributes, so that last list matters
+  for hash routes, server side events and referrers. A rate limit is counted
+  before an exclusion is read, and a rule the collector could not apply is
+  refused by the settings rather than stored as a silent no-op.
 - **The origin check is by exact hostname.** `example.com` and `www.example.com`
   are two entries. A subdomain is not covered by its parent.
 - **A page served with `Referrer-Policy: no-referrer` sends `Origin: null` on a

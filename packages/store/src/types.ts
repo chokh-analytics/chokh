@@ -35,8 +35,9 @@ export interface SiteSettings {
   // The per-site key those signatures are made with. It never leaves the
   // server: a browser that could read it could sign anything.
   identifySecret?: string;
-  // Declared by AN-STO01 so the shape is settled. The collector applies them
-  // when AN-SEG01 gives a site owner somewhere to set them.
+  // The site's own traffic, kept out by the collector before a row is derived:
+  // addresses (exact or CIDR), paths (the goal grammar, * for one segment) and
+  // the query parameters stripped off a path or a referrer that carries any.
   excludeIps: string[];
   excludePaths: string[];
   excludeQueryParams: string[];

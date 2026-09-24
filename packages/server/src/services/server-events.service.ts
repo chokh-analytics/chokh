@@ -1,5 +1,6 @@
 import type { AnalyticsStore, Attributes, Site, StoredEvent } from '../store/AnalyticsStore.js';
 import { clampTimestamp } from './collect.service.js';
+import { compileExclusions } from './exclusions.js';
 
 // Events an application sends from its own server, through a key with the
 // write:events scope. An order that was paid, a signup that completed, an
@@ -83,7 +84,15 @@ export async function sendServerEvents(
   const receivedAt = deps.now();
   const visitorId = await resolveVisitorId(deps, site.id, batch);
 
-  const stored: StoredEvent[] = batch.events.map((event) => {
+  // The site's path exclusions apply to what a backend sends too; there is no
+  // address to exclude by, a server having none.
+  const excluded = compileExclusions(site.settings);
+  const kept = batch.events.filter((event) => {
+    const path = event.path === undefined ? undefined : excluded.strip(event.path);
+    return !excluded.path(path);
+  });
+
+  const stored: StoredEvent[] = kept.map((event) => {
     const row: StoredEvent = {
       siteId: site.id,
       ts: clampTimestamp(event.ts ?? receivedAt, receivedAt),
@@ -96,7 +105,7 @@ export async function sendServerEvents(
       source: 'server',
     };
     if (event.name !== undefined) row.name = event.name;
-    if (event.path !== undefined) row.path = event.path;
+    if (event.path !== undefined) row.path = excluded.strip(event.path);
     if (event.props !== undefined) row.props = { ...event.props };
     if (event.traits !== undefined) row.traits = { ...event.traits };
     if (event.value !== undefined) row.value = event.value;

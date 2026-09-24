@@ -9,6 +9,7 @@ import {
   type Role,
   type Scope,
 } from '../store/AnalyticsStore.js';
+import { isAddressRule, isPathRule } from '../services/exclusions.js';
 
 // Every body an account or a site route accepts. Zod at the boundary, AGENTS.md
 // section 5, so no handler ever reads request.body.
@@ -78,8 +79,26 @@ export const siteSettingsPatchSchema = z
     retentionDays: z.number().int().min(1).max(3650),
     timezone: z.string().min(1).max(64),
     allowUnsignedIdentify: z.boolean(),
-    excludeIps: z.array(z.string().min(1).max(64)).max(200),
-    excludePaths: z.array(z.string().min(1).max(512)).max(200),
+    // Each checked the way the collector will read it, so a rule that would
+    // exclude nobody is refused here rather than stored as a silent no-op.
+    excludeIps: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(64)
+          .refine(isAddressRule, 'An excluded address is an IP address or a CIDR range'),
+      )
+      .max(200),
+    excludePaths: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(512)
+          .refine(isPathRule, 'An excluded path is an absolute path, with * for one segment'),
+      )
+      .max(200),
     excludeQueryParams: z.array(z.string().min(1).max(64)).max(200),
     // Ordered, first match wins; the grammar is in the store's routes.ts.
     routeGroups: z
