@@ -48,15 +48,18 @@ function filterCondition(filter: Filter): unknown {
 // The site, the span and the bot side of the line, plus whatever the query
 // filtered on that a row carries. A bot filter is already answered by the bot
 // field itself, so it never becomes a second condition. A filter only a stay
-// carries is not here either: stayJoinStages answers it by the row's stay, and
-// the one thing this match does for it is keep the rows that have a stay at
-// all, so a row written before stays were stamped never reaches the join and
-// is out of the report, the rule funnelPipeline already applies.
+// carries is answered by stays: the ids of the stays that match it, which the
+// adapter resolves once per read with stayMatch and hands here as a $in. That
+// is one index range over the stays and a filter on rows the range scan
+// already reads; a $lookup per row, the first shape, cost five seconds over a
+// month of a small site. A row written before stays were stamped has no id in
+// the list and is out of the report, the rule funnelPipeline already applies.
 export function eventMatch(
   siteId: string,
   span: Range,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document {
   const match: Record<string, unknown> = {
     siteId,
@@ -89,8 +92,8 @@ export function eventMatch(
       conditions.push({ type, [path]: condition });
     }
   }
-  if (split.stay.length > 0) {
-    match.sessionId = { $type: 'string' };
+  if (stays !== undefined) {
+    match.sessionId = { $in: [...stays] };
   }
   if (conditions.length > 0) {
     match.$and = conditions;
@@ -98,17 +101,14 @@ export function eventMatch(
   return match;
 }
 
-// The stay a row belongs to, when a filter names something only a stay
-// carries: one lookup per row on the stay's identity index with the stay
-// conditions inside it, and the rows whose stay did not match dropped. There
-// is no window on the stay, on purpose: a row at ten past midnight belongs to
-// the stay that began before it, whichever day that was, the same answer the
-// other adapter's set of stay ids gives.
-export function stayJoinStages(siteId: string, filters: Filter[] | undefined): Document[] {
+// The stays a filter only a stay carries chooses: every stay of the site that
+// overlaps the span and matches all of them. The adapter reads their ids with
+// this, on the {siteId, startedAt} index, and hands them to eventMatch. The
+// overlap is the window, so a row at ten past midnight is in the stay that
+// began before it, whichever day that was, and a stay that ended before the
+// span or began after it is never asked about.
+export function stayMatch(siteId: string, span: Range, filters: Filter[] | undefined): Document {
   const { stay } = splitVisitFilters(filters);
-  if (stay.length === 0) {
-    return [];
-  }
   const conditions: Document[] = [];
   for (const filter of stay) {
     const path = SESSION_PATH_BY_DIMENSION[filter.dim];
@@ -116,38 +116,29 @@ export function stayJoinStages(siteId: string, filters: Filter[] | undefined): D
       conditions.push({ [path]: filterCondition(filter) });
     }
   }
-  return [
-    {
-      $lookup: {
-        from: SESSIONS,
-        let: { sessionId: '$sessionId' },
-        pipeline: [
-          { $match: { siteId, $expr: { $eq: ['$id', '$$sessionId'] }, $and: conditions } },
-          { $limit: 1 },
-          { $project: { _id: 1 } },
-        ],
-        as: 'stay',
-      },
-    },
-    { $match: { stay: { $ne: [] } } },
-  ];
+  const match: Document = {
+    siteId,
+    startedAt: { $lt: span.to },
+    lastSeenAt: { $gte: span.from },
+  };
+  if (conditions.length > 0) {
+    match.$and = conditions;
+  }
+  return match;
 }
 
-// What every pipeline over rows opens with: the match, then the join when a
-// filter needs one. extra rides in the same $match as the site and the range,
-// so the {siteId, ts} index still leads and a type is filtered as the index is
-// walked rather than afterwards.
+// What every pipeline over rows opens with. extra rides in the same $match as
+// the site and the range, so the {siteId, ts} index still leads and a type is
+// filtered as the index is walked rather than afterwards.
 export function eventStages(
   siteId: string,
   span: Range,
   wantsBots: boolean,
   filters: Filter[] | undefined,
   extra: Document = {},
+  stays?: readonly string[],
 ): Document[] {
-  return [
-    { $match: { ...eventMatch(siteId, span, wantsBots, filters), ...extra } },
-    ...stayJoinStages(siteId, filters),
-  ];
+  return [{ $match: { ...eventMatch(siteId, span, wantsBots, filters, stays), ...extra } }];
 }
 
 // The route of a row from a site's rules, as regroupRoutes runs it over every
@@ -196,9 +187,10 @@ export function rawTotalsPipeline(
   timezone: string,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     {
       $group: {
         _id: { day: dayExpression(timezone), visitorId: '$visitorId' },
@@ -224,10 +216,11 @@ export function rawBreakdownPipeline(
   dim: Dimension,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document[] {
   const expression = dimensionExpression(dim);
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     {
       $project: {
         day: dayExpression(timezone),
@@ -465,9 +458,10 @@ export function rawTotalsByBucketPipeline(
   interval: Interval,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     {
       $group: {
         _id: { bucket: bucketKeyExpression(timezone, interval), visitorId: '$visitorId' },
@@ -521,10 +515,11 @@ export function engagementPipeline(
   dim: Dimension,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document[] {
   const key = dimensionExpression(dim);
   return [
-    ...eventStages(siteId, span, wantsBots, filters, { type: 'leave' }),
+    ...eventStages(siteId, span, wantsBots, filters, { type: 'leave' }, stays),
     {
       $group: {
         _id: key,
@@ -595,9 +590,10 @@ export function conversionTotalsPipeline(
   wantsBots: boolean,
   filters: Filter[] | undefined,
   goal: GoalMatch,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     { $group: { _id: { day: dayExpression(timezone), visitorId: '$visitorId' }, counted: { $max: 1 } } },
     {
       $unionWith: {
@@ -663,9 +659,10 @@ export function conversionBreakdownPipeline(
   wantsBots: boolean,
   filters: Filter[] | undefined,
   goal: GoalMatch,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     {
       $project: {
         day: dayExpression(timezone),
@@ -715,11 +712,16 @@ function customEventStages(
   wantsBots: boolean,
   filters: Filter[] | undefined,
   name?: string,
+  stays?: readonly string[],
 ): Document[] {
-  return eventStages(siteId, span, wantsBots, filters, {
-    type: 'event',
-    name: name ?? { $exists: true },
-  });
+  return eventStages(
+    siteId,
+    span,
+    wantsBots,
+    filters,
+    { type: 'event', name: name ?? { $exists: true } },
+    stays,
+  );
 }
 
 // Visitors, each day's added up, and how many times, per event name.
@@ -729,9 +731,10 @@ export function eventsPipeline(
   timezone: string,
   wantsBots: boolean,
   filters: Filter[] | undefined,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...customEventStages(siteId, span, wantsBots, filters),
+    ...customEventStages(siteId, span, wantsBots, filters, undefined, stays),
     {
       $group: {
         _id: { day: dayExpression(timezone), key: '$name', visitorId: '$visitorId' },
@@ -756,9 +759,10 @@ export function propertyKeysPipeline(
   wantsBots: boolean,
   filters: Filter[] | undefined,
   event: string,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...customEventStages(siteId, span, wantsBots, filters, event),
+    ...customEventStages(siteId, span, wantsBots, filters, event, stays),
     { $project: { pair: { $objectToArray: { $ifNull: ['$props', {}] } } } },
     { $unwind: '$pair' },
     { $group: { _id: '$pair.k', events: { $sum: 1 } } },
@@ -780,9 +784,10 @@ export function propertyValuesPipeline(
   filters: Filter[] | undefined,
   event: string,
   property: string,
+  stays?: readonly string[],
 ): Document[] {
   return [
-    ...customEventStages(siteId, span, wantsBots, filters, event),
+    ...customEventStages(siteId, span, wantsBots, filters, event, stays),
     {
       $project: {
         day: dayExpression(timezone),
@@ -850,10 +855,11 @@ export function goalStatsPipeline(
   wantsBots: boolean,
   filters: Filter[] | undefined,
   goals: Goal[],
+  stays?: readonly string[],
 ): Document[] {
   const day = dayExpression(timezone);
   return [
-    ...eventStages(siteId, span, wantsBots, filters),
+    ...eventStages(siteId, span, wantsBots, filters, {}, stays),
     { $group: { _id: { day, visitorId: '$visitorId' }, counted: { $max: 1 } } },
     {
       $unionWith: {

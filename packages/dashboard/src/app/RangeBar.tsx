@@ -333,8 +333,27 @@ function SegmentPicker(): JSX.Element {
       align="left"
       label={messages.segments.picker}
       trigger={({ open, toggle }) => (
-        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="true">
-          {messages.segments.picker}
+        <Button
+          variant="quiet"
+          label={messages.segments.picker}
+          onClick={toggle}
+          aria-expanded={open}
+          aria-haspopup="true"
+        >
+          {/* The word where there is room, a bookmark where there is not: on a
+              phone the second row holds the arrows, the comparison, the goal,
+              this and the zone, and the word pushed the zone onto a third. */}
+          <span className={styles.pickerLong}>{messages.segments.picker}</span>
+          <svg
+            className={styles.pickerIcon}
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="currentColor"
+          >
+            <path d="M6 3h12v18l-6-4-6 4z" />
+          </svg>
           <svg
             className={styles.pickerCaret}
             width="12"

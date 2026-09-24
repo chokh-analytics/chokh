@@ -17,6 +17,10 @@ a collector, a stats API, a realtime stream and a dashboard.
 - Custom events, `identify` for signed-in people, and per-person history
 - Goals with a conversion column on every report, funnels with the drop-off at
   every step, and the paths visits took from the page they came in on
+- Segments: any filter list saved under a name, applied in one press and drawn
+  against the chart as a second line; route groups that fold `/courses/:slug`
+  into one row; and the site's own traffic kept out by address, path or query
+  parameter
 - Privacy as configuration: cookieless or persistent visitor ids, full, anonymised or
   no IP storage, bot filtering, per-site retention
 - A JSON API for all of it, with a CSV export and a live stream of who is here
@@ -156,12 +160,32 @@ and CI fails a build that puts any group over its own.
 ### Accessibility
 
 Lighthouse scores it 1 on the Overview, on Realtime, on Funnels with a funnel
-drawn and on the Journeys tab, in both the light and the dark palette, over 25,
-23, 26 and 32 applicable audits respectively, against the real server rather
-than a fixture. CI fails under 1, and the run also asserts
+drawn, on the Journeys tab and on the settings page, in both the light and the
+dark palette, against the real server rather than a fixture. CI fails under 1, and the run also asserts
 that the page it audited had the dashboard rendered in it, because Lighthouse
 scores a blank page 1. Every chart carries its numbers as a table for a screen
 reader, including the world map.
+
+### Segments, routes and exclusions
+
+Every row on every report is a filter, the entry page, the exit page and the
+channel included: the store answers those by the visits that match. A filter
+list worth keeping is saved as a segment from the Segments menu in the range
+bar, applied again in one press, and compared against: the chart draws the
+segment's own numbers as a second line under its name while the previous
+period steps aside. Saving and deleting a segment is an owner's, like a goal.
+
+A site with dynamic pages folds them with a route rule in its settings:
+`/courses/:slug` reads every course as one row on the Routes tab of Pages, in
+order, first match wins, `:name` for one part of the path and `*` for any run
+inside one. A rule change regroups the stored history within retention on the
+next hourly pass, and the page says so until it has.
+
+The same settings page, reached from the site menu, keeps the site's own
+traffic out by address or range, by path and by query parameter, applied as a
+batch arrives; and it holds the name, the domains, the retention and the
+privacy modes. The timezone is shown there and is not a control, because a
+year of daily numbers is keyed by it.
 
 ### Keyboard
 

@@ -644,3 +644,111 @@ test('draws journeys on a phone inside their card, and filters from a node', asy
   await expect(page).toHaveURL(/branches=3/);
   await expect(pricing).toHaveAttribute('aria-pressed', 'true');
 });
+
+// The settings page, the Routes tab and the segments, over the real server.
+//
+// A rule saved here is stamped on the next pageview collected, so the Routes
+// tab shows the folded row over pageviews posted after the save; the regroup
+// of history is the jobs' work and is proved in the store suites. The site is
+// put back as it was at the end, because the audit and the screenshots run
+// against the same seeded install.
+test('saves an exclusion and a route rule, then reads the folded row on the Routes tab', async ({
+  page,
+}) => {
+  await boot(page, `/${SITE}/settings`);
+  await expect(page.getByRole('heading', { name: 'Settings for Progsity', level: 1 })).toBeVisible();
+
+  const exclusions = page.getByRole('region', { name: 'Keep your own traffic out' });
+  await exclusions.getByLabel('Paths').fill('/preview/*');
+  await exclusions.getByRole('button', { name: 'Save' }).click();
+  await expect(exclusions.getByRole('status')).toHaveText('Saved.');
+
+  const routes = page.getByRole('region', { name: 'Route groups' });
+  await routes.getByLabel('Rules').fill('/courses/:slug');
+  await routes.getByRole('button', { name: 'Save' }).click();
+  await expect(routes.getByRole('status')).toHaveText('Saved.');
+  await expect(routes.getByText(/regrouped on the next hourly pass/)).toBeVisible();
+
+  // Two courses read now, and one preview page that must not count.
+  const now = Date.now();
+  for (const [index, path] of ['/courses/a', '/courses/b', '/preview/draft-1'].entries()) {
+    const sent = await page.request.post('/api/collect', {
+      headers: { 'content-type': 'text/plain', origin: ORIGIN },
+      data: JSON.stringify({
+        siteId: SITE,
+        sentAt: now,
+        hostname: '127.0.0.1',
+        visitorId: `v_routes_${now}_${index}`,
+        lang: 'en',
+        screen: '1440x900',
+        events: [{ type: 'pageview', ts: now - 1_000 + index, path }],
+      }),
+    });
+    expect(sent.status(), 'the collector refused the batch').toBeLessThan(300);
+  }
+
+  await boot(page, `/${SITE}/pages?pages=routes&range=today`);
+  const card = page.getByRole('region', { name: 'Top pages' });
+  await expect(card.getByRole('tab', { name: 'Routes' })).toHaveAttribute('aria-selected', 'true');
+  const folded = card.getByRole('button', { name: /^\/courses\/:slug/ });
+  await expect(folded).toBeVisible();
+  await expect(card.getByText(/No route rules yet/)).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /^\/preview/ })).toHaveCount(0);
+  // Pressing the folded row filters by the route, the same as any row.
+  await folded.click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('filters'))
+    .toBe('route==/courses/:slug');
+
+  // The site as it was.
+  const restored = await page.request.patch(`/api/sites/${SITE}`, {
+    data: { settings: { excludePaths: [], routeGroups: [] } },
+  });
+  expect(restored.ok()).toBe(true);
+});
+
+test('saves a segment from a channel filter, and compares the chart against it', async ({
+  page,
+}) => {
+  await boot(page);
+  // A channel row is a button now, and pressing it narrows the whole page.
+  await page.getByRole('button', { name: /Organic search/ }).first().click();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('filters'))
+    .toBe('channel==organic');
+
+  await page.getByRole('button', { name: 'Segments' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Organic in the suite');
+  await page.getByRole('button', { name: 'Save the segment' }).click();
+
+  // Listed, and comparable: the chip, the legend and the hidden table name it.
+  await page.getByRole('button', { name: 'Segments' }).click();
+  await expect(page.getByRole('button', { name: 'Apply Organic in the suite' })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare' }).first().click();
+  await expect(page).toHaveURL(/vs=sg_/);
+  await expect(page.getByText('Compared with Organic in the suite')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Organic in the suite' })).toBeAttached();
+
+  // Deleted through the picker, and gone from the link.
+  await page.getByRole('button', { name: 'Segments' }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Delete it' }).click();
+  await expect(page.getByRole('button', { name: 'Apply Organic in the suite' })).toHaveCount(0);
+  await expect(page).not.toHaveURL(/vs=/);
+});
+
+test('reads the settings page and the segments popover on a phone without a sideways scrollbar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/settings`);
+  await expect(page.getByRole('region', { name: 'Route groups' })).toBeVisible();
+  const overflow = () =>
+    page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(await overflow(), 'the settings page scrolls sideways').toBeLessThanOrEqual(0);
+
+  await boot(page, `/${SITE}?filters=channel%3D%3Dorganic`);
+  await page.getByRole('button', { name: 'Segments' }).click();
+  await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
+  expect(await overflow(), 'the segments popover pushes the page sideways').toBeLessThanOrEqual(0);
+});

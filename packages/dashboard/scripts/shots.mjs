@@ -59,6 +59,8 @@ const PAGES = [
   { name: '10-funnels', path: `/${SITE}/funnels?funnel=f_course` },
   // The fourth tab on Pages, the flow drawn.
   { name: '11-journeys', path: `/${SITE}/pages?pages=journeys` },
+  // The site's own settings, three forms.
+  { name: '12-settings', path: `/${SITE}/settings` },
 ];
 const THEMES = ['light', 'dark'];
 

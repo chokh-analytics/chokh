@@ -42,6 +42,8 @@ const PAGES = [
   { name: 'funnels', path: '/s_demo/funnels' },
   // The flow over the seeded walks, and the table under it.
   { name: 'journeys', path: '/s_demo/pages?pages=journeys' },
+  // Three forms, every control labelled, the timezone as a fact.
+  { name: 'settings', path: '/s_demo/settings' },
 ];
 const THEMES = ['light', 'dark'];
 

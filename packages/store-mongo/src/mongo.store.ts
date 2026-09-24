@@ -130,6 +130,7 @@ import {
   dayExpression,
   rawBreakdownPipeline,
   routeExpression,
+  stayMatch,
   rawTotalsPipeline,
   rollupBreakdownPipeline,
   rollupTotalsPipeline,
@@ -259,6 +260,19 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     return totalsFrom(rows);
   }
 
+  // The ids of the stays a filter only a stay carries chooses, over a span, or
+  // undefined when no filter needs them. Read once per read and handed to the
+  // event pipelines as a $in: see eventMatch for why not a $lookup.
+  async function stayIdsFor(query: Query, span: Range): Promise<string[] | undefined> {
+    if (splitVisitFilters(query.filters).stay.length === 0) {
+      return undefined;
+    }
+    const rows = await sessions
+      .find(stayMatch(query.siteId, span, query.filters), { projection: { _id: 0, id: 1 } })
+      .toArray();
+    return rows.map((row) => row.id);
+  }
+
   async function metricsFor(query: Query, range: Range, site: Site): Promise<Metrics> {
     const timezone = site.settings.timezone;
     const plan = readPlan({
@@ -279,8 +293,9 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     }
     const wantsBots = botSelector(query.filters);
     for (const span of plan.raw) {
+      const stays = await stayIdsFor(query, span);
       const rows = await events
-        .aggregate(rawTotalsPipeline(site.id, span, timezone, wantsBots, query.filters))
+        .aggregate(rawTotalsPipeline(site.id, span, timezone, wantsBots, query.filters, stays))
         .toArray();
       addTotals(totals, totalsFrom(rows));
       addTotals(totals, await sessionTotals(query, span));
@@ -306,6 +321,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
           botSelector(query.filters),
           query.filters,
           goal,
+          await stayIdsFor(query, range),
         ),
       )
       .toArray();
@@ -335,7 +351,16 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     if (!SESSION_DIMENSIONS.includes(dim)) {
       rows = await events
         .aggregate(
-          conversionBreakdownPipeline(site.id, span, timezone, dim, wantsBots, query.filters, goal),
+          conversionBreakdownPipeline(
+            site.id,
+            span,
+            timezone,
+            dim,
+            wantsBots,
+            query.filters,
+            goal,
+            await stayIdsFor(query, span),
+          ),
         )
         .toArray();
     } else if (sessionsAnswerFilters(query.filters)) {
@@ -392,8 +417,11 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     const fromSessions = SESSION_DIMENSIONS.includes(dim);
     for (const span of plan.raw) {
       if (!fromSessions) {
+        const stays = await stayIdsFor(query, span);
         for (const row of await events
-          .aggregate(rawBreakdownPipeline(site.id, span, timezone, dim, wantsBots, query.filters))
+          .aggregate(
+            rawBreakdownPipeline(site.id, span, timezone, dim, wantsBots, query.filters, stays),
+          )
           .toArray()) {
           collect(String(row._id), row as Partial<Totals>);
         }
@@ -487,6 +515,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
           site.settings.timezone,
           botSelector(query.filters),
           query.filters,
+          await stayIdsFor(query, { from: query.from, to: query.to }),
         ),
       )
       .toArray();
@@ -978,6 +1007,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         }
         const wantsBots = botSelector(query.filters);
         for (const span of plan.raw) {
+          const stays = await stayIdsFor(query, span);
           for (const row of await events
             .aggregate(
               rawTotalsByBucketPipeline(
@@ -987,6 +1017,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
                 interval,
                 wantsBots,
                 query.filters,
+                stays,
               ),
             )
             .toArray()) {
@@ -1050,6 +1081,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
             dim,
             botSelector(query.filters),
             query.filters,
+            await stayIdsFor(query, { from: query.from, to: query.to }),
           ),
         )
         .toArray()) {
@@ -1077,6 +1109,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
             site.settings.timezone,
             botSelector(query.filters),
             query.filters,
+            await stayIdsFor(query, { from: query.from, to: query.to }),
           ),
         )
         .toArray();
@@ -1102,9 +1135,12 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       const span: Range = { from: query.from, to: query.to };
       const wantsBots = botSelector(query.filters);
       const base = await rawVisitors(query, site);
+      const stays = await stayIdsFor(query, span);
       const properties = (
         await events
-          .aggregate(propertyKeysPipeline(site.id, span, wantsBots, query.filters, query.event))
+          .aggregate(
+            propertyKeysPipeline(site.id, span, wantsBots, query.filters, query.event, stays),
+          )
           .toArray()
       ).map((row): PropertyCount => ({ key: String(row._id), events: row.events as number }));
       const property = query.property ?? properties[0]?.key ?? null;
@@ -1121,6 +1157,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
             query.filters,
             query.event,
             property,
+            stays,
           ),
         )
         .toArray();
@@ -1157,6 +1194,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
               botSelector(query.filters),
               query.filters,
               goals,
+              await stayIdsFor(query, { from: query.from, to: query.to }),
             ),
           )
           .toArray()) {

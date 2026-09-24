@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import { useEffect,
+  useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 
 import styles from './Popover.module.css';
 
@@ -49,11 +50,42 @@ export function Popover({ trigger, children, align = 'right', label }: PopoverPr
     };
   }, [open]);
 
+  // Kept inside the viewport. A panel anchored to a control in the middle of a
+  // phone's second row would otherwise run past the right edge and push the
+  // whole page sideways, which is what the segments control did at 390.
+  // Measured on opening and on resize, and moved by a margin rather than a
+  // transform, because the arrival animation owns the transform.
+  const panel = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const place = (): void => {
+      const box = panel.current;
+      if (box === null) {
+        return;
+      }
+      box.style.marginLeft = '0px';
+      const gutter =
+        Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gutter')) ||
+        16;
+      const rect = box.getBoundingClientRect();
+      const over = rect.right - (window.innerWidth - gutter);
+      const under = gutter - rect.left;
+      const shift = over > 0 ? -over : under > 0 ? under : 0;
+      box.style.marginLeft = `${shift}px`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open]);
+
   return (
     <div className={styles.wrap} ref={wrap}>
       {trigger({ open, toggle: () => setOpen((was) => !was) })}
       {open && (
         <div
+          ref={panel}
           className={[styles.panel, align === 'left' ? styles.left : ''].filter(Boolean).join(' ')}
           role="group"
           aria-label={label}

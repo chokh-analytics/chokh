@@ -70,6 +70,11 @@
   display: none;
 }
 
+/* The segments control's bookmark, drawn only where its word is not. */
+.pickerIcon {
+  display: none;
+}
+
 /*
  * A filter chip. Accent while it is doing its job, amber when the server
  * refused it, and always carrying its own way out.
@@ -175,8 +180,13 @@
     gap: var(--s2);
   }
 
-  .pickerCaret {
+  .pickerCaret,
+  .pickerLong {
     display: none;
+  }
+
+  .pickerIcon {
+    display: inline-block;
   }
 
   .group {

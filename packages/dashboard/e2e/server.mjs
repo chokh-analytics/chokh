@@ -40,6 +40,8 @@ export const SITE_ID = 's_demo';
 
 const DAY_MS = 86_400_000;
 
+// Four course slugs and a pair of lessons, so a route rule has something to
+// fold: /courses/:slug reads as one row over four pages on the Routes tab.
 const PAGES = [
   '/',
   '/courses/competitive-programming',
@@ -48,6 +50,11 @@ const PAGES = [
   '/learn/c',
   '/contests',
   '/blog/why-we-built-chokh',
+  '/courses/c-from-scratch',
+  '/courses/data-structures',
+  '/courses/graphs',
+  '/learn/c/pointers',
+  '/learn/c/arrays',
 ];
 const PLACES = [
   { country: 'BD', region: 'Dhaka', city: 'Dhaka', lat: 23.8103, lon: 90.4125 },

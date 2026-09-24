@@ -214,11 +214,12 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   // the query asked for them.
   //
   // A filter only a stay carries is answered by the row's stay: the ids of
-  // every stay of the site that matches all of them, looked up per row. There
-  // is no window on the stay, on purpose: a row at ten past midnight belongs
-  // to the stay that began before it, whichever day that was. A row written
-  // before stays were stamped has no stay and is out, the rule the funnel
-  // read already applies.
+  // every stay of the site overlapping the span that matches all of them,
+  // looked up per row. The overlap is the window, the same one the other
+  // adapter reads its ids over, so a row at ten past midnight belongs to the
+  // stay that began before it, whichever day that was. A row written before
+  // stays were stamped has no stay and is out, the rule the funnel read
+  // already applies.
   function rawRows(query: Query, span: Range): StoredEvent[] {
     const wantsBots = botSelector(query.filters);
     const split = splitVisitFilters(query.filters);
@@ -230,6 +231,8 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
               .filter(
                 (session) =>
                   session.siteId === query.siteId &&
+                  session.startedAt < span.to &&
+                  session.lastSeenAt >= span.from &&
                   split.stay.every((filter) => matchesSessionFilter(session, filter)),
               )
               .map((session) => session.id),
