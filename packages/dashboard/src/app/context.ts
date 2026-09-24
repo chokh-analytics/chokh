@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-import type { Goal } from '@chokh/store/contract';
+import type { Goal, Segment } from '@chokh/store/contract';
 
 import type { PublicSite, Me } from '../lib/api.js';
 import type { Client } from '../lib/client.js';
@@ -21,6 +21,9 @@ export interface AppContextValue {
   // The site's goals once they have answered. What vouches for a goal id in a
   // link: absent, and no goal in the URL is taken at its word.
   goals?: readonly Goal[];
+  // The site's segments once they have answered, for the same reason: a link
+  // that compares against one names it by id, and the list vouches for it.
+  segments?: readonly Segment[];
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

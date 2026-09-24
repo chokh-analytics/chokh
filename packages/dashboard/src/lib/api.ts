@@ -12,6 +12,7 @@ import type {
   JourneyResult,
   PropertyResult,
   RealtimeSnapshot,
+  Segment,
   TimeseriesResult,
   UserProfile,
   VisitorProfile,
@@ -187,6 +188,28 @@ export const api = {
   ): Promise<Answer<{ deleted: boolean }>> =>
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/goals/${encodeURIComponent(goalId)}`,
+    ),
+
+  // The site's segments, by name, readable by anybody who can read a report:
+  // a segment is a saved filter list and every report already takes one.
+  // Saving and deleting need an owner, like a goal.
+  segments: (client: Client, siteId: string): Promise<Answer<{ segments: Segment[] }>> =>
+    client.get<{ segments: Segment[] }>(`/api/sites/${siteId}/segments`),
+
+  createSegment: (
+    client: Client,
+    siteId: string,
+    input: { name: string; filters: Segment['filters'] },
+  ): Promise<Answer<{ segment: Segment }>> =>
+    client.post<{ segment: Segment }>(`/api/sites/${siteId}/segments`, input),
+
+  deleteSegment: (
+    client: Client,
+    siteId: string,
+    segmentId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/segments/${encodeURIComponent(segmentId)}`,
     ),
 
   // The site's funnels, oldest first, readable by anybody who can read a

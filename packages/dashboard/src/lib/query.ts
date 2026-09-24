@@ -52,6 +52,10 @@ export interface ViewQuery {
   // the URL for the same reason as the metric: "of the people from this
   // campaign, how many signed up" is a view somebody sends.
   goal: string | null;
+  // The segment the chart is compared against, by id, or null for none. Its
+  // own filters on the same range, drawn as the chart's second line in place
+  // of the previous period; the tiles keep their comparison.
+  vs: string | null;
 }
 
 // The parameter names, in one place, because they are a contract with every
@@ -65,6 +69,7 @@ export const PARAM = {
   interval: 'interval',
   metric: 'metric',
   goal: 'goal',
+  vs: 'vs',
 } as const;
 
 export const DEFAULT_PRESET: Preset = '7d';
@@ -137,6 +142,16 @@ const GOAL_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // The goal a link asked for, whether or not the site still has it. The shell
 // needs this before the list has answered, to know whether there is a list
 // worth waiting for.
+// The id a segment is filed under: sg_ and sixteen characters of a digest.
+const SEGMENT_ID = /^sg_[A-Za-z0-9_-]{16}$/;
+
+// The segment the link compares against, whether or not the site has it.
+export function requestedVs(search: string | URLSearchParams): string | null {
+  const params = typeof search === 'string' ? new URLSearchParams(search) : search;
+  const vs = params.get(PARAM.vs);
+  return vs !== null && SEGMENT_ID.test(vs) ? vs : null;
+}
+
 export function requestedGoal(search: string | URLSearchParams): string | null {
   const params = typeof search === 'string' ? new URLSearchParams(search) : search;
   const goal = params.get(PARAM.goal);
@@ -153,11 +168,15 @@ export function parseQuery(
   now: number,
   timezone: string,
   goalIds?: readonly string[],
+  // The site's segments, vouching for a compared id the way goalIds vouches
+  // for the goal.
+  segmentIds?: readonly string[],
 ): ViewQuery {
   const params = typeof search === 'string' ? new URLSearchParams(search) : search;
   const range = readRange(params, now, timezone);
   const metric = params.get(PARAM.metric);
   const goal = requestedGoal(params);
+  const vs = requestedVs(params);
   return {
     range,
     compare: readCompare(params.get(PARAM.compare)),
@@ -165,6 +184,7 @@ export function parseQuery(
     interval: readInterval(params.get(PARAM.interval), range),
     metric: isMetric(metric) ? metric : DEFAULT_METRIC,
     goal: goal !== null && goalIds?.includes(goal) === true ? goal : null,
+    vs: vs !== null && segmentIds?.includes(vs) === true ? vs : null,
   };
 }
 
@@ -203,6 +223,10 @@ export function toSearchParams(query: ViewQuery): URLSearchParams {
 
   if (query.goal !== null) {
     params.set(PARAM.goal, query.goal);
+  }
+
+  if (query.vs !== null) {
+    params.set(PARAM.vs, query.vs);
   }
 
   return params;

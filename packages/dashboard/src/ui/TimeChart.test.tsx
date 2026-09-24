@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { TimeChart, type ChartPoint } from './TimeChart.js';
@@ -87,6 +87,27 @@ describe('TimeChart', () => {
     expect(table).toHaveTextContent('9');
     // The site clock, never the browser's: 18:00 UTC is midnight in Dhaka.
     expect(table).toHaveTextContent('00:00');
+  });
+
+  it('lists the second series in the table too, under its own name', () => {
+    render(
+      <TimeChart
+        title="Visitors"
+        metricLabel="Visitors"
+        points={series([4, 9])}
+        previous={series([2, 3])}
+        previousLabel="Mobile from Bangladesh"
+        interval="hour"
+        timezone={DHAKA}
+      />,
+    );
+    const table = screen.getByRole('table');
+    expect(screen.getByRole('columnheader', { name: 'Mobile from Bangladesh' })).toBeInTheDocument();
+    const rows = within(table).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('4');
+    expect(rows[1]).toHaveTextContent('2');
+    expect(rows[2]).toHaveTextContent('9');
+    expect(rows[2]).toHaveTextContent('3');
   });
 
   it('labels the axis in the site zone and not the reader one', () => {

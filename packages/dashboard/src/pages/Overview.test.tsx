@@ -40,6 +40,19 @@ const SITE = {
   },
 };
 
+// One saved segment, for the picker cases.
+const MOBILE = {
+  siteId: 's_test',
+  id: 'sg_AbCdEfGhIjKlMnOp',
+  name: 'Mobile from Bangladesh',
+  filters: [
+    { dim: 'country' as const, op: 'is' as const, value: 'BD' },
+    { dim: 'device' as const, op: 'is' as const, value: 'mobile' },
+  ],
+  createdBy: 'u_1',
+  createdAt: NOW - 86_400_000,
+};
+
 function metrics(over: Record<string, number | null> = {}) {
   return {
     visitors: 315,
@@ -73,13 +86,22 @@ interface Routes {
   timeseries?: () => Response;
   breakdown?: (dim: string) => Response;
   realtime?: () => Response;
+  segments?: () => Response;
+  createSegment?: () => Response;
 }
 
 function serve(routes: Routes = {}): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: string) => {
+    vi.fn((input: string, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes('/segments')) {
+        return Promise.resolve(
+          init?.method === 'POST'
+            ? (routes.createSegment ?? (() => ok({ segment: MOBILE })))()
+            : (routes.segments ?? (() => ok({ segments: [] })))(),
+        );
+      }
       if (url.includes('/stats/aggregate')) {
         return Promise.resolve(
           (routes.aggregate ?? (() => ok({ metrics: metrics(), previous: metrics({ visitors: 250 }) })))(),
@@ -605,5 +627,112 @@ describe('Overview, on a site with no goals', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Goal/ }));
     expect(await screen.findByText('No goals yet.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Add a goal' })).toHaveAttribute('href', '/s_test/goals');
+  });
+});
+
+// Segments in the range bar: applying one is writing its filters into the
+// link, comparing one draws its own series as the chart's second line under
+// its name, and saving one sends the filters on screen with a name. An owner's
+// controls are an owner's; everybody else reads why.
+describe('Overview, the segments', () => {
+  function calls(): { url: URL; method: string; body: unknown }[] {
+    return (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls.map(
+      ([input, init]) => ({
+        url: new URL(String(input), 'http://x'),
+        method: init?.method ?? 'GET',
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      }),
+    );
+  }
+
+  it('applies a segment into the link in one press', async () => {
+    serve({ segments: () => ok({ segments: [MOBILE] }) });
+    render(show({ segments: [MOBILE] }));
+    await totalsLanded();
+    await userEvent.click(screen.getByRole('button', { name: 'Segments' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply Mobile from Bangladesh' }),
+    );
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get('filters')).toBe(
+        'country==BD;device==mobile',
+      ),
+    );
+  });
+
+  it('compares the chart against a segment, drawn under its own name from its own filters', async () => {
+    serve({ segments: () => ok({ segments: [MOBILE] }) });
+    render(show({ segments: [MOBILE] }));
+    await totalsLanded();
+    await userEvent.click(screen.getByRole('button', { name: 'Segments' }));
+    await userEvent.click((await screen.findAllByRole('button', { name: 'Compare' }))[0] as HTMLElement);
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get('vs')).toBe(MOBILE.id),
+    );
+    // The chip, the legend and the hidden table all name the segment.
+    expect(await screen.findByText('Compared with Mobile from Bangladesh')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('columnheader', { name: 'Mobile from Bangladesh' })).toBeInTheDocument(),
+    );
+    // Its series was asked for with the segment's filters and no comparison.
+    const asked = calls().filter(
+      (call) =>
+        call.url.pathname.endsWith('/stats/timeseries') &&
+        call.url.searchParams.get('filters') === 'country==BD;device==mobile',
+    );
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked[0]?.url.searchParams.get('compare')).toBeNull();
+    // Taken off again from the chip.
+    await userEvent.click(screen.getByRole('button', { name: 'Stop comparing' }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('vs')).toBeNull());
+  });
+
+  it('lets an owner save the filters on screen under a name, and says so to a viewer', async () => {
+    window.history.replaceState(null, '', '/s_test?filters=country%3D%3DBD');
+    serve();
+    render(
+      show({
+        me: {
+          actor: { kind: 'session', id: 'u_1' },
+          user: null,
+          sites: [SITE],
+          teams: [{ id: 'default', name: 'Ours', role: 'owner' }],
+        },
+        segments: [],
+      }),
+    );
+    await totalsLanded();
+    await userEvent.click(screen.getByRole('button', { name: 'Segments' }));
+    await userEvent.type(await screen.findByLabelText('Name'), 'Bangladesh');
+    await userEvent.click(screen.getByRole('button', { name: 'Save the segment' }));
+    await waitFor(() => {
+      const posted = calls().find((call) => call.method === 'POST' && call.url.pathname.endsWith('/segments'));
+      expect(posted?.body).toEqual({
+        name: 'Bangladesh',
+        filters: [{ dim: 'country', op: 'is', value: 'BD' }],
+      });
+    });
+  });
+
+  it('shows a viewer why there is nothing to save', async () => {
+    window.history.replaceState(null, '', '/s_test?filters=country%3D%3DBD');
+    serve();
+    render(show({ segments: [] }));
+    await totalsLanded();
+    await userEvent.click(screen.getByRole('button', { name: 'Segments' }));
+    expect(
+      await screen.findByText('Only an owner of this site can save or delete a segment.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Name')).toBeNull();
+  });
+
+  it('says so when the link compares against a segment the site no longer has', async () => {
+    window.history.replaceState(null, '', '/s_test?vs=sg_ZzZzZzZzZzZzZzZz');
+    serve();
+    render(show({ segments: [] }));
+    await totalsLanded();
+    expect(screen.getByText('That segment no longer exists.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop comparing' }));
+    await waitFor(() => expect(window.location.search).not.toContain('vs='));
   });
 });

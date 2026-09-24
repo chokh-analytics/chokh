@@ -7,6 +7,7 @@ import {
   DEFAULT_PRESET,
   parseQuery,
   requestedGoal,
+  requestedVs,
   toSearch,
   toStatsParams,
   type ViewQuery,
@@ -210,5 +211,34 @@ describe('the goal', () => {
     expect(cacheKey('s_1', toStatsParams(query, { goal: true }))).not.toEqual(
       cacheKey('s_1', toStatsParams(query)),
     );
+  });
+});
+
+// The segment a link compares against is vouched for the way a goal is: by
+// the site's own list, and by the shape of an id before that.
+describe('the segment compared against', () => {
+  const MOBILE = 'sg_AbCdEfGhIjKlMnOp';
+  const SEGMENTS = [MOBILE, 'sg_QrStUvWxYz012345'];
+
+  it('is kept when the site has it, and written back into the link', () => {
+    const query = parseQuery(`vs=${MOBILE}`, NOW, DHAKA, [], SEGMENTS);
+    expect(query.vs).toBe(MOBILE);
+    expect(toSearch(query)).toBe(`?vs=${MOBILE}`);
+  });
+
+  it('is dropped when the site does not have it, or there is no list', () => {
+    expect(parseQuery('vs=sg_ZzZzZzZzZzZzZzZz', NOW, DHAKA, [], SEGMENTS).vs).toBeNull();
+    expect(parseQuery(`vs=${MOBILE}`, NOW, DHAKA).vs).toBeNull();
+  });
+
+  it('is dropped when it is not the shape of an id at all', () => {
+    expect(requestedVs('vs=%3Cscript%3E')).toBeNull();
+    expect(requestedVs('vs=g_signup')).toBeNull();
+    expect(requestedVs(`vs=${MOBILE}`)).toBe(MOBILE);
+  });
+
+  it('never reaches a read: the chart asks for the segment series itself', () => {
+    const query = parseQuery(`vs=${MOBILE}`, NOW, DHAKA, [], SEGMENTS);
+    expect(JSON.stringify(toStatsParams(query))).not.toContain(MOBILE);
   });
 });

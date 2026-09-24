@@ -474,13 +474,15 @@ export function TimeChart({
           <tr>
             <th scope="col">{messages.a11y.bucket}</th>
             <th scope="col">{metricLabel}</th>
+            {hasComparison && <th scope="col">{previousLabel}</th>}
           </tr>
         </thead>
         <tbody>
-          {points.map((point) => (
+          {points.map((point, index) => (
             <tr key={point.start}>
               <th scope="row">{labelFor(point.start, interval, timezone)}</th>
               <td>{exact(point.value)}</td>
+              {hasComparison && <td>{exact(previous?.[index]?.value ?? 0)}</td>}
             </tr>
           ))}
         </tbody>

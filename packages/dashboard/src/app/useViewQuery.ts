@@ -1,7 +1,14 @@
 import { useCallback, useMemo } from 'react';
 import { useLocation, useSearch } from 'wouter';
 
-import { PARAM, parseQuery, requestedGoal, toSearch, type ViewQuery } from '../lib/query.js';
+import {
+  PARAM,
+  parseQuery,
+  requestedGoal,
+  requestedVs,
+  toSearch,
+  type ViewQuery,
+} from '../lib/query.js';
 import { useApp } from './context.js';
 
 const VIEW_PARAMS = new Set<string>(Object.values(PARAM));
@@ -53,17 +60,20 @@ export interface ViewQueryHandle {
   // The goal the link named, which query.goal is only when the site still has
   // it. The range bar says so when the two differ.
   requestedGoal: string | null;
+  // The segment the link compares against, likewise.
+  requestedVs: string | null;
 }
 
 export function useViewQuery(): ViewQueryHandle {
-  const { site, now, goals } = useApp();
+  const { site, now, goals, segments } = useApp();
   const search = useSearch();
   const [location, navigate] = useLocation();
 
   const goalIds = useMemo(() => goals?.map((goal) => goal.id), [goals]);
+  const segmentIds = useMemo(() => segments?.map((segment) => segment.id), [segments]);
   const query = useMemo(
-    () => parseQuery(search, now, site.settings.timezone, goalIds),
-    [search, now, site.settings.timezone, goalIds],
+    () => parseQuery(search, now, site.settings.timezone, goalIds, segmentIds),
+    [search, now, site.settings.timezone, goalIds, segmentIds],
   );
 
   const go = useCallback(
@@ -88,5 +98,6 @@ export function useViewQuery(): ViewQueryHandle {
     set: useCallback((next: ViewQuery) => go(next, false), [go]),
     replace: useCallback((next: ViewQuery) => go(next, true), [go]),
     requestedGoal: useMemo(() => requestedGoal(search), [search]),
+    requestedVs: useMemo(() => requestedVs(search), [search]),
   };
 }

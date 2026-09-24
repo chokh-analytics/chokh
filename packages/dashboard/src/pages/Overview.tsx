@@ -22,6 +22,7 @@ import {
   useBreakdown,
   useHasAnyData,
   useRealtime,
+  useSegmentTimeseries,
   useTimeseries,
 } from '../lib/queries.js';
 import { defaultInterval, isLive } from '../lib/range.js';
@@ -201,13 +202,17 @@ function BreakdownBody({
 }
 
 export function Overview(): JSX.Element {
-  const { client, site, now } = useApp();
+  const { client, site, now, segments } = useApp();
   const { query, set } = useViewQuery();
   const context = { client, siteId: site.id, query, now };
   const timezone = site.settings.timezone;
 
   const totals = useAggregate(context);
   const series = useTimeseries(context);
+  // The segment compared against, when the link names one the site has. Its
+  // series takes the second line; the previous period steps aside (D3).
+  const compared = query.vs === null ? undefined : segments?.find((each) => each.id === query.vs);
+  const segmentSeries = useSegmentTimeseries(context, compared);
   const live = useRealtime(client, site.id, 10_000);
 
   const metrics = totals.data?.data.metrics;
@@ -222,16 +227,20 @@ export function Overview(): JSX.Element {
       })),
     [series.data, query.metric],
   );
-  const previousPoints: ChartPoint[] | null = useMemo(
-    () =>
-      series.data?.data.previous === null || series.data?.data.previous === undefined
-        ? null
-        : series.data.data.previous.map((point) => ({
-            start: point.start,
-            value: valueOf(point.metrics, query.metric) ?? 0,
-          })),
-    [series.data, query.metric],
-  );
+  const previousPoints: ChartPoint[] | null = useMemo(() => {
+    if (compared !== undefined) {
+      return (segmentSeries.data?.data.points ?? []).map((point) => ({
+        start: point.start,
+        value: valueOf(point.metrics, query.metric) ?? 0,
+      }));
+    }
+    return series.data?.data.previous === null || series.data?.data.previous === undefined
+      ? null
+      : series.data.data.previous.map((point) => ({
+          start: point.start,
+          value: valueOf(point.metrics, query.metric) ?? 0,
+        }));
+  }, [series.data, segmentSeries.data, compared, query.metric]);
 
   const pages = useBreakdownCard('page', (key) => key);
   const channels = useBreakdownCard(
@@ -381,12 +390,13 @@ export function Overview(): JSX.Element {
               metricLabel={METRIC_LABELS[query.metric]}
               points={points}
               previous={previousPoints}
+              {...(compared === undefined ? {} : { previousLabel: compared.name })}
               interval={interval}
               timezone={timezone}
               formatValue={METRIC_FORMAT[query.metric]}
               formatExactValue={METRIC_EXACT[query.metric]}
-              loading={series.isPending}
-              comparing={query.compare !== null}
+              loading={series.isPending || (compared !== undefined && segmentSeries.isPending)}
+              comparing={compared !== undefined || query.compare !== null}
               live={isLive(query.range, now)}
             />
           )}

@@ -1,10 +1,13 @@
-import { useState, type JSX } from 'react';
+import { useState, type FormEvent, type JSX } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
-import type { Filter, Goal } from '@chokh/store/contract';
+import { MAX_SEGMENTS_PER_SITE, type Filter, type Goal, type Segment } from '@chokh/store/contract';
 
+import { api } from '../lib/api.js';
+import { ChokhError } from '../lib/client.js';
 import { OPERATOR_SIGNS, removeFilter } from '../lib/filters.js';
 import { formatExact, formatRate } from '../lib/format.js';
-import { useAggregate, useGoals } from '../lib/queries.js';
+import { segmentsKey, useAggregate, useGoals, useSegments } from '../lib/queries.js';
 import { customRange, resolvePreset, shiftRange, type Compare, type Preset } from '../lib/range.js';
 import { format, messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
@@ -12,7 +15,7 @@ import { Field } from '../ui/Field.js';
 import { InfoDot } from '../ui/InfoDot.js';
 import { Popover } from '../ui/Popover.js';
 import popover from '../ui/Popover.module.css';
-import { useApp } from './context.js';
+import { isOwner, useApp } from './context.js';
 import { useViewQuery } from './useViewQuery.js';
 import styles from './RangeBar.module.css';
 
@@ -40,17 +43,25 @@ const REMOVE_ICON = (
   </svg>
 );
 
+function operatorWord(filter: Filter): string {
+  return filter.op === 'is'
+    ? messages.filters.is
+    : filter.op === 'is_not'
+      ? messages.filters.isNot
+      : messages.filters.contains;
+}
+
+// A filter as a sentence: the dimension's name, the operator's word, the value.
+function describe(filter: Filter): string {
+  return `${DIMENSION_LABELS[filter.dim] ?? filter.dim} ${operatorWord(filter)} ${filter.value}`;
+}
+
 function Chip({ filter, onRemove }: { filter: Filter; onRemove: () => void }): JSX.Element {
   return (
     <span className={styles.chip}>
       <span className={styles.chipText}>
         <span className={styles.chipDim}>{DIMENSION_LABELS[filter.dim] ?? filter.dim}</span>{' '}
-        {filter.op === 'is'
-          ? messages.filters.is
-          : filter.op === 'is_not'
-            ? messages.filters.isNot
-            : messages.filters.contains}{' '}
-        {filter.value}
+        {operatorWord(filter)} {filter.value}
       </span>
       <button
         type="button"
@@ -143,6 +154,230 @@ function GoalPicker(): JSX.Element {
   );
 }
 
+// Saved filter lists: apply one in a press, compare the chart against one,
+// save the filters on screen as a new one, delete one. A segment is exactly
+// what a report can already be narrowed by, so applying it is writing its
+// filters into the link, and comparing it is one more time series with its
+// filters on the same range. Saving and deleting are an owner's, the way a
+// goal is (D1): the list is shared by everybody who reads the site.
+function useRefreshSegments(): () => Promise<void> {
+  const queryClient = useQueryClient();
+  const { site } = useApp();
+  return () => queryClient.invalidateQueries({ queryKey: segmentsKey(site.id) });
+}
+
+function SegmentRow({
+  segment,
+  owner,
+  onDone,
+}: {
+  segment: Segment;
+  owner: boolean;
+  onDone: () => void;
+}): JSX.Element {
+  const { client, site } = useApp();
+  const { query, set } = useViewQuery();
+  const refresh = useRefreshSegments();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const count = segment.filters.length;
+
+  async function remove(): Promise<void> {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.deleteSegment(client, site.id, segment.id);
+      if (query.vs === segment.id) {
+        set({ ...query, vs: null });
+      }
+      await refresh();
+    } catch (error) {
+      setProblem(error instanceof ChokhError ? error.message : messages.states.error);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.segment}>
+      <button
+        type="button"
+        className={popover.item}
+        aria-label={format(messages.segments.apply, { name: segment.name })}
+        title={segment.filters.map(describe).join(', ')}
+        onClick={() => {
+          set({ ...query, filters: segment.filters.map((filter) => ({ ...filter })) });
+          onDone();
+        }}
+      >
+        <span>{segment.name}</span>
+        <span className={popover.itemNote}>
+          {count === 1 ? messages.segments.oneFilter : format(messages.segments.filtersOf, { count })}
+        </span>
+      </button>
+      {confirming ? (
+        <div className={styles.segmentActions}>
+          <span className={styles.pickerNote}>
+            {format(messages.segments.deleteConfirm, { name: segment.name })}
+          </span>
+          {problem !== null && (
+            <span className={styles.pickerNote} role="alert">
+              {problem}
+            </span>
+          )}
+          <Button onClick={() => void remove()} disabled={busy}>
+            {messages.segments.deleteYes}
+          </Button>
+          <Button variant="quiet" onClick={() => setConfirming(false)} disabled={busy}>
+            {messages.segments.deleteNo}
+          </Button>
+        </div>
+      ) : (
+        <div className={styles.segmentActions}>
+          <Button
+            variant="quiet"
+            aria-pressed={query.vs === segment.id}
+            onClick={() => {
+              set({ ...query, vs: query.vs === segment.id ? null : segment.id });
+              onDone();
+            }}
+          >
+            {messages.segments.compare}
+          </Button>
+          {owner && (
+            <Button variant="quiet" onClick={() => setConfirming(true)}>
+              {messages.segments.delete}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The filters on screen, saved under a name. Only drawn for an owner with a
+// filter on; everybody else reads why in one sentence.
+function SaveSegment({ onSaved }: { onSaved: () => void }): JSX.Element {
+  const { client, site } = useApp();
+  const { query } = useViewQuery();
+  const refresh = useRefreshSegments();
+  const [name, setName] = useState('');
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const missing = tried && name.trim() === '';
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setTried(true);
+    if (name.trim() === '') {
+      return;
+    }
+    setBusy(true);
+    setProblem(null);
+    try {
+      await api.createSegment(client, site.id, { name: name.trim(), filters: query.filters });
+      setName('');
+      setTried(false);
+      await refresh();
+      onSaved();
+    } catch (error) {
+      setProblem(
+        error instanceof ChokhError && error.code === 'SEGMENT_EXISTS'
+          ? messages.segments.exists
+          : error instanceof ChokhError && error.code === 'SEGMENT_LIMIT'
+            ? format(messages.segments.limit, { max: MAX_SEGMENTS_PER_SITE })
+            : error instanceof ChokhError
+              ? error.message
+              : messages.states.error,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className={styles.custom} onSubmit={(event) => void submit(event)} noValidate>
+      <p className={popover.heading}>{messages.segments.saveTitle}</p>
+      <p className={styles.pickerNote}>{query.filters.map(describe).join(', ')}</p>
+      <Field
+        label={messages.segments.name}
+        placeholder={messages.segments.namePlaceholder}
+        maxLength={100}
+        value={name}
+        disabled={busy}
+        onChange={(event) => setName(event.target.value)}
+        {...(missing ? { problem: messages.segments.required } : {})}
+      />
+      {problem !== null && (
+        <p className={styles.pickerNote} role="alert">
+          {problem}
+        </p>
+      )}
+      <Button type="submit" variant="primary" block disabled={busy}>
+        {busy ? messages.segments.saving : messages.segments.save}
+      </Button>
+    </form>
+  );
+}
+
+function SegmentPicker(): JSX.Element {
+  const { client, site, me } = useApp();
+  const { query } = useViewQuery();
+  const segments = useSegments(client, site.id);
+  const list = segments.data?.data.segments ?? [];
+  const owner = isOwner(me.teams, site.teamId);
+
+  return (
+    <Popover
+      align="left"
+      label={messages.segments.picker}
+      trigger={({ open, toggle }) => (
+        <Button variant="quiet" onClick={toggle} aria-expanded={open} aria-haspopup="true">
+          {messages.segments.picker}
+          <svg
+            className={styles.pickerCaret}
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="currentColor"
+          >
+            <path d="M7 10l5 5 5-5z" />
+          </svg>
+        </Button>
+      )}
+    >
+      {({ close }) => (
+        <>
+          <p className={popover.heading}>{messages.segments.picker}</p>
+          {segments.isError ? (
+            <p className={styles.pickerNote}>{messages.states.error}</p>
+          ) : segments.isPending ? null : list.length === 0 ? (
+            <>
+              <p className={styles.pickerNote}>{messages.segments.empty}</p>
+              <p className={styles.pickerNote}>{messages.segments.emptyLede}</p>
+            </>
+          ) : (
+            list.map((segment) => (
+              <SegmentRow key={segment.id} segment={segment} owner={owner} onDone={close} />
+            ))
+          )}
+          {query.filters.length > 0 &&
+            (owner ? (
+              <>
+                <div className={popover.divider} />
+                <SaveSegment onSaved={close} />
+              </>
+            ) : (
+              <p className={styles.pickerNote}>{messages.segments.ownerOnly}</p>
+            ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 // The goal that is on, with the site-wide answer beside its name. The same
 // aggregate the Overview's tiles read, so on the Overview it is no read at all.
 function GoalChip({ goal }: { goal: Goal }): JSX.Element {
@@ -220,13 +455,15 @@ function CustomRange({ close }: { close: () => void }): JSX.Element {
 }
 
 export function RangeBar(): JSX.Element {
-  const { site, now, goals } = useApp();
-  const { query, set, requestedGoal } = useViewQuery();
+  const { site, now, goals, segments } = useApp();
+  const { query, set, requestedGoal, requestedVs } = useViewQuery();
   const timezone = site.settings.timezone;
   const goal = query.goal === null ? undefined : goals?.find((each) => each.id === query.goal);
   // A link naming a goal the list does not have: dropped, and said so, with a
-  // way to take it out of the link.
+  // way to take it out of the link. A compared segment, the same.
   const goalGone = requestedGoal !== null && query.goal === null && goals !== undefined;
+  const compared = query.vs === null ? undefined : segments?.find((each) => each.id === query.vs);
+  const vsGone = requestedVs !== null && query.vs === null && segments !== undefined;
 
   return (
     <div className={styles.bar}>
@@ -331,6 +568,7 @@ export function RangeBar(): JSX.Element {
       </Popover>
 
       <GoalPicker />
+      <SegmentPicker />
 
       <span className={styles.spacer} />
       {/*
@@ -346,9 +584,45 @@ export function RangeBar(): JSX.Element {
         <span className={styles.zoneShort}>{timezone}</span>
       </span>
 
-      {(query.filters.length > 0 || goal !== undefined || goalGone) && (
+      {(query.filters.length > 0 ||
+        goal !== undefined ||
+        goalGone ||
+        compared !== undefined ||
+        vsGone) && (
         <div className={styles.chips}>
           {goal !== undefined && <GoalChip goal={goal} />}
+          {compared !== undefined && (
+            <span className={styles.chip}>
+              <span className={styles.chipText}>
+                {format(messages.segments.comparing, { name: compared.name })}
+              </span>
+              <InfoDot
+                label={format(messages.segments.comparing, { name: compared.name })}
+                text={messages.segments.comparingHelp}
+              />
+              <button
+                type="button"
+                className={styles.chipOff}
+                onClick={() => set({ ...query, vs: null })}
+                aria-label={messages.segments.stopComparing}
+              >
+                {REMOVE_ICON}
+              </button>
+            </span>
+          )}
+          {vsGone && (
+            <span className={[styles.chip, styles.chipWarn].join(' ')}>
+              <span className={styles.chipText}>{messages.segments.gone}</span>
+              <button
+                type="button"
+                className={styles.chipOff}
+                onClick={() => set({ ...query, vs: null })}
+                aria-label={messages.segments.stopComparing}
+              >
+                {REMOVE_ICON}
+              </button>
+            </span>
+          )}
           {goalGone && (
             <span className={[styles.chip, styles.chipWarn].join(' ')}>
               <span className={styles.chipText}>{messages.goals.gone}</span>

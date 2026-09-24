@@ -48,6 +48,7 @@ function minuteQuery(now: number): ViewQuery {
     interval: 'minute',
     metric: DEFAULT_METRIC,
     goal: null,
+    vs: null,
   };
 }
 

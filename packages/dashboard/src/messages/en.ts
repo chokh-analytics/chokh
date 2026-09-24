@@ -411,6 +411,37 @@ export const messages = {
     deleteNo: 'Keep it',
   },
 
+  // Saved filter lists. A segment is exactly what a report can already be
+  // narrowed by, so applying one is writing its filters into the link.
+  segments: {
+    picker: 'Segments',
+    empty: 'No segments yet.',
+    emptyLede: 'Filter a report, then save the filters here to apply them again in one press.',
+    apply: 'Apply {name}',
+    compare: 'Compare',
+    comparing: 'Compared with {name}',
+    comparingHelp:
+      'The dashed line is the segment on the same range, drawn from its own filters rather than the filters on screen. The previous period steps aside while a segment is compared.',
+    stopComparing: 'Stop comparing',
+    filtersOf: '{count} filters',
+    oneFilter: '1 filter',
+    saveTitle: 'Save these filters as a segment',
+    name: 'Name',
+    namePlaceholder: 'Mobile from Bangladesh',
+    save: 'Save the segment',
+    saving: 'Saving',
+    exists: 'A segment with these filters already exists.',
+    limit: 'A site can have at most {max} segments.',
+    required: 'This needs a name.',
+    ownerOnly: 'Only an owner of this site can save or delete a segment.',
+    delete: 'Delete',
+    deleteConfirm:
+      'Delete {name}? Nothing is lost: a segment is a saved filter list, and saving the same filters again brings it back.',
+    deleteYes: 'Delete it',
+    deleteNo: 'Keep it',
+    gone: 'That segment no longer exists.',
+  },
+
   // The paths visits took, from the page they came in on through three more.
   journeys: {
     help: 'Visits, not visitors: each path is one visit, from the page it came in on through the next three, with a page reloaded back to back counted once. Each step keeps its most visited pages and folds the rest into Other. Pressing a page shows only the visits that saw it, wherever they came in.',

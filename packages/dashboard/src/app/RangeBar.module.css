@@ -205,3 +205,19 @@
     order: 4;
   }
 }
+
+/* One saved segment in the picker: the row that applies it, and under it the
+   compare and delete controls, or the confirmation in their place. */
+.segment {
+  display: grid;
+  gap: var(--s1);
+  padding-bottom: var(--s1);
+}
+
+.segmentActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  padding: 0 var(--s2);
+}

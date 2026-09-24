@@ -1,5 +1,5 @@
 import { QueryClient, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
-import type { Dimension } from '@chokh/store/contract';
+import type { Dimension, Segment } from '@chokh/store/contract';
 
 import { api, type LicenseStatus, type Me } from './api.js';
 import { isRetryable, type Answer, type Client } from './client.js';
@@ -115,6 +115,22 @@ export function useGoals(client: Client, siteId: string) {
   });
 }
 
+// A site's segments, for the picker and for vouching for the id a link
+// compares against. On the goal list's clock and refreshed by hand after every
+// save and delete, for the goal list's reason.
+export function segmentsKey(siteId: string): unknown[] {
+  return ['segments', siteId];
+}
+
+export function useSegments(client: Client, siteId: string) {
+  return useQuery({
+    queryKey: segmentsKey(siteId),
+    queryFn: () => api.segments(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
 // A site's funnels, for the Funnels page. On the goal list's clock and refreshed
 // by hand after every create and delete, for the goal list's reason.
 export function funnelsKey(siteId: string): unknown[] {
@@ -149,6 +165,24 @@ export function useTimeseries(context: ReportContext) {
   return useQuery({
     queryKey: ['timeseries', ...cacheKey(context.siteId, params)],
     queryFn: () => api.timeseries(context.client, context.siteId, params),
+    ...liveness(context.query, context.now),
+  });
+}
+
+// The chart's second series while a segment is compared: the same range and
+// interval, the segment's own filters in place of the ones on screen, and no
+// previous period, which steps aside while a segment is on. Asked only while
+// one is.
+export function useSegmentTimeseries(context: ReportContext, segment: Segment | undefined) {
+  const params = toStatsParams({
+    ...context.query,
+    filters: segment?.filters ?? [],
+    compare: null,
+  });
+  return useQuery({
+    queryKey: ['timeseries', ...cacheKey(context.siteId, params)],
+    queryFn: () => api.timeseries(context.client, context.siteId, params),
+    enabled: segment !== undefined,
     ...liveness(context.query, context.now),
   });
 }
