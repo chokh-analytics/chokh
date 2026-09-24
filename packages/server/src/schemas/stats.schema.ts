@@ -45,10 +45,12 @@ const OPERATORS: Readonly<Record<string, Filter['op']>> = {
   '~': 'contains',
 };
 
-const filterObject = z.object({
+// Exported for the segment body, so what a report takes and what a segment
+// saves are one shape.
+export const filterObject = z.object({
   dim: dimension,
   op: z.enum(['is', 'is_not', 'contains']),
-  value: z.string(),
+  value: z.string().max(1024),
 });
 
 // Two spellings, because both callers are real. A dashboard builds filters as

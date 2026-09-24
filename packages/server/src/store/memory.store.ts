@@ -4,6 +4,7 @@ import {
   JOURNEY_ROWS_PER_VISIT,
   MAX_FUNNEL_ROWS_PER_VISITOR,
   MAX_GOALS_PER_SITE,
+  MAX_SEGMENTS_PER_SITE,
   MAX_PROPERTY_KEYS,
   REALTIME_WINDOW_MS,
   ROLLED_DIMENSIONS,
@@ -95,6 +96,7 @@ import {
   type RegroupSummary,
   type RollupRecord,
   type RollupSummary,
+  type Segment,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -131,6 +133,10 @@ const NO_DOMAIN =
 
 // A funnel holds an array of steps, so a copy that stopped at the top level
 // would hand a caller the stored steps to change.
+function copySegment(segment: Segment): Segment {
+  return { ...segment, filters: segment.filters.map((filter) => ({ ...filter })) };
+}
+
 function copyFunnel(funnel: Funnel): Funnel {
   return { ...funnel, steps: funnel.steps.map((step) => ({ ...step })) };
 }
@@ -159,6 +165,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let apiKeys: StoredApiKey[] = [];
   let auditLog: AuditRecord[] = [];
   let goals: Goal[] = [];
+  let segments: Segment[] = [];
   let funnels: Funnel[] = [];
 
   function siteOrThrow(siteId: string): Site {
@@ -767,6 +774,44 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve(deleted);
     },
 
+    segments(siteId: string): Promise<Segment[]> {
+      return Promise.resolve(
+        segments
+          .filter((row) => row.siteId === siteId)
+          .sort(
+            (left, right) =>
+              left.name.localeCompare(right.name) || left.createdAt - right.createdAt,
+          )
+          .map(copySegment),
+      );
+    },
+
+    segment(siteId: string, segmentId: string): Promise<Segment | null> {
+      const found = segments.find((row) => row.siteId === siteId && row.id === segmentId);
+      return Promise.resolve(found === undefined ? null : copySegment(found));
+    },
+
+    async createSegment(segment: Segment): Promise<void> {
+      siteOrThrow(segment.siteId);
+      if (segments.some((row) => row.siteId === segment.siteId && row.id === segment.id)) {
+        throw new StoreQueryError('SEGMENT_EXISTS', 'A segment already saves those filters');
+      }
+      if (segments.filter((row) => row.siteId === segment.siteId).length >= MAX_SEGMENTS_PER_SITE) {
+        throw new StoreQueryError(
+          'SEGMENT_LIMIT',
+          `A site can have at most ${MAX_SEGMENTS_PER_SITE} segments`,
+        );
+      }
+      segments.push(copySegment(segment));
+    },
+
+    deleteSegment(siteId: string, segmentId: string): Promise<boolean> {
+      const kept = segments.filter((row) => !(row.siteId === siteId && row.id === segmentId));
+      const deleted = kept.length !== segments.length;
+      segments = kept;
+      return Promise.resolve(deleted);
+    },
+
     funnels(siteId: string): Promise<Funnel[]> {
       return Promise.resolve(
         funnels
@@ -897,6 +942,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       auditLog = [];
       goals = [];
       funnels = [];
+      segments = [];
       bySiteId.clear();
       ownPresence.clear();
     },

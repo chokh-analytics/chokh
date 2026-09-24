@@ -6,6 +6,7 @@ import {
   DEFAULT_TEAM_ID,
   funnelIdFor,
   goalIdFor,
+  segmentIdFor,
   type StoredApiKey,
   type StoredTeam,
   type StoredUser,
@@ -13,7 +14,10 @@ import {
 import {
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
+  MAX_SEGMENTS_PER_SITE,
   StoreQueryError,
+  type Filter,
+  type Segment,
   type Funnel,
   type FunnelStep,
   type FunnelWindow,
@@ -64,6 +68,17 @@ function goal(siteId: string, kind: GoalKind, match: string, at = NOW): Goal {
     name: match,
     kind,
     match,
+    createdBy: 'u_1',
+    createdAt: at,
+  };
+}
+
+function segment(siteId: string, filters: Filter[], name: string, at = NOW): Segment {
+  return {
+    siteId,
+    id: segmentIdFor(siteId, filters),
+    name,
+    filters,
     createdBy: 'u_1',
     createdAt: at,
   };
@@ -379,6 +394,79 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
 
       it('refuses a goal on a site nobody registered', async () => {
         expect(await refusal(() => store.createGoal(goal('s_nobody', 'event', 'signup')))).toBe(
+          'UNKNOWN_SITE',
+        );
+      });
+    });
+
+    describe('segments', () => {
+      const MOBILE: Filter[] = [{ dim: 'device', op: 'is', value: 'mobile' }];
+      const ORGANIC_BD: Filter[] = [
+        { dim: 'channel', op: 'is', value: 'organic' },
+        { dim: 'country', op: 'is', value: 'BD' },
+      ];
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_segments', ['segments.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('stores a segment and reads it back by id and in the list, by name', async () => {
+        const mobile = segment('s_segments', MOBILE, 'Mobile', NOW + 10);
+        await store.createSegment(mobile);
+        await store.createSegment(segment('s_segments', ORGANIC_BD, 'Bangladesh, organic', NOW));
+
+        expect(await store.segment('s_segments', mobile.id)).toEqual(mobile);
+        const rows = await store.segments('s_segments');
+        expect(rows.map((row) => row.name)).toEqual(['Bangladesh, organic', 'Mobile']);
+        expect(rows[0]?.filters).toEqual(ORGANIC_BD);
+        expect(await store.segments('s_else')).toEqual([]);
+      });
+
+      it('refuses the same filters saved twice, because the id is the filters', async () => {
+        const again = { ...segment('s_segments', MOBILE, 'Phones') };
+        expect(again.id).toBe(segmentIdFor('s_segments', MOBILE));
+        expect(await refusal(() => store.createSegment(again))).toBe('SEGMENT_EXISTS');
+        // The same list in another order is the same segment.
+        expect(segmentIdFor('s_segments', [...ORGANIC_BD].reverse())).toBe(
+          segmentIdFor('s_segments', ORGANIC_BD),
+        );
+        // One more filter is another question.
+        await store.createSegment(
+          segment('s_segments', [...MOBILE, { dim: 'bot', op: 'is', value: 'false' }], 'Humans on phones'),
+        );
+        expect(await store.segments('s_segments')).toHaveLength(3);
+      });
+
+      it('refuses one segment more than a site may have', async () => {
+        const have = (await store.segments('s_segments')).length;
+        for (let index = have; index < MAX_SEGMENTS_PER_SITE; index += 1) {
+          await store.createSegment(
+            segment('s_segments', [{ dim: 'page', op: 'is', value: `/${index}` }], `Page ${index}`),
+          );
+        }
+        expect(await store.segments('s_segments')).toHaveLength(MAX_SEGMENTS_PER_SITE);
+        expect(
+          await refusal(() =>
+            store.createSegment(segment('s_segments', [{ dim: 'page', op: 'is', value: '/more' }], 'One too many')),
+          ),
+        ).toBe('SEGMENT_LIMIT');
+        // Another site's allowance is its own.
+        await store.createSegment(segment('s_else', MOBILE, 'Mobile'));
+      });
+
+      it("deletes once and says so the second time, and never another site's", async () => {
+        const id = segmentIdFor('s_segments', MOBILE);
+        expect(await store.deleteSegment('s_else', id)).toBe(false);
+        expect(await store.segment('s_segments', id)).not.toBeNull();
+        expect(await store.deleteSegment('s_segments', id)).toBe(true);
+        expect(await store.deleteSegment('s_segments', id)).toBe(false);
+        expect(await store.segment('s_segments', id)).toBeNull();
+      });
+
+      it('refuses a segment on a site nobody registered', async () => {
+        expect(await refusal(() => store.createSegment(segment('s_nobody', MOBILE, 'Mobile')))).toBe(
           'UNKNOWN_SITE',
         );
       });

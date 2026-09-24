@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { FunnelWindow, GoalKind, GoalMatch } from './query.js';
+import type { Filter, FunnelWindow, GoalKind, GoalMatch } from './query.js';
 
 // The control plane: who may read a site, with what, and who read an identity.
 //
@@ -112,6 +112,43 @@ export interface AuditRecord {
 export function goalIdFor(siteId: string, kind: GoalKind, match: string): string {
   const digest = createHash('sha256').update(`${siteId}\n${kind}\n${match}`).digest('base64url');
   return `g_${digest.slice(0, 16)}`;
+}
+
+// A segment's filters in the one order the id is derived from: by dimension,
+// then operator, then value, with a filter listed twice kept once. The same
+// set is one segment however a filter bar happened to list it.
+export function canonicalFilters(filters: readonly Filter[]): Filter[] {
+  const seen = new Set<string>();
+  const kept: Filter[] = [];
+  for (const filter of [...filters].sort(compareFilters)) {
+    const key = JSON.stringify([filter.dim, filter.op, filter.value]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push({ dim: filter.dim, op: filter.op, value: filter.value });
+  }
+  return kept;
+}
+
+function compareFilters(left: Filter, right: Filter): number {
+  return (
+    left.dim.localeCompare(right.dim) ||
+    left.op.localeCompare(right.op) ||
+    left.value.localeCompare(right.value)
+  );
+}
+
+// A segment's id, derived from what it saves, for the reason a goal's is: the
+// same filters saved under two names are the same rows twice, so the second is
+// refused by the unique index on {siteId, id} with no read before the write.
+// The name is not part of it. Encoded as JSON, as a funnel's is, so a value
+// holding any character still spells one question.
+export function segmentIdFor(siteId: string, filters: readonly Filter[]): string {
+  const question = JSON.stringify([
+    siteId,
+    canonicalFilters(filters).map((filter) => [filter.dim, filter.op, filter.value]),
+  ]);
+  const digest = createHash('sha256').update(question).digest('base64url');
+  return `sg_${digest.slice(0, 16)}`;
 }
 
 // A funnel's id, derived from what it asks, for the reason a goal's is: the

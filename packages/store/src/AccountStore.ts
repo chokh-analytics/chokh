@@ -1,5 +1,7 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
-import type { Funnel, Goal } from './query.js';
+import type { Funnel, Goal,
+  Segment,
+} from './query.js';
 import type { Site, SiteSettings } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -74,6 +76,19 @@ export interface AccountStore {
   createFunnel(funnel: Funnel): Promise<void>;
   // False when there was no such funnel on this site, so a route can answer 404.
   deleteFunnel(siteId: string, funnelId: string): Promise<boolean>;
+
+  // A site's segments, by name. Configuration, like goals: a segment is a
+  // saved filter list, applied by sending it to a report, so nothing is
+  // counted and a purge never touches one.
+  segments(siteId: string): Promise<Segment[]>;
+  segment(siteId: string, segmentId: string): Promise<Segment | null>;
+  // Refuses a site nobody registered with UNKNOWN_SITE, the same filters saved
+  // again with SEGMENT_EXISTS (the id is derived from them, so the unique
+  // index refuses it), and one more than MAX_SEGMENTS_PER_SITE with
+  // SEGMENT_LIMIT.
+  createSegment(segment: Segment): Promise<void>;
+  // False when there was no such segment on this site, so a route can answer 404.
+  deleteSegment(siteId: string, segmentId: string): Promise<boolean>;
 
   audit(row: AuditRecord): Promise<void>;
   // The trail for a site over a range, oldest first. Read by tests today and by

@@ -38,6 +38,9 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   GOAL_LIMIT: 409,
   // The site already has as many funnels as one may.
   FUNNEL_LIMIT: 409,
+  SEGMENT_EXISTS: 409,
+  // The site already has as many segments as one may.
+  SEGMENT_LIMIT: 409,
   // The caller asked for something the store cannot answer as asked.
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,

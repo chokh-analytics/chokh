@@ -662,6 +662,29 @@ export interface Funnel {
   createdAt: number;
 }
 
+// A segment: a named, saved filter list, and nothing more. Applying one is
+// sending its filters to a report, which every report already answers, so
+// nothing is counted when one is written and a purge never touches one. Every
+// dimension may be in it, the three a stay carries and the bot side included.
+export interface Segment {
+  siteId: string;
+  // Derived from the site and the canonical filter list (segmentIdFor), so the
+  // same filters saved twice are the same row and the unique index refuses
+  // it. The name is not part of the question.
+  id: string;
+  name: string;
+  // In canonical order: by dimension, then operator, then value, duplicates
+  // dropped. What the id was derived from.
+  filters: Filter[];
+  createdBy: string;
+  createdAt: number;
+}
+
+// How many segments a site may have, and how many filters one may hold. A
+// popover has to list the first and a report has to apply the second.
+export const MAX_SEGMENTS_PER_SITE = 50;
+export const MAX_SEGMENT_FILTERS = 10;
+
 // What a read needs of a funnel: the questions in order, and the window.
 export interface FunnelRead {
   steps: GoalMatch[];

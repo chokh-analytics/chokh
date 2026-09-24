@@ -18,6 +18,11 @@ import {
   createDeleteFunnelController,
   createListFunnelsController,
 } from '../controllers/funnels.controller.js';
+import {
+  createCreateSegmentController,
+  createDeleteSegmentController,
+  createListSegmentsController,
+} from '../controllers/segments.controller.js';
 import { createLicenseController } from '../controllers/license.controller.js';
 import {
   createUserController,
@@ -201,6 +206,25 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/goals/:goalId',
     { preHandler: scope('admin') },
     createDeleteGoalController(deps),
+  );
+
+  // Segments, the same split: reading the list is read:stats, adding and
+  // deleting are admin, because the list is shared by everybody who reads the
+  // site. Each hook is built for its own route.
+  app.get(
+    '/api/sites/:siteId/segments',
+    { preHandler: scope('read:stats') },
+    createListSegmentsController(deps),
+  );
+  app.post(
+    '/api/sites/:siteId/segments',
+    { preHandler: scope('admin') },
+    createCreateSegmentController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/segments/:segmentId',
+    { preHandler: scope('admin') },
+    createDeleteSegmentController(deps),
   );
 
   // Funnels, the same split: reading the list is read:stats, adding and

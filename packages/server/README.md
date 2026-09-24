@@ -225,6 +225,31 @@ that still has rows, so history within retention regroups and nothing older
 changes. A second process reads a changed rule up to a minute late, the site
 row being cached that long.
 
+### Segments
+
+A segment is a named, saved filter list, and nothing more: applying one is
+sending its filters to a report, which every report already answers, so a
+segment costs the reads nothing new and may hold every dimension, `entry`,
+`exit`, `channel`, `route` and `bot` included. Reading the list needs
+`read:stats`; adding and deleting need `admin`, because the list is shared by
+everybody who reads the site.
+
+```
+POST /api/sites/my_site/segments
+{ "name": "Mobile from Bangladesh",
+  "filters": [{ "dim": "device", "op": "is", "value": "mobile" },
+              { "dim": "country", "op": "is", "value": "BD" }] }
+```
+
+The filters are the JSON shape `filters=` takes, one to ten of them, stored in
+canonical order (dimension, operator, value) with a duplicate dropped. The id
+is derived from the site and that list, so the same filters saved again, in
+any order and under any name, are `409 SEGMENT_EXISTS` with the existing id in
+`details.segmentId`. A site has at most 50 (`409 SEGMENT_LIMIT`), a body that
+does not validate is `400 INVALID_SEGMENT` with the issues, and an id that is
+not this site's is `404 SEGMENT_NOT_FOUND`. There is no edit route: delete and
+add again. `GET` lists them by name.
+
 ### Goals and conversions
 
 A goal is a page being viewed or a custom event being sent, counted as a

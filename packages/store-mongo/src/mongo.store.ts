@@ -2,6 +2,7 @@ import {
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
+  MAX_SEGMENTS_PER_SITE,
   PROFILE_EVENT_LIMIT,
   JOURNEY_STEPS,
   REALTIME_WINDOW_MS,
@@ -83,6 +84,7 @@ import {
   type RegroupSummary,
   type RollupRecord,
   type RollupSummary,
+  type Segment,
   type Site,
   type StoreOptions,
   type StoredEvent,
@@ -142,6 +144,7 @@ import {
   EVENTS,
   FUNNELS,
   GOALS,
+  SEGMENTS,
   ROLLUPS_DAILY,
   SESSIONS,
   SITES,
@@ -219,6 +222,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const auditLog = db.collection<AuditRecord>(AUDIT_LOG);
   const goals = db.collection<Goal>(GOALS);
   const funnels = db.collection<Funnel>(FUNNELS);
+  const segments = db.collection<Segment>(SEGMENTS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -621,6 +625,51 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     async deleteApiKey(siteId: string, keyId: string): Promise<boolean> {
       const result = await apiKeys.deleteOne({ siteId, id: keyId });
+      return result.deletedCount > 0;
+    },
+
+    segments(siteId: string): Promise<Segment[]> {
+      // The {siteId, id} unique index answers the site by its prefix. At most
+      // fifty rows, so the order is set in memory rather than by an index of
+      // its own.
+      return segments
+        .find({ siteId }, { projection: { _id: 0 } })
+        .toArray()
+        .then((rows) =>
+          rows.sort(
+            (left, right) =>
+              left.name.localeCompare(right.name) || left.createdAt - right.createdAt,
+          ),
+        );
+    },
+
+    segment(siteId: string, segmentId: string): Promise<Segment | null> {
+      return segments.findOne({ siteId, id: segmentId }, { projection: { _id: 0 } });
+    },
+
+    async createSegment(segment: Segment): Promise<void> {
+      await siteOrThrow(segment.siteId);
+      if ((await segments.countDocuments({ siteId: segment.siteId })) >= MAX_SEGMENTS_PER_SITE) {
+        throw new StoreQueryError(
+          'SEGMENT_LIMIT',
+          `A site can have at most ${MAX_SEGMENTS_PER_SITE} segments`,
+        );
+      }
+      try {
+        await segments.insertOne({ ...segment, filters: segment.filters.map((f) => ({ ...f })) });
+      } catch (error) {
+        // The id is derived from the filters, so the unique index is what
+        // refuses the same filters saved twice, with no read before the write
+        // for two requests to race past.
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('SEGMENT_EXISTS', 'A segment already saves those filters');
+        }
+        throw error;
+      }
+    },
+
+    async deleteSegment(siteId: string, segmentId: string): Promise<boolean> {
+      const result = await segments.deleteOne({ siteId, id: segmentId });
       return result.deletedCount > 0;
     },
 
