@@ -47,6 +47,7 @@ export function buildExtension(
   async function register(app: FastifyInstance, deps: ApiDeps): Promise<void> {
     await registerEeRoutes(app, deps, state, {
       deliver,
+      delivery,
       publicUrl: delivery.publicUrl,
       tick: options.tick ?? false,
     });

@@ -18,12 +18,14 @@ describe('readDeliveryEnv', () => {
   it('reads nothing set as nothing', () => {
     expect(readDeliveryEnv({})).toEqual({
       smtpUrl: undefined,
+      brevoApiKey: undefined,
       mailFrom: undefined,
       telegramBotToken: undefined,
       publicUrl: undefined,
     });
     expect(readDeliveryEnv({ CHOKH_SMTP_URL: '', CHOKH_MAIL_FROM: '', CHOKH_TELEGRAM_BOT_TOKEN: '', CHOKH_PUBLIC_URL: '' })).toEqual({
       smtpUrl: undefined,
+      brevoApiKey: undefined,
       mailFrom: undefined,
       telegramBotToken: undefined,
       publicUrl: undefined,
@@ -40,6 +42,7 @@ describe('readDeliveryEnv', () => {
       }),
     ).toEqual({
       smtpUrl: 'smtps://user:pass@smtp-relay.example.test:465',
+      brevoApiKey: undefined,
       mailFrom: 'chokh@example.test',
       telegramBotToken: '123:abc',
       publicUrl: 'https://analytics.example.test',

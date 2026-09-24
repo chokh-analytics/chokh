@@ -153,11 +153,12 @@ the messages the way it stops the routes.
 | Variable | What it does |
 | --- | --- |
 | `CHOKH_SMTP_URL` | `smtp://user:pass@host:587` or `smtps://...`, the one string every mail provider documents. With `CHOKH_MAIL_FROM`, turns on the email channel |
-| `CHOKH_MAIL_FROM` | The address messages come from |
+| `CHOKH_BREVO_API_KEY` | The other way to send email: over HTTPS through Brevo's API, for a host whose outbound SMTP ports are closed (DigitalOcean closes 25, 465 and 587 by default). With `CHOKH_MAIL_FROM`, turns on the email channel; when both this and the SMTP URL are set, the API is used |
+| `CHOKH_MAIL_FROM` | The address messages come from, whichever way they go |
 | `CHOKH_TELEGRAM_BOT_TOKEN` | The token BotFather hands out. Turns on the Telegram channel; the chat id is on each alert |
 | `CHOKH_PUBLIC_URL` | Where this dashboard is reached from outside, so a message can carry a link to the Alerts page |
 
-All four are optional and read by `src/license/env.ts`, the one environment
+All five are optional and read by `src/license/env.ts`, the one environment
 reader this package has. A channel the install cannot send on is refused when
 the alert is created (`400 CHANNEL_UNAVAILABLE`, naming the variable), and the
 list route's `meta.channels` says which kinds this install can send, so the

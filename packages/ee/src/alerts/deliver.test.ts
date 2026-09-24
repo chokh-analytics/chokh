@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { DeliveryEnv } from '../license/env.js';
 import {
+  BREVO_SEND_URL,
   RETRY_AFTER_MS,
   SIGNATURE_HEADER,
   availableChannels,
@@ -18,6 +19,7 @@ import type { AlertMessage } from './messages.js';
 
 const ENV: DeliveryEnv = {
   smtpUrl: 'smtp://user:pass@mail.example.test:587',
+  brevoApiKey: undefined,
   mailFrom: 'chokh@example.test',
   telegramBotToken: '123456:not-a-real-token',
   publicUrl: 'https://analytics.example.test',
@@ -55,10 +57,15 @@ function json(status: number, body: unknown): Response {
 const noSleep = (): Promise<void> => Promise.resolve();
 
 describe('what an install can send on', () => {
-  it('names email only with both SMTP variables, Telegram only with a token, and a webhook always', () => {
+  it('names email with a from address and either SMTP or a Brevo key, Telegram only with a token, and a webhook always', () => {
     expect(availableChannels(ENV)).toEqual(['email', 'telegram', 'webhook']);
     expect(availableChannels({ ...ENV, mailFrom: undefined })).toEqual(['telegram', 'webhook']);
     expect(availableChannels({ ...ENV, smtpUrl: undefined, telegramBotToken: undefined })).toEqual(['webhook']);
+    expect(availableChannels({ ...ENV, smtpUrl: undefined, brevoApiKey: 'xkeysib-test' })).toEqual([
+      'email',
+      'telegram',
+      'webhook',
+    ]);
   });
 
   it('names a target a row may keep: the address, the chat, the host and never a query', () => {
@@ -100,11 +107,68 @@ describe('email', () => {
     });
   });
 
-  it('names the variables an install without SMTP is missing', async () => {
+  it('names the variables an install without SMTP or a Brevo key is missing', async () => {
     const deliverer = createDeliverer({ env: { ...ENV, smtpUrl: undefined }, sleep: noSleep });
     const outcome = await deliverer.send({ kind: 'email', to: 'ops@example.test' }, MESSAGE);
     expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain('CHOKH_SMTP_URL');
+    expect(outcome.error).toBe('CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY not set on this install');
+  });
+
+  // A host whose SMTP ports are closed sends over HTTPS instead, and never
+  // opens the mail library at all.
+  describe('over Brevo', () => {
+    const brevo: DeliveryEnv = { ...ENV, smtpUrl: undefined, brevoApiKey: 'xkeysib-test-key' };
+
+    it('posts the message to the API with the key in the header, and skips the mailer', async () => {
+      const { fetch: fetchFn, calls } = scripted([() => json(201, { messageId: '<abc@smtp-relay.mailin.fr>' })]);
+      let mailed = 0;
+      const deliverer = createDeliverer({
+        env: brevo,
+        fetch: fetchFn,
+        mailer: { sendMail: () => { mailed += 1; return Promise.resolve({}); } },
+        sleep: noSleep,
+      });
+      const outcome = await deliverer.send({ kind: 'email', to: 'ops@example.test' }, MESSAGE);
+      expect(outcome).toEqual({ channel: 'email', target: 'ops@example.test', ok: true });
+      expect(mailed).toBe(0);
+      expect(calls[0]?.url).toBe(BREVO_SEND_URL);
+      const headers = calls[0]?.init.headers as Record<string, string>;
+      expect(headers['api-key']).toBe('xkeysib-test-key');
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+        sender: { email: ENV.mailFrom },
+        to: [{ email: 'ops@example.test' }],
+        subject: MESSAGE.subject,
+        textContent: MESSAGE.text,
+      });
+    });
+
+    it("keeps Brevo's own reason, and tries once more after a 5xx", async () => {
+      const refusedKey = scripted([() => json(401, { code: 'unauthorized', message: 'Key not found' })]);
+      const outcome = await createDeliverer({ env: brevo, fetch: refusedKey.fetch, sleep: noSleep }).send(
+        { kind: 'email', to: 'ops@example.test' },
+        MESSAGE,
+      );
+      expect(outcome).toEqual({ channel: 'email', target: 'ops@example.test', ok: false, error: 'Key not found' });
+      expect(refusedKey.calls).toHaveLength(1);
+
+      const flaky = scripted([() => json(503, {}), () => json(201, { messageId: 'x' })]);
+      expect((await createDeliverer({ env: brevo, fetch: flaky.fetch, sleep: noSleep }).send({ kind: 'email', to: 'ops@example.test' }, MESSAGE)).ok).toBe(true);
+      expect(flaky.calls).toHaveLength(2);
+    });
+
+    it('prefers the API when both are set', async () => {
+      const { fetch: fetchFn, calls } = scripted([() => json(201, { messageId: 'x' })]);
+      let mailed = 0;
+      const deliverer = createDeliverer({
+        env: { ...ENV, brevoApiKey: 'xkeysib-test-key' },
+        fetch: fetchFn,
+        mailer: { sendMail: () => { mailed += 1; return Promise.resolve({}); } },
+        sleep: noSleep,
+      });
+      expect((await deliverer.send({ kind: 'email', to: 'ops@example.test' }, MESSAGE)).ok).toBe(true);
+      expect(mailed).toBe(0);
+      expect(calls).toHaveLength(1);
+    });
   });
 });
 

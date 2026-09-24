@@ -171,7 +171,16 @@ describe('the alert routes on a licensed install', () => {
     here = await install((deliver) =>
       buildExtension(
         { raw: signLicense(issuer.privateKey, payload()), publicKeys: [issuer.publicKey] },
-        { deliver, delivery: { smtpUrl: undefined, mailFrom: undefined, telegramBotToken: 'x', publicUrl: 'https://analytics.example.test' } },
+        {
+          deliver,
+          delivery: {
+            smtpUrl: undefined,
+            brevoApiKey: undefined,
+            mailFrom: undefined,
+            telegramBotToken: 'x',
+            publicUrl: 'https://analytics.example.test',
+          },
+        },
       ),
     );
   });
@@ -236,8 +245,8 @@ describe('the alert routes on a licensed install', () => {
     expect(response.statusCode).toBe(400);
     expect(body(response).error).toEqual({
       code: 'CHANNEL_UNAVAILABLE',
-      message: 'This install cannot send email: set CHOKH_SMTP_URL and CHOKH_MAIL_FROM',
-      details: { channel: 'email', variable: 'CHOKH_SMTP_URL and CHOKH_MAIL_FROM' },
+      message: 'This install cannot send email: set CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY and CHOKH_MAIL_FROM',
+      details: { channel: 'email', variable: 'CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY and CHOKH_MAIL_FROM' },
     });
   });
 

@@ -746,9 +746,10 @@ empty and events are still collected.
 | `AUTH_RATE_LIMIT` | `10` | Sign-in, registration and SSO attempts a minute, per address |
 | `COOKIE_SECURE` | yes in production | `false` lets a developer sign in over plain http |
 
-`CHOKH_LICENSE_KEY` and the four variables that say where alerts go
-(`CHOKH_SMTP_URL`, `CHOKH_MAIL_FROM`, `CHOKH_TELEGRAM_BOT_TOKEN`,
-`CHOKH_PUBLIC_URL`) are read by `packages/ee` and by nothing here; see
+`CHOKH_LICENSE_KEY` and the five variables that say where alerts go
+(`CHOKH_SMTP_URL`, `CHOKH_BREVO_API_KEY`, `CHOKH_MAIL_FROM`,
+`CHOKH_TELEGRAM_BOT_TOKEN`, `CHOKH_PUBLIC_URL`) are read by `packages/ee` and
+by nothing here; see
 [its README](../ee/README.md).
 
 An install running more than one process should have `REDIS_URL`. Without it each

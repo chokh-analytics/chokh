@@ -3,10 +3,11 @@ import { fail, ok, requireSiteScope, type ApiDeps } from '@chokh/server';
 import { MAX_ALERTS_PER_SITE, alertIdFor, type Alert, type StoreQueryError } from '@chokh/store';
 
 import { ALERTS_FEATURE, alertParamsSchema, createAlertSchema } from '../alerts/conditions.js';
-import type { Deliverer } from '../alerts/deliver.js';
+import { emailNeeds, type Deliverer } from '../alerts/deliver.js';
 import { notify, startAlertTick } from '../alerts/evaluate.js';
 import { describeCondition } from '../alerts/messages.js';
 import { requireLicense } from '../license/guard.js';
+import type { DeliveryEnv } from '../license/env.js';
 import type { LicenseState } from '../license/state.js';
 
 // Every paid route, in one file, the way the core keeps its own in one file:
@@ -23,6 +24,8 @@ export const PING_FEATURE = 'ee.ping';
 
 export interface EeRouteDeps {
   deliver: Deliverer;
+  // What the deliverer was built from, so a refusal can name the variable.
+  delivery: DeliveryEnv;
   publicUrl?: string | undefined;
   // Whether register starts the five-minute tick. The server does; a test
   // that only wants the routes does not.
@@ -131,7 +134,7 @@ export async function registerEeRoutes(
       if (unavailable !== undefined) {
         const variable =
           unavailable.kind === 'email'
-            ? 'CHOKH_SMTP_URL and CHOKH_MAIL_FROM'
+            ? emailNeeds(ee.delivery).join(' and ')
             : 'CHOKH_TELEGRAM_BOT_TOKEN';
         return reply
           .code(400)

@@ -39,9 +39,24 @@ export const RETRY_AFTER_MS = 5_000;
 export const DELIVERY_TIMEOUT_MS = 10_000;
 export const SIGNATURE_HEADER = 'x-chokh-signature';
 
+// Which variables email is missing on this install, named for the person
+// who has to set them; empty when email can be sent.
+export function emailNeeds(env: DeliveryEnv): string[] {
+  const needs: string[] = [];
+  if (env.smtpUrl === undefined && env.brevoApiKey === undefined) {
+    needs.push('CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY');
+  }
+  if (env.mailFrom === undefined) {
+    needs.push('CHOKH_MAIL_FROM');
+  }
+  return needs;
+}
+
+export const BREVO_SEND_URL = 'https://api.brevo.com/v3/smtp/email';
+
 export function availableChannels(env: DeliveryEnv): AlertChannelKind[] {
   const kinds: AlertChannelKind[] = [];
-  if (env.smtpUrl !== undefined && env.mailFrom !== undefined) {
+  if (emailNeeds(env).length === 0) {
     kinds.push('email');
   }
   if (env.telegramBotToken !== undefined) {
@@ -136,9 +151,40 @@ export function createDeliverer(options: DelivererOptions): Deliverer {
     return lastError;
   }
 
+  // Over Brevo's API when a key is set, over SMTP otherwise. The API is an
+  // HTTPS POST, which is what a host with its SMTP ports closed can do, and
+  // it goes through the same two tries the other HTTP deliveries get.
+  function sendBrevo(apiKey: string, from: string, to: string, message: AlertMessage): Promise<string | null> {
+    return post(
+      BREVO_SEND_URL,
+      { 'content-type': 'application/json', 'api-key': apiKey },
+      JSON.stringify({
+        sender: { email: from },
+        to: [{ email: to }],
+        subject: message.subject,
+        textContent: message.text,
+      }),
+      async (response) => {
+        if (response.ok) {
+          return null;
+        }
+        // Brevo says why in the body, and the body never carries the key.
+        const parsed = (await response.json().catch(() => null)) as { message?: string } | null;
+        return parsed?.message ?? `Brevo answered ${response.status}`;
+      },
+    );
+  }
+
   async function sendEmail(to: string, message: AlertMessage): Promise<string | null> {
-    if (env.smtpUrl === undefined || env.mailFrom === undefined) {
-      return 'CHOKH_SMTP_URL and CHOKH_MAIL_FROM are not set on this install';
+    const needs = emailNeeds(env);
+    if (needs.length > 0 || env.mailFrom === undefined) {
+      return `${needs.join(' and ')} not set on this install`;
+    }
+    if (env.brevoApiKey !== undefined) {
+      return sendBrevo(env.brevoApiKey, env.mailFrom, to, message);
+    }
+    if (env.smtpUrl === undefined) {
+      return 'CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY not set on this install';
     }
     try {
       const transport = await mailerFor(env.smtpUrl);
