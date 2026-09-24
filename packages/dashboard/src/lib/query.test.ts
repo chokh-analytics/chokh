@@ -71,11 +71,13 @@ describe('parseQuery', () => {
     expect(parse('compare=nonsense').compare).toBe(DEFAULT_COMPARE);
   });
 
-  it('reads the filters and drops the ones the store would refuse', () => {
+  it('reads the filters, a dimension only a stay carries included', () => {
     expect(parse('filters=page%3D%3D%2Fpricing').filters).toEqual([
       { dim: 'page', op: 'is', value: '/pricing' },
     ]);
-    expect(parse('filters=entry%3D%3D%2Fhome').filters).toEqual([]);
+    expect(parse('filters=entry%3D%3D%2Fhome').filters).toEqual([
+      { dim: 'entry', op: 'is', value: '/home' },
+    ]);
   });
 
   // An interval the range cannot carry is a request the store would refuse, so

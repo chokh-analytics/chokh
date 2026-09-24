@@ -60,10 +60,9 @@ export function Sources(): JSX.Element {
   return (
     <ReportPage title={messages.reports.sourcesTitle}>
       {/*
-        A channel is a property of a whole visit, so the store refuses a filter
-        naming one and these rows are plain text rather than buttons. That is
-        deliberate: five rows that highlight, take a click and change nothing
-        are worse than five rows that never invited one.
+        A channel is a property of a whole visit, and a click on one narrows
+        every report to the visits that came in that way: the store answers
+        the filter by the stays that match it.
       */}
       <DimensionCard
         title={messages.reports.channels}

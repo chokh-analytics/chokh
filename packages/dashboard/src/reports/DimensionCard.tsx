@@ -4,7 +4,7 @@ import type { Dimension } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { useTabParam } from '../app/useTabParam.js';
 import { useViewQuery } from '../app/useViewQuery.js';
-import { isFilterable, toggleFilter } from '../lib/filters.js';
+import { toggleFilter } from '../lib/filters.js';
 import { countryName, formatCount, formatExact, formatRate, languageName } from '../lib/format.js';
 import { api } from '../lib/api.js';
 import { toStatsParams } from '../lib/query.js';
@@ -96,7 +96,6 @@ export function DimensionCard({
     // drawn, so pressing "Show more" cannot rescale the bars that were already
     // on screen whatever order the rows arrive in.
     const top = data.reduce((best, row) => Math.max(best, row.metrics.visitors), 0);
-    const filterable = isFilterable(dim);
     return shown.map((row) => ({
       key: row.key,
       label: labelFor(dim, row.key),
@@ -124,15 +123,13 @@ export function DimensionCard({
       ...(dim === 'channel' && row.key === 'ai'
         ? { icon: <Code>{messages.reports.aiPill}</Code> }
         : {}),
-      ...(filterable
-        ? {
-            onClick: () =>
-              set({
-                ...query,
-                filters: toggleFilter(query.filters, { dim, op: 'is', value: row.key }),
-              }),
-          }
-        : {}),
+      // Every row narrows the report it is on, the entry, exit and channel
+      // rows included: the store answers those by the stays that match.
+      onClick: () =>
+        set({
+          ...query,
+          filters: toggleFilter(query.filters, { dim, op: 'is', value: row.key }),
+        }),
     }));
   }, [data, shown, dim, secondary, set, query, converting]);
 
@@ -179,15 +176,6 @@ export function DimensionCard({
           showHead
           caption={`${title}: ${current.label}`}
         />
-        {/*
-          Why these rows do nothing when clicked. Every other report in this
-          product narrows on a click, so five rows that do not are a broken
-          page unless the page says otherwise: the store refuses a filter
-          naming an entry page, an exit page or a channel, because a raw event
-          does not carry one. The sentence existed in messages from the start
-          and no component ever rendered it.
-        */}
-        {!isFilterable(dim) && <p className={styles.note}>{messages.filters.notFilterable}</p>}
         {note !== undefined && <p className={styles.note}>{note}</p>}
         {converting && typeof retentionDays === 'number' && (
           <p className={styles.note}>

@@ -4,7 +4,7 @@ import type { Dimension, Metrics } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { RangeBar } from '../app/RangeBar.js';
 import { useViewQuery } from '../app/useViewQuery.js';
-import { isFilterable, toggleFilter } from '../lib/filters.js';
+import { toggleFilter } from '../lib/filters.js';
 import {
   delta,
   deltaPoints,
@@ -104,11 +104,6 @@ function useBreakdownCard(
   const rows: BreakdownRowView[] = useMemo(() => {
     const data = result.data?.data.rows ?? [];
     const top = data.reduce((best, row) => Math.max(best, row.metrics.visitors), 0);
-    // The store refuses a filter naming an entry page, an exit page or a
-    // channel, so toggleFilter drops one and the row does nothing. Five Sources
-    // rows that highlight, take a click and change nothing are worse than five
-    // rows that do not invite one: the row is plain text instead.
-    const filterable = isFilterable(dim);
     return data.map((row) => ({
       key: row.key,
       label: label(row.key),
@@ -118,12 +113,8 @@ function useBreakdownCard(
       icon: icon?.(row.key),
       // One column on the Overview, and a second only once a goal is chosen.
       ...(query.goal === null ? {} : conversionColumn(row.conversion)),
-      ...(filterable
-        ? {
-            onClick: () =>
-              set({ ...query, filters: toggleFilter(filters, { dim, op: 'is', value: row.key }) }),
-          }
-        : {}),
+      onClick: () =>
+        set({ ...query, filters: toggleFilter(filters, { dim, op: 'is', value: row.key }) }),
     }));
   }, [result.data, label, icon, dim, set, query, filters]);
 

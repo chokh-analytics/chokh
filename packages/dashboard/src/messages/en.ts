@@ -143,6 +143,7 @@ export const messages = {
 
   dimensions: {
     page: 'Page',
+    route: 'Route',
     entry: 'Entry page',
     exit: 'Exit page',
     referrer: 'Referrer',
@@ -347,8 +348,6 @@ export const messages = {
     is: 'is',
     isNot: 'is not',
     contains: 'contains',
-    notFilterable:
-      'A stay spans pages, so it cannot be filtered to one entry page, exit page or channel yet.',
     unsupported: 'That filter cannot be answered: {message}',
   },
 

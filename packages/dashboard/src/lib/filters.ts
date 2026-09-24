@@ -1,4 +1,4 @@
-import { DIMENSIONS, SESSION_DIMENSIONS, type Dimension, type Filter } from '@chokh/store/contract';
+import { DIMENSIONS, type Dimension, type Filter } from '@chokh/store/contract';
 
 // Filters, in the spelling the store already parses.
 //
@@ -25,14 +25,6 @@ const SIGNS: [string, Operator][] = [
 
 export function isDimension(value: string): value is Dimension {
   return (DIMENSIONS as readonly string[]).includes(value);
-}
-
-// The three a raw event does not carry. The store refuses a filter naming one
-// with UNSUPPORTED_FILTER rather than answering an empty report, so the
-// dashboard refuses it a step earlier: a row that cannot filter is not
-// clickable, and a filter that cannot be applied is never built.
-export function isFilterable(dim: Dimension): boolean {
-  return !SESSION_DIMENSIONS.includes(dim);
 }
 
 export function filterKey(filter: Filter): string {
@@ -121,8 +113,10 @@ export function decodeFilters(text: string | null | undefined): Filter[] {
     return [];
   }
   const filters = trimmed.startsWith('[') ? parseJson(trimmed) : parseCompact(trimmed);
-  // The store would refuse these, so they never reach it.
-  return dedupe(filters.filter((filter) => isFilterable(filter.dim)));
+  // Every dimension is a filter, the three only a stay carries included: the
+  // store narrows a report to the stays that match one, so a link naming an
+  // entry page, an exit page or a channel is a link like any other.
+  return dedupe(filters);
 }
 
 // The same dimension and operator twice is a person clicking the same row
@@ -145,9 +139,6 @@ export function dedupe(filters: Filter[]): Filter[] {
 // Clicking a row adds its value. Clicking the same row again takes it off,
 // because the second click is somebody undoing the first.
 export function toggleFilter(filters: Filter[], filter: Filter): Filter[] {
-  if (!isFilterable(filter.dim)) {
-    return filters;
-  }
   const key = filterKey(filter);
   if (filters.some((existing) => filterKey(existing) === key)) {
     return filters.filter((existing) => filterKey(existing) !== key);

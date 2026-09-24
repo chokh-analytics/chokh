@@ -160,24 +160,6 @@ describe('DimensionCard', () => {
     expect(screen.getByRole('button', { name: /Show up to 100/ })).toBeInTheDocument();
   });
 
-  // Five rows that do nothing when clicked, on a page where every other row
-  // narrows the report, is a broken page unless the page says otherwise.
-  it('says why a card of rows cannot be clicked, and says nothing where they can', async () => {
-    serve();
-    render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />));
-
-    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
-    expect(within(card()).queryByText(/cannot be filtered/)).toBeNull();
-
-    await userEvent.click(screen.getByRole('tab', { name: 'Entry' }));
-    await waitFor(() => expect(window.location.search).toBe('?pages=entry'));
-    expect(
-      within(card()).getByText(
-        'A stay spans pages, so it cannot be filtered to one entry page, exit page or channel yet.',
-      ),
-    ).toBeInTheDocument();
-  });
-
   // The URL carries the range and the filters on screen, so what a person
   // downloads is what they were reading rather than the site's whole history.
   it('offers the rows on screen as a file, for the range on screen', async () => {
@@ -249,9 +231,10 @@ describe('DimensionCard', () => {
     expect(within(rowFor('Unknown')).queryByText('AI')).toBeNull();
   });
 
-  // A raw event carries no entry page, so the store refuses that filter. A row
-  // that cannot be filtered is not a button.
-  it('makes a row pressable only when the store can filter by it', async () => {
+  // The store narrows a report to the stays that came in on a page, so an
+  // entry row is a button like every other row, and pressing it writes the
+  // filter into the link with no sentence about what cannot be done.
+  it('makes every row pressable, the entry rows included', async () => {
     serve();
     render(show(<DimensionCard title="Top pages" tabs={TABS} param="pages" />));
 
@@ -260,7 +243,14 @@ describe('DimensionCard', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'Entry' }));
     await waitFor(() => expect(window.location.search).toBe('?pages=entry'));
-    expect(within(card()).getByText('/p0').closest('button')).toBeNull();
+    await waitFor(() => expect(within(card()).getByText('/p0')).toBeInTheDocument());
+    expect(within(card()).queryByText(/cannot be filtered/)).toBeNull();
+    const row = within(card()).getByText('/p0').closest('button');
+    expect(row).not.toBeNull();
+    await userEvent.click(row as HTMLElement);
+    await waitFor(() =>
+      expect(new URLSearchParams(window.location.search).get('filters')).toBe('entry==/p0'),
+    );
   });
 });
 

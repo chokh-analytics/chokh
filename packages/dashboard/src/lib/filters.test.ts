@@ -5,7 +5,6 @@ import {
   decodeFilters,
   dedupe,
   encodeFilters,
-  isFilterable,
   removeFilter,
   toggleFilter,
 } from './filters.js';
@@ -67,14 +66,20 @@ describe('decodeFilters', () => {
     expect(decodeFilters('[not json at all')).toEqual([]);
   });
 
-  // The store refuses these with UNSUPPORTED_FILTER because a raw event does
-  // not carry them, so one never reaches it from here.
-  it('drops a dimension only a stay carries', () => {
-    expect(decodeFilters('entry==/home')).toEqual([]);
-    expect(decodeFilters('exit==/pricing')).toEqual([]);
-    expect(decodeFilters('channel==organic')).toEqual([]);
+  // The store narrows a report to the stays that match one of these, so a
+  // link naming an entry page, an exit page or a channel is a link like any
+  // other, and so is one naming a route.
+  it('keeps a dimension only a stay carries, and a route', () => {
+    expect(decodeFilters('entry==/home')).toEqual([{ dim: 'entry', op: 'is', value: '/home' }]);
+    expect(decodeFilters('exit==/pricing')).toEqual([
+      { dim: 'exit', op: 'is', value: '/pricing' },
+    ]);
     expect(decodeFilters('page==/a;channel==organic')).toEqual([
       { dim: 'page', op: 'is', value: '/a' },
+      { dim: 'channel', op: 'is', value: 'organic' },
+    ]);
+    expect(decodeFilters('route==/courses/:slug')).toEqual([
+      { dim: 'route', op: 'is', value: '/courses/:slug' },
     ]);
   });
 
@@ -82,16 +87,6 @@ describe('decodeFilters', () => {
     expect(decodeFilters('page==/search?q=a=b')).toEqual([
       { dim: 'page', op: 'is', value: '/search?q=a=b' },
     ]);
-  });
-});
-
-describe('isFilterable', () => {
-  it('knows which dimensions a row may be clicked on', () => {
-    expect(isFilterable('page')).toBe(true);
-    expect(isFilterable('country')).toBe(true);
-    expect(isFilterable('entry')).toBe(false);
-    expect(isFilterable('exit')).toBe(false);
-    expect(isFilterable('channel')).toBe(false);
   });
 });
 
@@ -117,11 +112,10 @@ describe('toggleFilter', () => {
     expect(toggleFilter([notFirefox], notSafari)).toEqual([notFirefox, notSafari]);
   });
 
-  // A row that cannot filter is not clickable, and this is the guard behind
-  // that: even a click that somehow happened changes nothing.
-  it('refuses a dimension the store cannot filter by', () => {
+  // A stay's dimensions toggle like any other, since the store answers them.
+  it('takes a dimension only a stay carries', () => {
     const entry: Filter = { dim: 'entry', op: 'is', value: '/home' };
-    expect(toggleFilter([page], entry)).toEqual([page]);
+    expect(toggleFilter([page], entry)).toEqual([page, entry]);
   });
 });
 

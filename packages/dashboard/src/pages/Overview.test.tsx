@@ -268,15 +268,16 @@ describe('Overview, what a row does', () => {
     await waitFor(() => expect(window.location.search).toContain('country%3D%3DBD'));
   });
 
-  // The store refuses a filter naming a channel, so these five rows took a
-  // click and changed nothing. A row that invites a press and does not answer
-  // is worse than one that does not invite it.
-  it('does not invite a click on a dimension the store cannot filter', async () => {
+  // A channel row narrows the report to the visits that came in that way,
+  // which the store answers by the stays that match, so it is a button like
+  // the country row beside it.
+  it('invites a click on a channel row, and writes the filter it makes', async () => {
     serve();
     render(show());
     await screen.findByText('Organic search');
-    expect(screen.queryByRole('button', { name: /Organic search/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Bangladesh/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Organic search/ }));
+    await waitFor(() => expect(window.location.search).toContain('channel%3D%3Dorganic'));
   });
 });
 
