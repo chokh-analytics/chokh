@@ -1,0 +1,191 @@
+/*
+ * The Alerts page: a list of questions and the form that asks one. No table:
+ * an alert is three sentences (what it watches, where it goes, what happened
+ * last), which read as a list and would fight a phone as columns.
+ */
+
+.page {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.lede {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.describe {
+  display: grid;
+  gap: var(--s2);
+}
+
+.kindList {
+  margin: 0;
+  padding: 0 var(--s3) var(--s2) var(--s5);
+  display: grid;
+  gap: var(--s1);
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.kindName {
+  color: var(--ink);
+}
+
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s2) var(--s3) var(--s3);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.itemHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.name {
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.quiet,
+.firing {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.firing {
+  color: var(--warn);
+}
+
+.watches,
+.channels,
+.last {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.watches {
+  color: var(--ink);
+}
+
+.outcomes {
+  margin: 0;
+  padding: 0 0 0 var(--s4);
+  font-size: var(--t-label);
+  display: grid;
+  gap: 2px;
+}
+
+.ok {
+  color: var(--muted);
+}
+
+.failed {
+  color: var(--warn);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  padding-top: var(--s1);
+}
+
+.note {
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.problem {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--warn);
+}
+
+.empty {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3);
+  color: var(--muted);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.emptyTitle {
+  color: var(--ink);
+}
+
+.form {
+  padding: 0 var(--s3) var(--s3);
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--s3);
+  max-width: 640px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* The fields of one kind, two up where there is room. */
+.row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s3);
+}
+
+.channelsHead {
+  display: grid;
+  gap: 2px;
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+.label {
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.help {
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.channel {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+}

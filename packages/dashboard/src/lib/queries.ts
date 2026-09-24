@@ -150,6 +150,22 @@ export function useAnnotations(context: ReportContext) {
   });
 }
 
+// A site's alerts, for the Alerts page. A 403 on an install with no licence
+// is the answer and not a failure, so nothing is retried: the page reads the
+// refusal and draws the feature described.
+export function alertsKey(siteId: string): unknown[] {
+  return ['alerts', siteId];
+}
+
+export function useAlerts(client: Client, siteId: string) {
+  return useQuery({
+    queryKey: alertsKey(siteId),
+    queryFn: () => api.alerts(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
 // A site's funnels, for the Funnels page. On the goal list's clock and refreshed
 // by hand after every create and delete, for the goal list's reason.
 export function funnelsKey(siteId: string): unknown[] {

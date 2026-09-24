@@ -41,6 +41,9 @@ export function destinationsFor(siteId: string): Destination[] {
     { path: `/${siteId}/goals`, label: messages.nav.goals },
     { path: `/${siteId}/funnels`, label: messages.nav.funnels },
     { path: `/${siteId}/people`, label: messages.nav.people },
+    // Eleventh, and on every install (AGENTS.md rule 10): the page names the
+    // feature and says it is part of Chokh Pro where there is no key.
+    { path: `/${siteId}/alerts`, label: messages.nav.alerts },
   ];
 }
 

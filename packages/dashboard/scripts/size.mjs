@@ -38,8 +38,12 @@ const BUDGETS = [
   // form joined the range bar, 931 B under the line. Raised to 35 KB the same
   // day by the commit that spent it, the marks on the chart: measured at
   // 34,907 B with the guides, the glyphs, the hover lines and the hidden list
-  // in TimeChart, which the Overview shares with the shell.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 35 * 1024 },
+  // in TimeChart, which the Overview shares with the shell. Raised to 37 KB
+  // the same day by the commit that spent it, the Alerts page: measured at
+  // 37,220 B, of which the page itself is a lazy chunk and what landed here
+  // is its strings, because every string lives in the one messages file the
+  // shell carries (rule 8), plus the eleventh destination and its key.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 37 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
@@ -55,8 +59,14 @@ const BUDGETS = [
   // engagement table in a box that scrolls on a phone. Raised to 30 KB on
   // 2026-09-24 by the commit that spent it, the settings page: measured at
   // 27,803 B for fourteen chunks, Settings its own chunk with three forms.
-  { name: 'routes', pattern: /\.js$/, bytes: 30 * 1024 },
-  { name: 'css', pattern: /\.css$/, bytes: 14 * 1024 },
+  // Raised to 34 KB the same day by the commit that spent it, the Alerts
+  // page: measured at 33,359 B for sixteen chunks, Alerts its own chunk with
+  // the list, the test, the delete and a form per kind, and the annotations
+  // panel (Notes) its own at about 2 KB.
+  { name: 'routes', pattern: /\.js$/, bytes: 34 * 1024 },
+  // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
+  // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
+  { name: 'css', pattern: /\.css$/, bytes: 15 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

@@ -42,6 +42,7 @@ const Events = lazy(async () => ({ default: (await import('../pages/Events.js'))
 const Goals = lazy(async () => ({ default: (await import('../pages/Goals.js')).Goals }));
 const Funnels = lazy(async () => ({ default: (await import('../pages/Funnels.js')).Funnels }));
 const People = lazy(async () => ({ default: (await import('../pages/People.js')).People }));
+const Alerts = lazy(async () => ({ default: (await import('../pages/Alerts.js')).Alerts }));
 const Settings = lazy(async () => ({
   default: (await import('../pages/Settings.js')).Settings,
 }));
@@ -100,6 +101,9 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
         </Route>
         <Route path="/:siteId/people">
           <People />
+        </Route>
+        <Route path="/:siteId/alerts">
+          <Alerts />
         </Route>
         {/* Reached from the site menu rather than the report navigation: it is
             about the site, not a report of it. */}

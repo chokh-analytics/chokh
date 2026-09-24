@@ -14,6 +14,10 @@ import type {
   RealtimeSnapshot,
   Segment,
   Annotation,
+  Alert,
+  AlertChannel,
+  AlertCondition,
+  AlertDelivery,
   TimeseriesResult,
   UserProfile,
   VisitorProfile,
@@ -63,6 +67,10 @@ export interface PublicUser {
 // A team this person belongs to, and what they are in it. Sites carry a teamId,
 // but somebody with no sites yet is exactly the person who has to name one, so
 // it cannot be derived from them.
+// An alert as the list answers it: the row, and what it watches as one
+// sentence the server wrote, so the page never spells a condition itself.
+export type AlertRow = Alert & { watches: string };
+
 export interface MyTeam {
   id: string;
   name: string;
@@ -255,6 +263,42 @@ export const api = {
   ): Promise<Answer<{ deleted: boolean }>> =>
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/annotations/${encodeURIComponent(annotationId)}`,
+    ),
+
+  // Alerts, the first paid feature: under /ee/, and refused with 403
+  // LICENSE_REQUIRED on an install with no key, which the page draws as the
+  // feature described rather than as an error. The list carries what each
+  // alert watches as one sentence, and its meta says which channels this
+  // install can send on.
+  alerts: (client: Client, siteId: string): Promise<Answer<{ alerts: AlertRow[] }>> =>
+    client.get<{ alerts: AlertRow[] }>(`/api/sites/${siteId}/ee/alerts`),
+
+  createAlert: (
+    client: Client,
+    siteId: string,
+    input: { name: string; condition: AlertCondition; channels: AlertChannel[] },
+  ): Promise<Answer<{ alert: Alert }>> =>
+    client.post<{ alert: Alert }>(`/api/sites/${siteId}/ee/alerts`, input),
+
+  deleteAlert: (
+    client: Client,
+    siteId: string,
+    alertId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/ee/alerts/${encodeURIComponent(alertId)}`,
+    ),
+
+  // A test message on every channel of one alert, now, with each channel's
+  // outcome in the answer.
+  testAlert: (
+    client: Client,
+    siteId: string,
+    alertId: string,
+  ): Promise<Answer<{ deliveries: AlertDelivery[] }>> =>
+    client.post<{ deliveries: AlertDelivery[] }>(
+      `/api/sites/${siteId}/ee/alerts/${encodeURIComponent(alertId)}/test`,
+      {},
     ),
 
   // The site's funnels, oldest first, readable by anybody who can read a
