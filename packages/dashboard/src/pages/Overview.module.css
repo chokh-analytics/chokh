@@ -69,3 +69,10 @@
   font-size: var(--t-label);
   color: var(--muted);
 }
+
+/* The two controls in the chart head: the download and the annotations. */
+.chartTools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+}

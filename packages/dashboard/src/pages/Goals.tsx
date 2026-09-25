@@ -6,7 +6,9 @@ import { isOwner, useApp } from '../app/context.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { api } from '../lib/api.js';
 import { ChokhError } from '../lib/client.js';
+import { exportName } from '../lib/download.js';
 import { formatCount, formatExact, formatRate, formatValue } from '../lib/format.js';
+import { toStatsParams } from '../lib/query.js';
 import { goalsKey, useEvents, useGoalStats } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { ReportPage } from '../reports/ReportPage.js';
@@ -275,7 +277,15 @@ function GoalList({ owner }: { owner: boolean }): JSX.Element {
   };
 
   return (
-    <Card title={messages.goals.title}>
+    <Card
+      title={messages.goals.title}
+      download={{
+        csvHref: api.exportUrl(client, site.id, toStatsParams(query), { report: 'goals' }),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'goals', undefined, query.range),
+        title: messages.goals.title,
+      }}
+    >
       <p className={styles.lede}>{messages.goals.lede}</p>
       {body()}
       <p className={styles.note}>{format(messages.metricHelp.rawOnly, { days: retentionDays })}</p>

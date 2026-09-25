@@ -17,11 +17,6 @@
   border-top: 1px solid var(--line);
 }
 
-.download {
-  font-size: var(--t-label);
-  color: var(--accent-ink);
-}
-
 /* The sentence under a card whose rows cannot be clicked. */
 .note {
   margin: 0;

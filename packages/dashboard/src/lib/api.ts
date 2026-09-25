@@ -386,8 +386,15 @@ export const api = {
     client.get<UserProfile>(`/api/sites/${siteId}/users/${encodeURIComponent(userId)}`),
 
   // Not a JSON read: the browser navigates to it and the server sends a file.
-  exportUrl: (client: Client, siteId: string, params: StatsParams): string =>
-    client.url(`/api/sites/${siteId}/export.csv`, statsQuery(params)),
+  // The CSV of one report (AN-RPT01): `report` names the kind and `extra`
+  // carries what that kind needs beyond the stats query, an event, a funnel,
+  // the branches, exactly as the report's own route takes them.
+  exportUrl: (
+    client: Client,
+    siteId: string,
+    params: StatsParams,
+    extra: Record<string, string | number> = {},
+  ): string => client.url(`/api/sites/${siteId}/export.csv`, { ...statsQuery(params), ...extra }),
 
   // Not a JSON read either: an EventSource opens it and keeps it open.
   streamUrl: (client: Client, siteId: string): string =>

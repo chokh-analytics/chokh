@@ -3,7 +3,10 @@ import { Suspense, lazy, useMemo, type JSX } from 'react';
 import { useApp } from '../app/context.js';
 import { useTabParam } from '../app/useTabParam.js';
 import { useViewQuery } from '../app/useViewQuery.js';
+import { api } from '../lib/api.js';
+import { exportName } from '../lib/download.js';
 import { formatCount, formatDuration, formatPercentPoints } from '../lib/format.js';
+import { toStatsParams } from '../lib/query.js';
 import { useBreakdown, useEngagement } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { DimensionCard } from '../reports/DimensionCard.js';
@@ -91,6 +94,17 @@ function Engagement(): JSX.Element {
     <Card
       title={messages.reports.engagement}
       help={<InfoDot label={messages.reports.engagement} text={messages.reports.engagementHelp} />}
+      download={{
+        csvHref: api.exportUrl(
+          client,
+          site.id,
+          toStatsParams(query, { dim: 'page', limit: 100 }),
+          { report: 'engagement' },
+        ),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'engagement', 'page', query.range),
+        title: messages.reports.engagement,
+      }}
     >
       {result.isPending ? (
         <div className={styles.loading}>

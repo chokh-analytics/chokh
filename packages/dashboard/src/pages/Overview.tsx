@@ -4,6 +4,8 @@ import type { Dimension, Metrics } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { RangeBar } from '../app/RangeBar.js';
 import { useViewQuery } from '../app/useViewQuery.js';
+import { api } from '../lib/api.js';
+import { exportName } from '../lib/download.js';
 import { toggleFilter } from '../lib/filters.js';
 import {
   delta,
@@ -28,11 +30,12 @@ import {
   useTimeseries,
 } from '../lib/queries.js';
 import { defaultInterval, isLive } from '../lib/range.js';
-import { METRICS, type MetricName } from '../lib/query.js';
+import { METRICS, toStatsParams, type MetricName } from '../lib/query.js';
 import { format, messages } from '../messages/en.js';
 import { Breakdown, Code, conversionColumn, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Button } from '../ui/Button.js';
 import { Card } from '../ui/Card.js';
+import { Download, type DownloadProps } from '../ui/Download.js';
 import { Popover } from '../ui/Popover.js';
 import { KpiRow, KpiTile, LiveValue } from '../ui/KpiTile.js';
 import { EmptyState, ErrorState, Skeleton, Working } from '../ui/State.js';
@@ -238,6 +241,25 @@ export function Overview(): JSX.Element {
 
   const metrics = totals.data?.data.metrics;
   const previous = totals.data?.data.previous ?? null;
+
+  // Each card as a file (AN-RPT01): the CSV is the whole breakdown of the
+  // dimension for the range on screen, up to the store's hundred rows; the
+  // JSON is the five rows the card holds.
+  const cardDownload = (
+    dim: Dimension,
+    title: string,
+    held: { result: { data?: { data: unknown } | undefined } },
+  ): DownloadProps => ({
+    csvHref: api.exportUrl(
+      client,
+      site.id,
+      toStatsParams(query, { dim, limit: 100, goal: true }),
+      { report: 'breakdown' },
+    ),
+    json: () => held.result.data?.data,
+    name: exportName(site.id, 'breakdown', dim, query.range),
+    title,
+  });
   const interval = query.interval ?? defaultInterval(query.range);
 
   const points: ChartPoint[] = useMemo(
@@ -422,6 +444,15 @@ export function Overview(): JSX.Element {
               marks={marks}
               rangeEnd={annotationSpan(query, now).to}
               headExtra={
+                <span className={styles.chartTools}>
+                <Download
+                  csvHref={api.exportUrl(client, site.id, toStatsParams(query), {
+                    report: 'timeseries',
+                  })}
+                  json={() => series.data?.data}
+                  name={exportName(site.id, 'timeseries', undefined, query.range)}
+                  title={METRIC_LABELS[query.metric]}
+                />
                 <Popover
                   align="right"
                   label={messages.annotations.picker}
@@ -444,6 +475,7 @@ export function Overview(): JSX.Element {
                     </Suspense>
                   )}
                 </Popover>
+                </span>
               }
             />
           )}
@@ -454,6 +486,7 @@ export function Overview(): JSX.Element {
         <Card
           title={messages.overview.topPages}
           {...(converting ? {} : { metric: messages.metrics.visitors })}
+          download={cardDownload('page', messages.overview.topPages, pages)}
           footer={{ to: `/${site.id}/pages`, label: messages.overview.viewAllPages }}
         >
           <BreakdownBody
@@ -470,6 +503,7 @@ export function Overview(): JSX.Element {
         <Card
           title={messages.overview.sources}
           {...(converting ? {} : { metric: messages.metrics.visitors })}
+          download={cardDownload('channel', messages.overview.sources, channels)}
           footer={{ to: `/${site.id}/sources`, label: messages.overview.viewAllSources }}
         >
           <BreakdownBody
@@ -486,6 +520,7 @@ export function Overview(): JSX.Element {
         <Card
           title={messages.overview.countries}
           {...(converting ? {} : { metric: messages.metrics.visitors })}
+          download={cardDownload('country', messages.overview.countries, countries)}
           footer={{ to: `/${site.id}/geo`, label: messages.overview.viewGeography }}
         >
           <BreakdownBody
@@ -502,6 +537,7 @@ export function Overview(): JSX.Element {
         <Card
           title={messages.overview.deviceTypes}
           {...(converting ? {} : { metric: messages.metrics.visitors })}
+          download={cardDownload('device', messages.overview.deviceTypes, devices)}
           footer={{ to: `/${site.id}/devices`, label: messages.overview.viewAllDevices }}
         >
           <BreakdownBody

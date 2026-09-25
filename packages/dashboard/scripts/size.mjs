@@ -43,7 +43,11 @@ const BUDGETS = [
   // 37,220 B, of which the page itself is a lazy chunk and what landed here
   // is its strings, because every string lives in the one messages file the
   // shell carries (rule 8), plus the eleventh destination and its key.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 37 * 1024 },
+  // Raised to 38 KB on 2026-09-25 by the commit that spent it, every report
+  // as a file (AN-RPT01): measured at 38,043 B with the Download control in
+  // the card's foot, the Overview's four cards and its chart head, and the
+  // seven strings the control reads.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 38 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },

@@ -4,7 +4,10 @@ import { useLocation, useSearch } from 'wouter';
 import { useApp } from '../app/context.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { toggleFilter } from '../lib/filters.js';
+import { api } from '../lib/api.js';
+import { exportName } from '../lib/download.js';
 import { formatCount, formatExact } from '../lib/format.js';
+import { toStatsParams } from '../lib/query.js';
 import { useEvents, useProperties } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { ReportPage } from '../reports/ReportPage.js';
@@ -138,6 +141,12 @@ function EventsCard(): JSX.Element {
     <Card
       title={messages.events.title}
       help={<InfoDot label={messages.events.title} text={messages.events.help} />}
+      download={{
+        csvHref: api.exportUrl(client, site.id, toStatsParams(query), { report: 'events' }),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'events', undefined, query.range),
+        title: messages.events.title,
+      }}
     >
       {body()}
       <RawNote days={retentionOf(result.data?.meta, site.settings.retentionDays)} />
@@ -271,6 +280,16 @@ function PropertiesCard({ event }: { event: string | null }): JSX.Element {
   return (
     <Card
       title={title}
+      download={{
+        csvHref: api.exportUrl(client, site.id, toStatsParams(query), {
+          report: 'properties',
+          event,
+          ...(current === null ? {} : { property: current }),
+        }),
+        json: () => data,
+        name: exportName(site.id, 'properties', event, query.range),
+        title,
+      }}
       {...(shown.length > 0
         ? {
             tabs: shown.map((name) => ({ id: name, label: name })),

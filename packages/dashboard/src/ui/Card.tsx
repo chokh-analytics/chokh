@@ -2,6 +2,7 @@ import type { JSX, ReactNode } from 'react';
 import { Link } from 'wouter';
 
 import styles from './Card.module.css';
+import { Download, type DownloadProps } from './Download.js';
 
 export interface CardTab {
   id: string;
@@ -18,6 +19,9 @@ export interface CardProps {
   onTab?: (id: string) => void;
   help?: ReactNode;
   footer?: { to: string; label: string };
+  // The report in this card as a file (AN-RPT01), drawn in the foot at the
+  // right, beside the footer link when there is one.
+  download?: DownloadProps;
   children: ReactNode;
 }
 
@@ -29,6 +33,7 @@ export function Card({
   onTab,
   help,
   footer,
+  download,
   children,
 }: CardProps): JSX.Element {
   return (
@@ -60,14 +65,21 @@ export function Card({
         )}
       </header>
       <div className={styles.body}>{children}</div>
-      {footer !== undefined && (
+      {(footer !== undefined || download !== undefined) && (
         <footer className={styles.foot}>
-          <Link to={footer.to} className={styles.footLink}>
-            {footer.label}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M9 6l6 6-6 6z" />
-            </svg>
-          </Link>
+          {footer !== undefined && (
+            <Link to={footer.to} className={styles.footLink}>
+              {footer.label}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M9 6l6 6-6 6z" />
+              </svg>
+            </Link>
+          )}
+          {download !== undefined && (
+            <span className={styles.footDownload}>
+              <Download {...download} />
+            </span>
+          )}
         </footer>
       )}
     </section>

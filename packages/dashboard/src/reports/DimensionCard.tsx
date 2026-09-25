@@ -7,6 +7,7 @@ import { useViewQuery } from '../app/useViewQuery.js';
 import { toggleFilter } from '../lib/filters.js';
 import { countryName, formatCount, formatExact, formatRate, languageName } from '../lib/format.js';
 import { api } from '../lib/api.js';
+import { exportName } from '../lib/download.js';
 import { toStatsParams } from '../lib/query.js';
 import { useBreakdown } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
@@ -182,35 +183,13 @@ export function DimensionCard({
             {format(messages.metricHelp.rawOnly, { days: retentionDays })}
           </p>
         )}
-        <div className={styles.foot}>
-          {hasMore ? (
+        {hasMore && (
+          <div className={styles.foot}>
             <Button variant="quiet" onClick={() => setLimit(MORE_ROWS)}>
               {format(messages.reports.showMore, { count: MORE_ROWS })}
             </Button>
-          ) : (
-            <span />
-          )}
-          {/*
-            A plain link rather than a fetch: the server answers this route
-            with a content-disposition, the session cookie goes with it because
-            it is the same origin, and a browser downloading a file is better
-            at downloading a file than any code here would be. The URL carries
-            the range and the filters that are on screen, so what arrives is
-            what was being read.
-          */}
-          <a
-            className={styles.download}
-            href={api.exportUrl(
-              client,
-              site.id,
-              toStatsParams(query, { dim, limit: MORE_ROWS, goal: true }),
-            )}
-            download
-            title={messages.reports.downloadNote}
-          >
-            {messages.reports.download}
-          </a>
-        </div>
+          </div>
+        )}
       </>
     );
   };
@@ -219,6 +198,22 @@ export function DimensionCard({
     <Card
       title={title}
       {...(help === undefined ? {} : { help })}
+      // A plain link for the CSV rather than a fetch: the server answers with
+      // a content-disposition, the session cookie goes with it because it is
+      // the same origin, and the URL carries the range and the filters on
+      // screen, so what arrives is what was being read. The JSON is the rows
+      // the card holds.
+      download={{
+        csvHref: api.exportUrl(
+          client,
+          site.id,
+          toStatsParams(query, { dim, limit: MORE_ROWS, goal: true }),
+          { report: 'breakdown' },
+        ),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'breakdown', dim, query.range),
+        title: `${title}: ${current.label}`,
+      }}
       {...(tabs.length + moreTabs.length > 1
         ? {
             tabs: [

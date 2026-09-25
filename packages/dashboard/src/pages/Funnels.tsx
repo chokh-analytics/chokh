@@ -16,7 +16,9 @@ import { isOwner, useApp } from '../app/context.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { api, type FunnelStepInput } from '../lib/api.js';
 import { ChokhError } from '../lib/client.js';
+import { exportName } from '../lib/download.js';
 import { formatCount, formatExact, formatRate } from '../lib/format.js';
+import { toStatsParams } from '../lib/query.js';
 import { funnelsKey, useFunnelStats, useFunnels, useGoals } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { ReportPage } from '../reports/ReportPage.js';
@@ -373,7 +375,19 @@ function FunnelChart({ funnel }: { funnel: Funnel }): JSX.Element {
   };
 
   return (
-    <Card title={funnel.name} metric={messages.metrics.visitors}>
+    <Card
+      title={funnel.name}
+      metric={messages.metrics.visitors}
+      download={{
+        csvHref: api.exportUrl(client, site.id, toStatsParams(query), {
+          report: 'funnel',
+          funnel: funnel.id,
+        }),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'funnel', funnel.id, query.range),
+        title: funnel.name,
+      }}
+    >
       {body()}
       <p className={styles.footnote}>{format(messages.metricHelp.rawOnly, { days: retentionDays })}</p>
       <p className={styles.footnote}>{messages.funnels.perVisitor}</p>

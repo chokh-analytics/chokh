@@ -9,7 +9,10 @@ import { useApp } from '../app/context.js';
 import { useTabParam } from '../app/useTabParam.js';
 import { useViewQuery } from '../app/useViewQuery.js';
 import { toggleFilter } from '../lib/filters.js';
+import { api } from '../lib/api.js';
+import { exportName } from '../lib/download.js';
 import { formatCount, formatExact } from '../lib/format.js';
+import { toStatsParams } from '../lib/query.js';
 import { useJourneys } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { Card, type CardTab } from '../ui/Card.js';
@@ -344,6 +347,15 @@ export function Journeys({
       tabs={tabs}
       tab="journeys"
       onTab={onTab}
+      download={{
+        csvHref: api.exportUrl(client, site.id, toStatsParams(query), {
+          report: 'journeys',
+          branches: Number(branches),
+        }),
+        json: () => result.data?.data,
+        name: exportName(site.id, 'journeys', undefined, query.range),
+        title: messages.reports.tabJourneys,
+      }}
       help={
         <InfoDot
           label={format(messages.a11y.metricHelp, { metric: messages.reports.tabJourneys })}

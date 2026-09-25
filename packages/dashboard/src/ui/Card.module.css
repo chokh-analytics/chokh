@@ -52,8 +52,18 @@
 }
 
 .foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
   border-top: 1px solid var(--line);
   padding: var(--s2) var(--s4);
+}
+
+/* The download control keeps the right edge, with or without a link. */
+.footDownload {
+  margin-left: auto;
+  display: inline-flex;
 }
 
 .footLink {
