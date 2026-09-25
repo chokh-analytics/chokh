@@ -246,7 +246,7 @@ test('keeps eleven destinations in one row at 390 and at 1024, with the current 
       if (path === 'goals' && width === 390) {
         // And the columns are a scroll away inside the card rather than gone.
         const inner = await page
-          .getByRole('group', { name: 'Goals' })
+          .getByRole('group', { name: 'Goals', exact: true })
           .evaluate((box) => box.scrollWidth - box.clientWidth);
         expect(inner, 'the goal list dropped its columns rather than scrolling them').toBeGreaterThan(0);
       }

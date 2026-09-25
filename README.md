@@ -142,17 +142,17 @@ cross-origin request.
 
 ### What it costs to load
 
-One run of `pnpm size:dashboard` on 2026-09-24, which walks `dist/` and gzips
+One run of `pnpm size:dashboard` on 2026-09-25, which walks `dist/` and gzips
 every file that gzip does anything to. Bytes, because a kilobyte means two
 things and half a table in each is how a figure stops being checkable:
 
 | | bytes, gzipped |
 | --- | --- |
-| The first paint: the shell, the Overview and what they share | 37,220 |
+| The first paint: the shell, the Overview and what they share | 39,478 |
 | Libraries: React, the router, the query cache | 84,611 |
 | The world map, loaded by Realtime and Geo and by nothing else | 39,923 |
-| The ten other reports, the Journeys tab and the annotations panel, one file each, loaded when opened | 33,359 |
-| Stylesheets | 14,994 |
+| The ten other reports, the Journeys tab, the annotations panel and the shared page, one file each, loaded when opened | 39,649 |
+| Stylesheets | 16,125 |
 | Fonts: IBM Plex Sans and Mono, latin, woff2 | 60,420 |
 
 The fonts are counted because they are served from the install: a dashboard
@@ -163,9 +163,10 @@ and CI fails a build that puts any group over its own.
 ### Accessibility
 
 Lighthouse scores it 1 on the Overview, on Realtime, on Funnels with a funnel
-drawn, on the Journeys tab, on the settings page and on the Alerts page as an
-install with no key sees it, in both the light and the dark palette, against
-the real server rather than a fixture. CI fails under 1, and the run also asserts
+drawn, on the Journeys tab, on the settings page, on the Alerts page as an
+install with no key sees it, and on the shared page as somebody with the link
+and no session sees it, in both the light and the dark palette, against the
+real server rather than a fixture. CI fails under 1, and the run also asserts
 that the page it audited had the dashboard rendered in it, because Lighthouse
 scores a blank page 1. Every chart carries its numbers as a table for a screen
 reader, including the world map.
@@ -211,6 +212,29 @@ lists each alert with what it watches, where it goes and what happened last,
 and sends a test on every channel so a bot token is proved before the night
 it matters. The rest is in [packages/ee](packages/ee/README.md#alerts).
 
+### Exports, sharing and digests
+
+Every report card has a Download control: CSV as the server writes it, with
+the range and the filters on screen (`GET /api/sites/:siteId/export.csv?report=`
+names the kind, one fixed column set each), and JSON as what the card holds,
+both under one name. People and Realtime are not exported: one is identity,
+the other a snapshot.
+
+A site can have one public share: a link that shows the Overview's numbers,
+chart, top pages, sources, countries and devices to anybody who has it, and
+nothing about a person. The owner makes it on the settings page, puts a
+password on it or takes one off, replaces the link (which ends the old one)
+or turns it off. Search engines are told to stay away. Two things to embed
+come with it: a badge, one metric over a range as an image for a README, and
+the five tiles alone in a page an iframe may hold, which is the one page of
+the dashboard that may be framed. The rest is in
+[packages/server](packages/server/README.md#the-public-share).
+
+Digests are part of Chokh Pro, on the Alerts page: the same numbers mailed
+every morning about yesterday, or once a week about the week before, as text,
+as HTML and as one page attached, to up to five addresses, at an hour of the
+site's own day. The rest is in [packages/ee](packages/ee/README.md#digests).
+
 ### Keyboard
 
 `g` then a letter for a report, `t` `y` `7` `3` for the ranges, `[` and `]` to
@@ -222,7 +246,7 @@ takes a key the browser already uses.
 
 ```bash
 pnpm build
-pnpm --filter @chokh/dashboard run shots   # twenty-two screenshots, eleven views in two themes
+pnpm --filter @chokh/dashboard run shots   # twenty-eight screenshots, fourteen views in two themes
 pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
 pnpm --filter @chokh/dashboard run test:e2e
 ```

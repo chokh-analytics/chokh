@@ -82,6 +82,18 @@ function api(url, res) {
   if (path === '/api/me') {
     return ok(res, ME);
   }
+  // The public share (AN-RPT01) of the demo site, one token. Its report
+  // routes end the way a site's do, so the handlers below answer them.
+  if (path === '/api/share/tok_demo') {
+    return ok(res, {
+      site: { name: 'Progsity', timezone: 'Asia/Dhaka' },
+      protected: false,
+      unlocked: true,
+    });
+  }
+  if (path.endsWith('/annotations')) {
+    return ok(res, { annotations: [] });
+  }
   if (path.endsWith('/stats/aggregate')) {
     const goal = params.get('goal');
     return ok(res, aggregateFor(goal), goal === null ? undefined : RAW);

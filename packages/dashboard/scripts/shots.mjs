@@ -63,6 +63,9 @@ const PAGES = [
   { name: '12-settings', path: `/${SITE}/settings` },
   // The first paid feature, as an install with no key sees it.
   { name: '13-alerts', path: `/${SITE}/alerts` },
+  // The shared page (AN-RPT01), as whoever holds the link sees it; the
+  // fixture answers the share's routes for one token.
+  { name: '14-share', path: '/share/tok_demo', guard: 'main[aria-label="Report"]' },
 ];
 const THEMES = ['light', 'dark'];
 
@@ -106,7 +109,7 @@ for (const theme of THEMES) {
 
   for (const shot of PAGES) {
     await page.goto(`${base}${shot.path}`);
-    await page.waitForSelector('nav[aria-label="Report"]');
+    await page.waitForSelector(shot.guard ?? 'nav[aria-label="Report"]');
     // Every skeleton gone: a picture of a loading state is a picture of
     // nothing, and it is the one a slow machine takes.
     await page.waitForFunction(() => document.querySelectorAll('[class*="skeleton"]').length === 0, {

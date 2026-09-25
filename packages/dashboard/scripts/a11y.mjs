@@ -46,6 +46,10 @@ const PAGES = [
   { name: 'settings', path: '/s_demo/settings' },
   // The first paid feature, described on an install with no key.
   { name: 'alerts', path: '/s_demo/alerts' },
+  // The shared page (AN-RPT01), read by somebody with the link and no
+  // session: the share is made through the API for the audit and taken off
+  // after it. Its landmark is the main, because it has no navigation.
+  { name: 'share', path: '/share/', share: true, guard: 'main[aria-label="Report"]' },
 ];
 const THEMES = ['light', 'dark'];
 
@@ -64,12 +68,19 @@ async function audit(browser, page, theme) {
   // opened, exactly as a returning visitor arrives.
   await tab.goto(`${base}/`);
   await tab.evaluate((choice) => localStorage.setItem('chokh:theme', choice), theme);
-  await tab.goto(`${base}${page.path}`);
-  await tab.waitForSelector(GUARD);
-  const painted = await tab.locator(GUARD).count();
+  let path = page.path;
+  if (page.share === true) {
+    const made = await tab.request.put(`${base}/api/sites/s_demo/share`, { data: {} });
+    const { token } = (await made.json()).data.share;
+    path = `${page.path}${token}`;
+  }
+  const guard = page.guard ?? GUARD;
+  await tab.goto(`${base}${path}`);
+  await tab.waitForSelector(guard);
+  const painted = await tab.locator(guard).count();
 
   const result = await lighthouse(
-    `${base}${page.path}`,
+    `${base}${path}`,
     { port: DEBUG_PORT, output: 'json', logLevel: 'error' },
     {
       extends: 'lighthouse:default',
@@ -80,6 +91,9 @@ async function audit(browser, page, theme) {
       },
     },
   );
+  if (page.share === true) {
+    await tab.request.delete(`${base}/api/sites/s_demo/share`);
+  }
   await tab.close();
 
   const report = result?.lhr;
@@ -88,7 +102,7 @@ async function audit(browser, page, theme) {
   return {
     page: page.name,
     theme,
-    url: report?.finalDisplayedUrl ?? `${base}${page.path}`,
+    url: report?.finalDisplayedUrl ?? `${base}${path}`,
     accessibility: report?.categories?.accessibility?.score ?? null,
     // Three numbers rather than one, so a green line is checkable: a score of 1
     // over two applicable audits is not the same claim as a score of 1 over
