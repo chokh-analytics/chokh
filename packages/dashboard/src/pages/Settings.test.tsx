@@ -71,6 +71,21 @@ function serve(
     if (method === 'PATCH' && url.pathname === '/api/sites/s_test') {
       return Promise.resolve(patch(body));
     }
+    if (url.pathname === '/api/sites/s_test/share') {
+      if (method === 'DELETE') {
+        return Promise.resolve(ok({ deleted: true }));
+      }
+      const input = (body ?? {}) as { regenerate?: boolean; password?: string | null };
+      return Promise.resolve(
+        ok({
+          share: {
+            token: input.regenerate === true ? 'tok_second_00000000000000000000' : 'tok_first_000000000000000000000',
+            protected: typeof input.password === 'string',
+            createdAt: NOW,
+          },
+        }),
+      );
+    }
     if (url.pathname === '/api/me') {
       return Promise.resolve(
         ok({ actor: { kind: 'session', id: 'u_1' }, user: null, sites: [SITE], teams: [] }),
@@ -246,5 +261,61 @@ describe('Settings, for a viewer', () => {
     serve();
     render(show('viewer', { ...SITE, routesChangedAt: NOW }));
     expect(screen.getByText(/regrouped on the next hourly pass/)).toBeInTheDocument();
+  });
+});
+
+// The public share card (AN-RPT01): one call per control, and the card draws
+// what the site row says.
+describe('Settings, the public share', () => {
+  it('makes a link, shows it with a copy control, and puts a password on it', async () => {
+    const calls = serve();
+    const { rerender } = render(show('owner'));
+    const sharing = card('Public share');
+    await userEvent.click(within(sharing).getByRole('button', { name: 'Make a link' }));
+    await waitFor(() =>
+      expect(calls().some((call) => call.method === 'PUT' && call.url.pathname === '/api/sites/s_test/share')).toBe(true),
+    );
+
+    // The site row refreshed carries the share; the card draws it.
+    const shared = { ...SITE, share: { token: 'tok_first_000000000000000000000', protected: false, createdAt: NOW } };
+    rerender(show('owner', shared));
+    expect(within(card('Public share')).getByLabelText('Link')).toHaveValue(
+      `${location.origin}/share/tok_first_000000000000000000000`,
+    );
+    expect(within(card('Public share')).getByText('Anybody with the link can read it.')).toBeInTheDocument();
+
+    await userEvent.type(within(card('Public share')).getByLabelText('Password'), 'short');
+    await userEvent.click(within(card('Public share')).getByRole('button', { name: 'Set a password' }));
+    expect(calls().filter((call) => call.method === 'PUT')).toHaveLength(1);
+    await userEvent.type(within(card('Public share')).getByLabelText('Password'), '-and-longer');
+    await userEvent.click(within(card('Public share')).getByRole('button', { name: 'Set a password' }));
+    await waitFor(() => expect(calls().filter((call) => call.method === 'PUT')).toHaveLength(2));
+    expect(calls().at(-1)?.body).toEqual({ password: 'short-and-longer' });
+  });
+
+  it('replaces the link, removes the password and turns the share off, one call each', async () => {
+    const calls = serve();
+    const shared = { ...SITE, share: { token: 'tok_first_000000000000000000000', protected: true, createdAt: NOW } };
+    render(show('owner', shared));
+    const sharing = card('Public share');
+    expect(within(sharing).getByText('A password stands in the way.')).toBeInTheDocument();
+    await userEvent.click(within(sharing).getByRole('button', { name: 'Remove the password' }));
+    await waitFor(() => expect(calls().at(-1)?.body).toEqual({ password: null }));
+    await userEvent.click(within(sharing).getByRole('button', { name: 'New link' }));
+    await waitFor(() => expect(calls().at(-1)?.body).toEqual({ regenerate: true }));
+    await userEvent.click(within(sharing).getByRole('button', { name: 'Turn off' }));
+    await waitFor(() =>
+      expect(calls().some((call) => call.method === 'DELETE' && call.url.pathname === '/api/sites/s_test/share')).toBe(true),
+    );
+  });
+
+  it('draws the controls disabled for a viewer', () => {
+    serve();
+    const shared = { ...SITE, share: { token: 'tok_first_000000000000000000000', protected: false, createdAt: NOW } };
+    render(show('viewer', shared));
+    const sharing = card('Public share');
+    expect(within(sharing).getByRole('button', { name: 'Set a password' })).toBeDisabled();
+    expect(within(sharing).getByRole('button', { name: 'New link' })).toBeDisabled();
+    expect(within(sharing).getByRole('button', { name: 'Turn off' })).toBeDisabled();
   });
 });

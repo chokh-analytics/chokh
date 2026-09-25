@@ -396,6 +396,144 @@ function RouteGroups({ owner }: { owner: boolean }): JSX.Element {
   );
 }
 
+// The public share (AN-RPT01): make the link, copy it, put a password on it,
+// replace it, turn it off. No form to save: each control is one call and the
+// site row in GET /api/me is refreshed after it, so the card always draws what
+// the server holds.
+function Sharing({ owner }: { owner: boolean }): JSX.Element {
+  const { client, site } = useApp();
+  const queryClient = useQueryClient();
+  const share = site.share;
+  const [password, setPassword] = useState('');
+  const [tried, setTried] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const origin = typeof location === 'undefined' ? '' : location.origin;
+  const link = share === undefined ? null : `${origin}/share/${share.token}`;
+
+  async function run(action: () => Promise<unknown>): Promise<void> {
+    setBusy(true);
+    setProblem(null);
+    setCopied(false);
+    try {
+      await action();
+      await queryClient.invalidateQueries({ queryKey: ['me'] });
+    } catch (error) {
+      setProblem(problemOf(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setThePassword(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setTried(true);
+    if (password.length < 8) {
+      return;
+    }
+    await run(() => api.putShare(client, site.id, { password }));
+    setPassword('');
+    setTried(false);
+  }
+
+  async function copy(): Promise<void> {
+    if (link === null) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <Card title={messages.settings.sharing}>
+      <p className={styles.lede}>{messages.settings.sharingLede}</p>
+      {share === undefined ? (
+        <div className={styles.actions}>
+          <Button
+            variant="primary"
+            disabled={!owner || busy}
+            onClick={() => void run(() => api.putShare(client, site.id, {}))}
+          >
+            {busy ? messages.settings.shareWorking : messages.settings.shareMake}
+          </Button>
+        </div>
+      ) : (
+        <div className={styles.form}>
+          <Field label={messages.settings.shareLink} value={link ?? ''} readOnly />
+          <div className={styles.actions}>
+            <Button onClick={() => void copy()}>{messages.settings.shareCopy}</Button>
+            {copied && (
+              <span className={styles.saved} role="status">
+                {messages.settings.shareCopied}
+              </span>
+            )}
+          </div>
+          <p className={styles.note}>
+            {share.protected ? messages.settings.shareProtected : messages.settings.shareOpen}
+          </p>
+          <form onSubmit={setThePassword} noValidate>
+            <fieldset className={styles.fieldset} disabled={!owner || busy}>
+              <legend className="sr-only">{messages.settings.sharePassword}</legend>
+              <Field
+                label={messages.settings.sharePassword}
+                help={messages.settings.sharePasswordHelp}
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.currentTarget.value)}
+                {...(tried && password.length < 8
+                  ? { problem: messages.settings.sharePasswordHelp }
+                  : {})}
+              />
+              <div className={styles.actions}>
+                <Button type="submit" variant="primary" disabled={!owner || busy}>
+                  {share.protected
+                    ? messages.settings.shareChangePassword
+                    : messages.settings.shareSetPassword}
+                </Button>
+                {share.protected && (
+                  <Button
+                    disabled={!owner || busy}
+                    onClick={() => void run(() => api.putShare(client, site.id, { password: null }))}
+                  >
+                    {messages.settings.shareRemovePassword}
+                  </Button>
+                )}
+              </div>
+            </fieldset>
+          </form>
+          <div className={styles.actions}>
+            <Button
+              disabled={!owner || busy}
+              title={messages.settings.shareNewLinkHelp}
+              onClick={() => void run(() => api.putShare(client, site.id, { regenerate: true }))}
+            >
+              {messages.settings.shareNewLink}
+            </Button>
+            <Button
+              disabled={!owner || busy}
+              title={messages.settings.shareOffHelp}
+              onClick={() => void run(() => api.deleteShare(client, site.id))}
+            >
+              {messages.settings.shareOff}
+            </Button>
+          </div>
+        </div>
+      )}
+      {problem !== null && (
+        <p className={styles.problem} role="alert">
+          {problem}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function Settings(): JSX.Element {
   const { me, site } = useApp();
   const owner = isOwner(me.teams, site.teamId);
@@ -411,6 +549,7 @@ export function Settings(): JSX.Element {
         <General owner={owner} />
         <Exclusions owner={owner} />
         <RouteGroups owner={owner} />
+        <Sharing owner={owner} />
       </div>
     </div>
   );

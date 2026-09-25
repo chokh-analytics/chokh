@@ -174,7 +174,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/sites/:siteId/stats/journeys` | `read:stats` | The paths visits took, entry and three pages on |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any report as a file: `report=` names the kind, absent means a breakdown |
 | `PUT /api/sites/:siteId/share` | `admin` | Make the public share, regenerate its link, set or clear its password |
-| `DELETE /api/sites/:siteId/share` | `admin` | Take the share off |
+| `DELETE /api/sites/:siteId/share` | `admin` | Take the share off; answers `{ deleted: true }` |
 | `GET /api/share/:token` | nothing | Whose numbers, in which zone, whether a password stands in the way |
 | `POST /api/share/:token/unlock` | nothing | The password, for a cookie scoped to this share |
 | `GET /api/share/:token/stats/aggregate`, `/timeseries`, `/breakdown`, `/goals`, `/annotations` | the link, and the cookie when locked | The report's own route and shape, on `read:stats` alone |

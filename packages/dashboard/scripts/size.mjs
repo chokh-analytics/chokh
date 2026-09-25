@@ -67,10 +67,16 @@ const BUDGETS = [
   // page: measured at 33,359 B for sixteen chunks, Alerts its own chunk with
   // the list, the test, the delete and a form per kind, and the annotations
   // panel (Notes) its own at about 2 KB.
-  { name: 'routes', pattern: /\.js$/, bytes: 34 * 1024 },
+  // Raised to 38 KB on 2026-09-25 by the commit that spent it, the shared
+  // page (AN-RPT01): measured at 37,853 B for seventeen chunks, Share its own
+  // chunk at about 4 KB with the head, the unlock form, the presets, the
+  // tiles, the chart and the four cards over the Overview's own components.
+  { name: 'routes', pattern: /\.js$/, bytes: 38 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
-  { name: 'css', pattern: /\.css$/, bytes: 15 * 1024 },
+  // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared
+  // page: measured at 15,889 B, Share 797 B and the Settings card's rules.
+  { name: 'css', pattern: /\.css$/, bytes: 16 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

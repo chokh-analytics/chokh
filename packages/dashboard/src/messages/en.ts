@@ -301,6 +301,22 @@ export const messages = {
     languages: 'Languages',
   },
 
+  // The shared page (AN-RPT01), and the card on Settings that makes it.
+  share: {
+    lede: 'Shared numbers, read only',
+    documentTitle: '{name}, shared',
+    poweredBy: 'Powered by Chokh, open source web analytics',
+    poweredByHref: 'https://github.com/chokh-analytics/chokh',
+    notFound: 'This link does not open anything.',
+    notFoundLede: 'It may have been turned off, or replaced by a new one. Ask whoever sent it.',
+    locked: 'This page needs a password',
+    lockedLede: '{name} shares its numbers behind a password. Enter it to read them.',
+    password: 'Password',
+    unlock: 'Open',
+    unlocking: 'Opening',
+    wrongPassword: 'That is not the password.',
+  },
+
   people: {
     title: 'People',
     lede: 'Look somebody up by the id your application identified them with, or by the visitor id on a row in Realtime.',
@@ -806,6 +822,25 @@ export const messages = {
     routeGroupsPlaceholder: '/courses/:slug',
     regrouping:
       'The rules changed. Every stored pageview and the route rollups within retention are regrouped on the next hourly pass.',
+    sharing: 'Public share',
+    sharingLede:
+      'A link that shows the Overview to anybody who has it: the numbers, the chart, the top pages, sources, countries and devices. Nothing about a person, and search engines are told to stay away.',
+    shareMake: 'Make a link',
+    shareLink: 'Link',
+    shareCopy: 'Copy',
+    shareCopied: 'Copied.',
+    shareOpen: 'Anybody with the link can read it.',
+    shareProtected: 'A password stands in the way.',
+    sharePassword: 'Password',
+    sharePasswordHelp: 'At least 8 characters. A new password signs every reader out.',
+    shareSetPassword: 'Set a password',
+    shareChangePassword: 'Change the password',
+    shareRemovePassword: 'Remove the password',
+    shareNewLink: 'New link',
+    shareNewLinkHelp: 'The old link stops working the moment a new one exists.',
+    shareOff: 'Turn off',
+    shareOffHelp: 'The link stops working. Making one again later gives a new link.',
+    shareWorking: 'Working',
     save: 'Save',
     saving: 'Saving',
     saved: 'Saved.',

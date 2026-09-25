@@ -46,6 +46,9 @@ const Alerts = lazy(async () => ({ default: (await import('../pages/Alerts.js'))
 const Settings = lazy(async () => ({
   default: (await import('../pages/Settings.js')).Settings,
 }));
+// The shared page (AN-RPT01): outside the boot below, because whoever holds
+// the link has no session and GET /api/me would send them to sign in.
+const Share = lazy(async () => ({ default: (await import('../pages/Share.js')).Share }));
 
 // What is on screen while a report's chunk is on its way.
 //
@@ -340,7 +343,18 @@ export function App(): JSX.Element {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Authenticated client={client} onExpired={onExpired} />
+      <Switch>
+        <Route path="/share/:token">
+          {(params: { token: string }) => (
+            <Suspense fallback={<Splash />}>
+              <Share client={client} token={params.token} />
+            </Suspense>
+          )}
+        </Route>
+        <Route>
+          <Authenticated client={client} onExpired={onExpired} />
+        </Route>
+      </Switch>
     </QueryClientProvider>
   );
 }

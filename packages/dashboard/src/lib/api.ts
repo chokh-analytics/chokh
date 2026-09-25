@@ -36,6 +36,21 @@ import type { StatsParams } from './query.js';
 
 // What the site row looks like on the wire: publicSite, which is the site with
 // its identifySecret taken out.
+// A site's public share as the owner sees it: the link, whether a password
+// stands in the way, never the hash (AN-RPT01).
+export interface PublicShare {
+  token: string;
+  protected: boolean;
+  createdAt: number;
+}
+
+// What a share answers whoever opens it, before any number.
+export interface ShareHead {
+  site: { name: string; timezone: string };
+  protected: boolean;
+  unlocked: boolean;
+}
+
 export interface PublicSite {
   id: string;
   name: string;
@@ -56,6 +71,8 @@ export interface PublicSite {
   // Present while the site waits for the jobs to regroup its routes after a
   // change to the rules.
   routesChangedAt?: number;
+  // The public share, when the owner made one (AN-RPT01).
+  share?: PublicShare;
 }
 
 export interface PublicUser {
@@ -386,6 +403,31 @@ export const api = {
     client.get<UserProfile>(`/api/sites/${siteId}/users/${encodeURIComponent(userId)}`),
 
   // Not a JSON read: the browser navigates to it and the server sends a file.
+  // The public share (AN-RPT01): the owner's two calls on the site, and the
+  // reader's two on the token; the reports under the token go through the
+  // share client, which rewrites every site path.
+  putShare: (
+    client: Client,
+    siteId: string,
+    input: { regenerate?: boolean; password?: string | null },
+  ): Promise<Answer<{ share: PublicShare }>> =>
+    client.put<{ share: PublicShare }>(`/api/sites/${siteId}/share`, input),
+
+  deleteShare: (client: Client, siteId: string): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(`/api/sites/${siteId}/share`),
+
+  share: (client: Client, token: string): Promise<Answer<ShareHead>> =>
+    client.get<ShareHead>(`/api/share/${encodeURIComponent(token)}`),
+
+  unlockShare: (
+    client: Client,
+    token: string,
+    password: string,
+  ): Promise<Answer<{ unlocked: boolean }>> =>
+    client.post<{ unlocked: boolean }>(`/api/share/${encodeURIComponent(token)}/unlock`, {
+      password,
+    }),
+
   // The CSV of one report (AN-RPT01): `report` names the kind and `extra`
   // carries what that kind needs beyond the stats query, an event, a funnel,
   // the branches, exactly as the report's own route takes them.

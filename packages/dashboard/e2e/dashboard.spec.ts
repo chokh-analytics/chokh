@@ -829,3 +829,48 @@ test('shows the Alerts page on an install with no key: named, described, and not
   );
   expect(overflow, 'the Alerts page scrolls sideways at 390').toBeLessThanOrEqual(0);
 });
+
+// The public share (AN-RPT01): whoever holds the link reads the Overview in a
+// browser that has never signed in, a password stands in the way when the
+// owner set one, and nothing on the page leads to a person.
+test('shares the Overview with whoever holds the link, behind a password when there is one', async ({
+  page,
+  browser,
+}) => {
+  const made = await page.request.put(`/api/sites/${SITE}/share`, { data: {} });
+  expect(made.status(), 'the share was refused').toBe(200);
+  const { token } = ((await made.json()) as { data: { share: { token: string } } }).data.share;
+  const site = ((await (await page.request.get(`/api/sites/${SITE}`)).json()) as {
+    data: { site: { name: string } };
+  }).data.site;
+
+  // A fresh context: no cookie, no session, nothing but the link.
+  const context = await browser.newContext();
+  const guest = await context.newPage();
+  const answer = await guest.goto(`/share/${token}`);
+  expect(answer?.headers()['x-robots-tag']).toBe('noindex');
+  await expect(guest.getByRole('heading', { name: site.name, level: 1 })).toBeVisible();
+  await expect(guest.getByRole('link', { name: /Powered by Chokh/ })).toBeVisible();
+  await expect(guest.getByRole('group', { name: 'Date range' })).toBeVisible();
+  await expect(guest.getByText('No data in this range.')).toHaveCount(0);
+  await expect(guest.getByRole('region', { name: 'Top pages' })).toBeVisible();
+  await expect(guest.getByRole('navigation', { name: 'Report' })).toHaveCount(0);
+  await expect(guest.getByRole('link', { name: 'People' })).toHaveCount(0);
+  await expect(guest.getByRole('link', { name: 'Realtime' })).toHaveCount(0);
+
+  await page.request.put(`/api/sites/${SITE}/share`, { data: { password: 'open-sesame' } });
+  await guest.reload();
+  await expect(guest.getByRole('heading', { name: 'This page needs a password' })).toBeVisible();
+  await guest.getByLabel('Password').fill('not-it-at-all');
+  await guest.getByRole('button', { name: 'Open' }).click();
+  await expect(guest.getByText('That is not the password.')).toBeVisible();
+  await guest.getByLabel('Password').fill('open-sesame');
+  await guest.getByRole('button', { name: 'Open' }).click();
+  await expect(guest.getByRole('heading', { name: site.name, level: 1 })).toBeVisible();
+
+  // Left as it was found: no share, and the old link opens nothing.
+  await page.request.delete(`/api/sites/${SITE}/share`);
+  await guest.reload();
+  await expect(guest.getByText('This link does not open anything.')).toBeVisible();
+  await context.close();
+});

@@ -199,7 +199,8 @@ describe('the public share', () => {
       url: `/api/sites/${SITE_ID}/share`,
       headers: { cookie: owner },
     });
-    expect(removed.statusCode).toBe(204);
+    expect(removed.statusCode).toBe(200);
+    expect(envelope<{ deleted: boolean }>(removed.body).data?.deleted).toBe(true);
     expectFailure(await read(fresh), 404, 'UNKNOWN_SHARE');
     const site = await harness.app.inject({
       method: 'GET',

@@ -48,7 +48,7 @@ export function createDeleteShareController(deps: ApiDeps) {
     if (!cleared.ok) {
       return reply.code(cleared.status).send(fail(cleared.code, cleared.message));
     }
-    return reply.code(204).send();
+    return reply.send(ok({ deleted: true }));
   };
 }
 

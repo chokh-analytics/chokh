@@ -56,6 +56,7 @@ export interface ClientOptions {
 export interface Client {
   get<T>(path: string, params?: Params): Promise<Answer<T>>;
   post<T>(path: string, body?: unknown): Promise<Answer<T>>;
+  put<T>(path: string, body?: unknown): Promise<Answer<T>>;
   patch<T>(path: string, body: unknown): Promise<Answer<T>>;
   delete<T>(path: string): Promise<Answer<T>>;
   // The URL a browser should navigate to for a download or a stream, which is
@@ -144,6 +145,12 @@ export function createClient(options: ClientOptions = {}): Client {
     post: <T,>(path: string, body?: unknown) =>
       send<T>(path, {
         method: 'POST',
+        headers: body === undefined ? {} : { 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    put: <T,>(path: string, body?: unknown) =>
+      send<T>(path, {
+        method: 'PUT',
         headers: body === undefined ? {} : { 'content-type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),

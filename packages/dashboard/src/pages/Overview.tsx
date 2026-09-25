@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo, type JSX } from 'react';
-import type { Dimension, Metrics } from '@chokh/store/contract';
+import type { Dimension } from '@chokh/store/contract';
 
 import { useApp } from '../app/context.js';
 import { RangeBar } from '../app/RangeBar.js';
@@ -12,9 +12,7 @@ import {
   deltaPoints,
   countryName,
   formatCount,
-  formatDuration,
   formatExact,
-  formatRate,
   formatRatio,
   viewsPerVisit,
   GOOD_WHEN,
@@ -30,7 +28,8 @@ import {
   useTimeseries,
 } from '../lib/queries.js';
 import { defaultInterval, isLive } from '../lib/range.js';
-import { METRICS, toStatsParams, type MetricName } from '../lib/query.js';
+import { METRIC_EXACT, METRIC_FORMAT, METRIC_LABELS, valueOf } from '../lib/kpi.js';
+import { METRICS, toStatsParams } from '../lib/query.js';
 import { format, messages } from '../messages/en.js';
 import { Breakdown, Code, conversionColumn, type BreakdownRowView } from '../ui/Breakdown.js';
 import { Button } from '../ui/Button.js';
@@ -57,50 +56,6 @@ const NotesPanel = lazy(() => import('../ui/Notes.js'));
 // red are reserved for good and bad, and any row can be clicked to filter the
 // whole page.
 
-const METRIC_LABELS: Record<MetricName, string> = {
-  visitors: messages.metrics.visitors,
-  pageviews: messages.metrics.pageviews,
-  bounceRate: messages.metrics.bounceRate,
-  avgDuration: messages.metrics.avgDuration,
-};
-
-// What a metric is, kept nullable all the way to the formatter.
-//
-// A bounce rate over no visits and an average duration over no visits are both
-// null, and turning them into a zero here is what put "not available" in a tile
-// beside a red "down 100%": the delta was computed against a zero nobody
-// measured. The chart needs a number, so it coalesces at the point of drawing
-// and nowhere earlier.
-function valueOf(metrics: Metrics, name: MetricName): number | null {
-  switch (name) {
-    case 'visitors':
-      return metrics.visitors;
-    case 'pageviews':
-      return metrics.pageviews;
-    case 'bounceRate':
-      return metrics.bounceRate;
-    case 'avgDuration':
-      return metrics.avgDurationMs;
-  }
-}
-
-// How each metric is written, so the chart axis, the hover card, the peak line
-// and the hidden table say the same thing the tile above them says. Without
-// this every series is a count, and the bounce rate chart's axis reads 0, 0, 1
-// under a tile that says 30%.
-const METRIC_FORMAT: Record<MetricName, (value: number) => string> = {
-  visitors: formatCount,
-  pageviews: formatCount,
-  bounceRate: (value) => formatRate(value) ?? '',
-  avgDuration: (value) => formatDuration(value) ?? '',
-};
-
-const METRIC_EXACT: Record<MetricName, (value: number) => string> = {
-  visitors: formatExact,
-  pageviews: formatExact,
-  bounceRate: (value) => formatRate(value) ?? '',
-  avgDuration: (value) => formatDuration(value) ?? '',
-};
 
 // One card's worth of rows, with the shares measured against the biggest row in
 // that card rather than against the site total: the point of the bar is to rank
