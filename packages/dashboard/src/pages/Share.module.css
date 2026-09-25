@@ -167,3 +167,31 @@
   display: flex;
   gap: var(--s2);
 }
+
+/* The embed: a card that fits an iframe, no frame of its own around it. */
+.embed {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3);
+  background: var(--ground);
+  color: var(--ink);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.embedHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.embedName {
+  font-weight: 600;
+}
+
+.embedFoot {
+  font-size: var(--t-label);
+  color: var(--muted);
+  justify-self: end;
+}

@@ -179,3 +179,23 @@ describe('the shared page', () => {
     await waitFor(() => expect(screen.getAllByText('315').length).toBeGreaterThan(0));
   });
 });
+
+describe('the embed', () => {
+  it('is the tiles alone for the range in the link, with the name above and the line below', async () => {
+    serve({ protected: false, unlocked: true });
+    window.history.replaceState(null, '', '/share/tok_1/embed?range=30d');
+    render(
+      <QueryClientProvider client={createQueryClient()}>
+        <Share client={createClient({ fetch: globalThis.fetch })} token="tok_1" embed />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getAllByText('315').length).toBeGreaterThan(0));
+    const embed = screen.getByTestId('embed');
+    expect(within(embed).getByText('Progsity')).toBeInTheDocument();
+    expect(within(embed).getByText('30 days')).toBeInTheDocument();
+    expect(within(embed).getByRole('link', { name: /Powered by Chokh/ })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Date range' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Top pages' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  });
+});

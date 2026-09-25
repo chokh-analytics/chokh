@@ -396,6 +396,29 @@ function RouteGroups({ owner }: { owner: boolean }): JSX.Element {
   );
 }
 
+// A line to paste somewhere, with a copy control beside it.
+function Snippet({ label, text }: { label: string; text: string }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className={styles.snippet}>
+      <span className={styles.snippetLabel}>{label}</span>
+      <pre className={styles.code}>
+        <code>{text}</code>
+      </pre>
+      <div className={styles.actions}>
+        <Button
+          onClick={() => {
+            void navigator.clipboard?.writeText(text);
+            setCopied(true);
+          }}
+        >
+          {copied ? messages.settings.shareSnippetCopied : messages.settings.shareSnippetCopy}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // The public share (AN-RPT01): make the link, copy it, put a password on it,
 // replace it, turn it off. No form to save: each control is one call and the
 // site row in GET /api/me is refreshed after it, so the card always draws what
@@ -507,6 +530,15 @@ function Sharing({ owner }: { owner: boolean }): JSX.Element {
               </div>
             </fieldset>
           </form>
+          <p className={styles.note}>{messages.settings.shareEmbedLede}</p>
+          <Snippet
+            label={messages.settings.shareBadge}
+            text={`![${messages.metrics.visitors}](${origin}/api/share/${share.token}/widget.svg?metric=visitors&range=30d)`}
+          />
+          <Snippet
+            label={messages.settings.shareIframe}
+            text={`<iframe src="${origin}/share/${share.token}/embed?range=30d" width="640" height="160" title="${site.name}" loading="lazy" style="border:0"></iframe>`}
+          />
           <div className={styles.actions}>
             <Button
               disabled={!owner || busy}

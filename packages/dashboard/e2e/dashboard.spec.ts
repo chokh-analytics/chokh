@@ -868,6 +868,20 @@ test('shares the Overview with whoever holds the link, behind a password when th
   await guest.getByRole('button', { name: 'Open' }).click();
   await expect(guest.getByRole('heading', { name: site.name, level: 1 })).toBeVisible();
 
+  // The two embeds: the badge is an SVG anybody can fetch, the card is the
+  // tiles alone in a page a frame may hold.
+  await page.request.put(`/api/sites/${SITE}/share`, { data: { password: null } });
+  const badge = await guest.request.get(`/api/share/${token}/widget.svg?metric=visitors&range=30d`);
+  expect(badge.status()).toBe(200);
+  expect(badge.headers()['content-type']).toContain('image/svg+xml');
+  expect(await badge.text()).toContain('<title>Visitors, 30 days: ');
+  const framed = await guest.goto(`/share/${token}/embed?range=30d`);
+  expect(framed?.headers()['content-security-policy']).toBe('frame-ancestors *');
+  await expect(guest.getByTestId('embed')).toBeVisible();
+  await expect(guest.getByRole('group', { name: 'Date range' })).toHaveCount(0);
+  const own = await guest.goto(`/share/${token}`);
+  expect(own?.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+
   // Left as it was found: no share, and the old link opens nothing.
   await page.request.delete(`/api/sites/${SITE}/share`);
   await guest.reload();

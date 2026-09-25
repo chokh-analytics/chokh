@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 import type { FastifyInstance } from 'fastify';
 
 import { resolveDashboardDir } from '../config/env.js';
+import { framePolicy } from '../lib/frame-policy.js';
 
 // Where Vite puts every file whose name carries a hash of its contents.
 const HASHED_DIR = 'assets';
@@ -57,6 +58,14 @@ export async function registerDashboard(
         'cache-control',
         hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
       );
+      // The page itself, served here at the root: framed by nobody. The
+      // share's embed never reaches this branch, because its path is not a
+      // file and the not found handler answers it with the policy it needs.
+      if (path.endsWith('.html')) {
+        for (const [name, value] of Object.entries(framePolicy('/'))) {
+          response.setHeader(name, value);
+        }
+      }
     },
   });
 

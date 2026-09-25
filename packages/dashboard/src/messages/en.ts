@@ -840,6 +840,12 @@ export const messages = {
     shareNewLinkHelp: 'The old link stops working the moment a new one exists.',
     shareOff: 'Turn off',
     shareOffHelp: 'The link stops working. Making one again later gives a new link.',
+    shareEmbedLede:
+      'Two ways to put the numbers somewhere else. The badge is an image for a README or a page; the card is the five tiles in a frame.',
+    shareBadge: 'Badge, for Markdown',
+    shareIframe: 'Card, for a page',
+    shareSnippetCopy: 'Copy',
+    shareSnippetCopied: 'Copied.',
     shareWorking: 'Working',
     save: 'Save',
     saving: 'Saving',

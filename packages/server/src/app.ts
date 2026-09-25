@@ -13,6 +13,7 @@ import { cookieSecure, env, resolveSessionSecret } from './config/env.js';
 import type { ApiDeps } from './lib/api-deps.js';
 import type { ClientIpOptions } from './lib/client-ip.js';
 import { fail } from './lib/envelope.js';
+import { framePolicy } from './lib/frame-policy.js';
 import { wantsHtml } from './lib/wants-html.js';
 import { createWindowCounter } from './lib/window-counter.js';
 import { registerAuthDecorations } from './plugins/auth.js';
@@ -202,6 +203,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       if (request.url.startsWith('/share/')) {
         void reply.header('x-robots-tag', 'noindex');
       }
+      // Nobody frames a dashboard page but the share's embed, which exists
+      // to be framed.
+      void reply.headers(framePolicy(request.url));
       return reply.type('text/html').sendFile('index.html');
     }
     return reply

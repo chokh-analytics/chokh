@@ -89,7 +89,25 @@ function syntheticSite(token: string, head: ShareHead['site']): PublicSite {
   };
 }
 
-export function Share({ client, token }: { client: Client; token: string }): JSX.Element {
+// The words for a preset on the embed, where there is no bar to press.
+const RANGE_WORDS: Record<Preset, string> = {
+  today: messages.range.today,
+  yesterday: messages.range.yesterday,
+  '7d': messages.range.last7,
+  '30d': messages.range.last30,
+  custom: messages.range.custom,
+};
+
+export function Share({
+  client,
+  token,
+  embed = false,
+}: {
+  client: Client;
+  token: string;
+  // The tiles alone, for an iframe (AN-RPT01): no presets, no chart, no cards.
+  embed?: boolean;
+}): JSX.Element {
   const now = useNow();
   const head = useQuery({
     queryKey: ['share', token],
@@ -146,12 +164,77 @@ export function Share({ client, token }: { client: Client; token: string }): JSX
     site: syntheticSite(token, answer.site),
     now,
   };
+  if (embed) {
+    return (
+      <AppContext.Provider value={value}>
+        <Embed name={answer.site.name} />
+      </AppContext.Provider>
+    );
+  }
   return (
     <AppContext.Provider value={value}>
       <Frame>
         <SharedOverview name={answer.site.name} />
       </Frame>
     </AppContext.Provider>
+  );
+}
+
+// The embed: the five tiles for the range in the link, the site's name above
+// and the line below, nothing that leads anywhere but Chokh.
+function Embed({ name }: { name: string }): JSX.Element {
+  const { client, site, now } = useApp();
+  const { query } = useViewQuery();
+  const totals = useAggregate({ client, siteId: site.id, query, now });
+  const metrics = totals.data?.data.metrics;
+  const previous = totals.data?.data.previous ?? null;
+  const ratio = metrics === undefined ? null : viewsPerVisit(metrics.pageviews, metrics.visits);
+  const previousRatio =
+    previous === null ? null : viewsPerVisit(previous.pageviews, previous.visits);
+  return (
+    <div className={styles.embed} data-testid="embed">
+      <div className={styles.embedHead}>
+        <span className={styles.embedName}>{name}</span>
+        <span className={styles.badge}>{RANGE_WORDS[query.range.preset]}</span>
+      </div>
+      {totals.isError ? (
+        <ErrorState error={totals.error} onRetry={() => totals.refetch()} />
+      ) : (
+        <KpiRow>
+          {METRICS.map((metric) => {
+            const raw = metrics === undefined ? null : valueOf(metrics, metric);
+            const previousRaw = previous === null ? null : valueOf(previous, metric);
+            return (
+              <KpiTile
+                key={metric}
+                label={METRIC_LABELS[metric]}
+                value={raw === null ? null : METRIC_FORMAT[metric](raw)}
+                loading={totals.isPending}
+                delta={
+                  metric === 'bounceRate'
+                    ? deltaPoints(raw, previousRaw, GOOD_WHEN.bounceRate)
+                    : delta(raw, previousRaw, GOOD_WHEN[metric])
+                }
+              />
+            );
+          })}
+          <KpiTile
+            label={messages.metrics.viewsPerVisit}
+            value={ratio === null ? null : formatRatio(ratio)}
+            loading={totals.isPending}
+            delta={delta(ratio, previousRatio, 'up')}
+          />
+        </KpiRow>
+      )}
+      <a
+        className={styles.embedFoot}
+        href={messages.share.poweredByHref}
+        rel="noreferrer"
+        target="_blank"
+      >
+        {messages.share.poweredBy}
+      </a>
+    </div>
   );
 }
 

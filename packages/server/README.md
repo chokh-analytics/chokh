@@ -178,6 +178,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/share/:token` | nothing | Whose numbers, in which zone, whether a password stands in the way |
 | `POST /api/share/:token/unlock` | nothing | The password, for a cookie scoped to this share |
 | `GET /api/share/:token/stats/aggregate`, `/timeseries`, `/breakdown`, `/goals`, `/annotations` | the link, and the cookie when locked | The report's own route and shape, on `read:stats` alone |
+| `GET /api/share/:token/widget.svg` | the link, and the cookie when locked | A badge: `metric=visitors` or `pageviews`, `range=today`, `7d` or `30d`; cached five minutes |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
 | `GET /api/sites/:siteId/visitors/:visitorId` | `read:stats` | Identity fields gated |
@@ -201,6 +202,14 @@ events, properties and the export are not registered there and answer 404.
 Reads are limited per address at `SHARE_RATE_LIMIT` a minute (120) on a
 counter of their own, and every answer, like the dashboard's `/share/*` page,
 carries `X-Robots-Tag: noindex`.
+
+Two things a share can be embedded as. `widget.svg` is a badge, one metric
+over one range in the site's zone, cached five minutes, for a README or a page
+to carry as an image. `/share/:token/embed` is the dashboard's page with the
+tiles alone, meant for an iframe: it is the one HTML page the server lets a
+frame hold (`Content-Security-Policy: frame-ancestors *`); every other
+dashboard page answers `frame-ancestors 'none'` and `X-Frame-Options: DENY`,
+which is the clickjacking answer for a signed-in dashboard.
 
 ### The query every report takes
 

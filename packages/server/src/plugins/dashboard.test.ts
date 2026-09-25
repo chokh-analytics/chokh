@@ -53,6 +53,14 @@ describe('serving the built dashboard', () => {
     }
   });
 
+  it('lets nobody frame the page it serves at the root', async () => {
+    const response = await app.inject({ method: 'GET', url: '/' });
+    expect(response.headers['content-security-policy']).toBe("frame-ancestors 'none'");
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    const asset = await app.inject({ method: 'GET', url: '/assets/index-abc123.js' });
+    expect(asset.headers['content-security-policy']).toBeUndefined();
+  });
+
   it('treats anything outside assets as fresh every time', async () => {
     const response = await app.inject({ method: 'GET', url: '/favicon.svg' });
     expect(response.headers['cache-control']).toBe('no-cache');

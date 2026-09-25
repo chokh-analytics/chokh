@@ -283,6 +283,13 @@ describe('Settings, the public share', () => {
       `${location.origin}/share/tok_first_000000000000000000000`,
     );
     expect(within(card('Public share')).getByText('Anybody with the link can read it.')).toBeInTheDocument();
+    // The two snippets carry the link's token: the badge as an image URL, the
+    // card as an iframe of the embed.
+    const snippets = within(card('Public share')).getAllByRole('code');
+    expect(snippets.map((code) => code.textContent)).toEqual([
+      `![Visitors](${location.origin}/api/share/tok_first_000000000000000000000/widget.svg?metric=visitors&range=30d)`,
+      `<iframe src="${location.origin}/share/tok_first_000000000000000000000/embed?range=30d" width="640" height="160" title="Progsity" loading="lazy" style="border:0"></iframe>`,
+    ]);
 
     await userEvent.type(within(card('Public share')).getByLabelText('Password'), 'short');
     await userEvent.click(within(card('Public share')).getByRole('button', { name: 'Set a password' }));

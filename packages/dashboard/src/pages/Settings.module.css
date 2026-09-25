@@ -75,3 +75,33 @@
   color: var(--muted);
   line-height: 1.45;
 }
+
+/* A snippet to paste elsewhere: the badge's Markdown, the card's iframe. */
+.snippet {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.snippetLabel {
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.code {
+  margin: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  line-height: 1.6;
+  padding: var(--s3);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

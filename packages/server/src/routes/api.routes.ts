@@ -79,6 +79,7 @@ import {
   requireSiteScope,
 } from '../plugins/auth.js';
 import { requireShare } from '../plugins/share.js';
+import { createWidgetController } from '../controllers/widget.controller.js';
 import type { AuthDeps } from '../services/auth.service.js';
 
 // Every route of the stats API, and the one hook each of them runs first.
@@ -192,6 +193,11 @@ export async function registerApiRoutes(
     '/api/share/:token/annotations',
     { preHandler: [shareReads, shared] },
     createListAnnotationsController(deps),
+  );
+  app.get(
+    '/api/share/:token/widget.svg',
+    { preHandler: [shareReads, shared] },
+    createWidgetController(deps),
   );
 
   // Keys. admin, because a key is a way to hand out access.

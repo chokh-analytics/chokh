@@ -47,7 +47,10 @@ const BUDGETS = [
   // as a file (AN-RPT01): measured at 38,043 B with the Download control in
   // the card's foot, the Overview's four cards and its chart head, and the
   // seven strings the control reads.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 38 * 1024 },
+  // Raised to 39 KB on 2026-09-25 by the commit that spent it, the embed:
+  // measured at 38,941 B, the five strings of the Settings card's two
+  // snippets, which live in the one messages file the shell carries.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 39 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },

@@ -344,6 +344,13 @@ export function App(): JSX.Element {
   return (
     <QueryClientProvider client={queryClient}>
       <Switch>
+        <Route path="/share/:token/embed">
+          {(params: { token: string }) => (
+            <Suspense fallback={<Splash />}>
+              <Share client={client} token={params.token} embed />
+            </Suspense>
+          )}
+        </Route>
         <Route path="/share/:token">
           {(params: { token: string }) => (
             <Suspense fallback={<Splash />}>
