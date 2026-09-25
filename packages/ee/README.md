@@ -201,6 +201,49 @@ the condition as one sentence. The test route sends a test message on every
 channel now and answers each channel's outcome, which is how a person proves
 a bot token or an SMTP password without waiting for a spike.
 
+## Digests
+
+The second paid feature (`AN-RPT01`): the site's numbers, mailed. A daily
+digest is yesterday, a weekly one the seven days ending yesterday, both in
+the site's own zone, at an hour of the site's day (8 unless chosen) and, for
+a weekly one, on a weekday (Monday unless chosen). Each mail carries the
+numbers against the period before, the shape of the day by hour or the week
+by day, the top five pages, sources and countries, the goals' conversions
+and the marks on the chart, as text, as HTML, and as one page attached,
+drawn with `pdf-lib` (a dependency of this package and of nothing in the
+core, like `nodemailer`). Email goes the way alerts' email goes: Brevo's API
+when `CHOKH_BREVO_API_KEY` is set, SMTP otherwise, from `CHOKH_MAIL_FROM`.
+
+A site has at most one digest per cadence, the id derived from both, and
+each goes to one to five addresses. The tick runs beside the alert tick every
+five minutes: a digest whose hour has come and whose period is not yet
+claimed is composed and sent once, the claim being one compare-and-set write
+on the row, so every process may tick and each period goes once. A period
+whose mail reached nobody stays claimed, because a digest that arrives twice
+is worse than one that arrives late; the row keeps what happened (`last`)
+and the Alerts page shows it.
+
+```
+GET    /api/sites/:siteId/ee/digests                  read:stats
+POST   /api/sites/:siteId/ee/digests                  admin
+DELETE /api/sites/:siteId/ee/digests/:digestId        admin
+POST   /api/sites/:siteId/ee/digests/:digestId/send   admin
+```
+
+```
+POST /api/sites/my_site/ee/digests
+{ "cadence": "weekly", "to": ["ops@example.test", "founder@example.test"],
+  "hour": 8, "weekday": 1 }
+```
+
+The feature is `digests`. The list's `meta` says whether this install can
+mail at all (`mail`) and what it lacks (`needs`), and a `POST` on an install
+that cannot is `400 CHANNEL_UNAVAILABLE` naming the variable. A second digest
+of the same cadence is `409 DIGEST_EXISTS`; there is no edit route, delete
+and add again. `send` mails the last complete period now, whatever the hour,
+and answers each address's outcome; it does not claim the period, so the
+scheduled send still goes at its hour.
+
 ## The fixture route
 
 `GET /api/sites/:siteId/ee/ping`, behind the feature `ee.ping`. It is the one

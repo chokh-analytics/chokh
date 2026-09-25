@@ -1,11 +1,21 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { fail, ok, requireSiteScope, type ApiDeps } from '@chokh/server';
-import { MAX_ALERTS_PER_SITE, alertIdFor, type Alert, type StoreQueryError } from '@chokh/store';
+import {
+  MAX_ALERTS_PER_SITE,
+  MAX_DIGEST_RECIPIENTS,
+  alertIdFor,
+  digestIdFor,
+  type Alert,
+  type Digest,
+  type StoreQueryError,
+} from '@chokh/store';
 
 import { ALERTS_FEATURE, alertParamsSchema, createAlertSchema } from '../alerts/conditions.js';
 import { emailNeeds, type Deliverer } from '../alerts/deliver.js';
 import { notify, startAlertTick } from '../alerts/evaluate.js';
 import { describeCondition } from '../alerts/messages.js';
+import { DIGESTS_FEATURE, createDigestSchema, digestParamsSchema, periodFor } from '../digests/period.js';
+import { sendDigest, startDigestTick } from '../digests/run.js';
 import { requireLicense } from '../license/guard.js';
 import type { DeliveryEnv } from '../license/env.js';
 import type { LicenseState } from '../license/state.js';
@@ -38,6 +48,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   UNKNOWN_SITE: 404,
   ALERT_EXISTS: 409,
   ALERT_LIMIT: 409,
+  DIGEST_EXISTS: 409,
 };
 
 function refusalOf(error: unknown): { status: number; code: string; message: string } | null {
@@ -239,27 +250,169 @@ export async function registerEeRoutes(
     },
   );
 
+  // Digests (AN-RPT01): the site's numbers mailed at an hour of its own day.
+  // Reading the list is read:stats, like alerts; adding, deleting and sending
+  // one now are admin, for the same reason. Behind their own feature, so a
+  // key that names alerts alone does not carry them.
+  const digests = '/api/sites/:siteId/ee/digests';
+  const mailNeeds = (): string[] => emailNeeds(ee.delivery);
+
+  app.get(
+    digests,
+    { preHandler: [requireSiteScope(auth, 'read:stats'), requireLicense(state, DIGESTS_FEATURE)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const site = request.site;
+      if (site === null) {
+        return unauthenticated(reply);
+      }
+      const rows = await store.digests(site.id);
+      const needs = mailNeeds();
+      return reply.send(
+        ok(
+          { digests: rows },
+          // Whether this install can mail at all, and what it lacks if not, so
+          // the form says so before anybody types five addresses.
+          { siteId: site.id, maxRecipients: MAX_DIGEST_RECIPIENTS, mail: needs.length === 0, needs },
+        ),
+      );
+    },
+  );
+
+  app.post(
+    digests,
+    { preHandler: [requireSiteScope(auth, 'admin'), requireLicense(state, DIGESTS_FEATURE)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const site = request.site;
+      const principal = request.principal;
+      if (site === null || principal === null) {
+        return unauthenticated(reply);
+      }
+      const parsed = createDigestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send(fail('INVALID_DIGEST', 'The digest did not validate', parsed.error.issues));
+      }
+      const needs = mailNeeds();
+      if (needs.length > 0) {
+        const variable = needs.join(' and ');
+        return reply
+          .code(400)
+          .send(
+            fail('CHANNEL_UNAVAILABLE', `This install cannot send email: set ${variable}`, {
+              channel: 'email',
+              variable,
+            }),
+          );
+      }
+      const digest: Digest = {
+        siteId: site.id,
+        id: digestIdFor(site.id, parsed.data.cadence),
+        cadence: parsed.data.cadence,
+        to: parsed.data.to,
+        hour: parsed.data.hour,
+        ...(parsed.data.weekday === undefined ? {} : { weekday: parsed.data.weekday }),
+        createdBy: principal.id,
+        createdAt: deps.now(),
+      };
+      try {
+        await store.createDigest(digest);
+      } catch (error) {
+        const refusal = refusalOf(error);
+        if (refusal === null) {
+          throw error;
+        }
+        const details = refusal.code === 'DIGEST_EXISTS' ? { digestId: digest.id } : undefined;
+        return reply.code(refusal.status).send(fail(refusal.code, refusal.message, details));
+      }
+      return reply.code(201).send(ok({ digest }));
+    },
+  );
+
+  app.delete(
+    `${digests}/:digestId`,
+    { preHandler: [requireSiteScope(auth, 'admin'), requireLicense(state, DIGESTS_FEATURE)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const site = request.site;
+      if (site === null) {
+        return unauthenticated(reply);
+      }
+      const params = digestParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply
+          .code(400)
+          .send(fail('INVALID_PARAMS', 'The digest id did not validate', params.error.issues));
+      }
+      const deleted = await store.deleteDigest(site.id, params.data.digestId);
+      if (!deleted) {
+        return reply
+          .code(404)
+          .send(fail('DIGEST_NOT_FOUND', `No digest ${params.data.digestId} belongs to ${site.id}`));
+      }
+      return reply.send(ok({ deleted: true }));
+    },
+  );
+
+  // The last complete period, now, whatever the hour: how a person proves
+  // the addresses the way "Send a test" proves a channel. It does not claim
+  // the period, so the scheduled send still goes at its hour.
+  app.post(
+    `${digests}/:digestId/send`,
+    { preHandler: [requireSiteScope(auth, 'admin'), requireLicense(state, DIGESTS_FEATURE)] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const site = request.site;
+      if (site === null) {
+        return unauthenticated(reply);
+      }
+      const params = digestParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply
+          .code(400)
+          .send(fail('INVALID_PARAMS', 'The digest id did not validate', params.error.issues));
+      }
+      const digest = await store.digest(site.id, params.data.digestId);
+      if (digest === null) {
+        return reply
+          .code(404)
+          .send(fail('DIGEST_NOT_FOUND', `No digest ${params.data.digestId} belongs to ${site.id}`));
+      }
+      const period = periodFor(digest.cadence, deps.now(), site.settings.timezone);
+      const deliveries = await sendDigest(
+        { store, deliver: ee.deliver, publicUrl: ee.publicUrl, now: deps.now },
+        site,
+        digest,
+        period,
+      );
+      return reply.send(ok({ deliveries, period: period.key }));
+    },
+  );
+
   if (ee.tick) {
     // Started when the app is ready and stopped when it closes, so the seam
     // between the core and this package does not change and a test app that
     // never listens never ticks. Every process runs it; the claim on each
     // bucket is what makes that one evaluation per bucket, not one per process.
     let stop: (() => void) | null = null;
+    let stopDigests: (() => void) | null = null;
     app.addHook('onReady', async () => {
-      stop = startAlertTick({
+      const shared = {
         store,
         deliver: ee.deliver,
         license: state,
         log: {
-          info: (details, message) => app.log.info(details, message),
-          warn: (details, message) => app.log.warn(details, message),
+          info: (details: object, message: string) => app.log.info(details, message),
+          warn: (details: object, message: string) => app.log.warn(details, message),
         },
         publicUrl: ee.publicUrl,
         now: deps.now,
-      });
+      };
+      stop = startAlertTick(shared);
+      // The digests on the same five minutes and the same claim idea.
+      stopDigests = startDigestTick(shared);
     });
     app.addHook('onClose', async () => {
       stop?.();
+      stopDigests?.();
     });
   }
 }

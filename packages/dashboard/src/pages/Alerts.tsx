@@ -22,6 +22,7 @@ import { Button } from '../ui/Button.js';
 import { Card } from '../ui/Card.js';
 import { Field, SelectField } from '../ui/Field.js';
 import { ProFeature } from '../ui/Pro.js';
+import { Digests } from './Digests.js';
 import { ErrorState, Skeleton } from '../ui/State.js';
 import styles from './Alerts.module.css';
 
@@ -579,6 +580,9 @@ export function Alerts(): JSX.Element {
     <div className={styles.page}>
       <h1 className="sr-only">{messages.alerts.title}</h1>
       {body}
+      {/* The second paid feature, on the same page: both are messages Chokh
+          sends, and both are described here on an install with no key. */}
+      <Digests owner={owner} />
     </div>
   );
 }

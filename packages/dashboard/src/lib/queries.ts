@@ -175,6 +175,20 @@ export function useAlerts(client: Client, siteId: string) {
   });
 }
 
+// A site's digests (AN-RPT01), on the alert list's terms.
+export function digestsKey(siteId: string): unknown[] {
+  return ['digests', siteId];
+}
+
+export function useDigests(client: Client, siteId: string) {
+  return useQuery({
+    queryKey: digestsKey(siteId),
+    queryFn: () => api.digests(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}
+
 // A site's funnels, for the Funnels page. On the goal list's clock and refreshed
 // by hand after every create and delete, for the goal list's reason.
 export function funnelsKey(siteId: string): unknown[] {

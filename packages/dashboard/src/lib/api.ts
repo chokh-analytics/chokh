@@ -86,6 +86,22 @@ export interface PublicUser {
 // it cannot be derived from them.
 // An alert as the list answers it: the row, and what it watches as one
 // sentence the server wrote, so the page never spells a condition itself.
+// A digest as the list answers it (AN-RPT01).
+export type DigestCadence = 'daily' | 'weekly';
+
+export interface DigestRow {
+  siteId: string;
+  id: string;
+  cadence: DigestCadence;
+  to: string[];
+  hour: number;
+  weekday?: number;
+  createdBy: string;
+  createdAt: number;
+  lastPeriod?: string;
+  last?: { at: number; period: string; deliveries: AlertDelivery[] };
+}
+
 export type AlertRow = Alert & { watches: string };
 
 export interface MyTeam {
@@ -304,6 +320,38 @@ export const api = {
   ): Promise<Answer<{ deleted: boolean }>> =>
     client.delete<{ deleted: boolean }>(
       `/api/sites/${siteId}/ee/alerts/${encodeURIComponent(alertId)}`,
+    ),
+
+  // Digests (AN-RPT01), the second paid feature: under /ee/ and gated the
+  // same way. The list's meta says whether this install can mail at all.
+  digests: (client: Client, siteId: string): Promise<Answer<{ digests: DigestRow[] }>> =>
+    client.get<{ digests: DigestRow[] }>(`/api/sites/${siteId}/ee/digests`),
+
+  createDigest: (
+    client: Client,
+    siteId: string,
+    input: { cadence: DigestCadence; to: string[]; hour: number; weekday?: number },
+  ): Promise<Answer<{ digest: DigestRow }>> =>
+    client.post<{ digest: DigestRow }>(`/api/sites/${siteId}/ee/digests`, input),
+
+  deleteDigest: (
+    client: Client,
+    siteId: string,
+    digestId: string,
+  ): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete<{ deleted: boolean }>(
+      `/api/sites/${siteId}/ee/digests/${encodeURIComponent(digestId)}`,
+    ),
+
+  // The last complete period, mailed now, with each address's outcome.
+  sendDigestNow: (
+    client: Client,
+    siteId: string,
+    digestId: string,
+  ): Promise<Answer<{ deliveries: AlertDelivery[]; period: string }>> =>
+    client.post<{ deliveries: AlertDelivery[]; period: string }>(
+      `/api/sites/${siteId}/ee/digests/${encodeURIComponent(digestId)}/send`,
+      {},
     ),
 
   // A test message on every channel of one alert, now, with each channel's

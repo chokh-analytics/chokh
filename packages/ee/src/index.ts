@@ -32,3 +32,4 @@ export const extension: ServerExtension = buildExtension(
 export { buildExtension } from './extension.js';
 export { PING_FEATURE } from './routes/ee.routes.js';
 export { ALERTS_FEATURE } from './alerts/conditions.js';
+export { DIGESTS_FEATURE } from './digests/period.js';

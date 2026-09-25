@@ -101,6 +101,11 @@ function serve(
     if (url.pathname.endsWith('/goals')) {
       return Promise.resolve(ok({ goals: [SIGNUP] }));
     }
+    // The digests section on the same page (AN-RPT01) makes its own read;
+    // its own test drives it, so here it is an empty list.
+    if (url.pathname.endsWith('/ee/digests')) {
+      return Promise.resolve(ok({ digests: [] }, { siteId: 's_test', maxRecipients: 5, mail: true, needs: [] }));
+    }
     if (url.pathname.endsWith('/test') && method === 'POST') {
       return Promise.resolve(
         (routes.test ??

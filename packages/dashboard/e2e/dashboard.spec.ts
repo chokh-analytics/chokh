@@ -815,7 +815,8 @@ test('shows the Alerts page on an install with no key: named, described, and not
   await page.setViewportSize({ width: 390, height: 844 });
   await boot(page, `/${SITE}/alerts`);
   await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeAttached();
-  await expect(page.getByText('Part of Chokh Pro', { exact: true })).toBeVisible();
+  // Two paid features on the page now, alerts and digests, each with its badge.
+  await expect(page.getByText('Part of Chokh Pro', { exact: true })).toHaveCount(2);
   await expect(
     page.getByText('Alerts is part of Chokh Pro. It is here, and a licence key turns it on.'),
   ).toBeVisible();
@@ -824,6 +825,12 @@ test('shows the Alerts page on an install with no key: named, described, and not
   await expect(page.getByText('Silence', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Add an alert' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add the alert' })).toHaveCount(0);
+  // The digests (AN-RPT01) on the same page, described the same way.
+  await expect(page.getByRole('region', { name: 'Digests' })).toBeVisible();
+  await expect(
+    page.getByText('Digests is part of Chokh Pro. It is here, and a licence key turns it on.'),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add the digest' })).toHaveCount(0);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

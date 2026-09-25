@@ -768,6 +768,46 @@ export const messages = {
     ipMode: 'Addresses: {mode}',
   },
 
+  // Digests (AN-RPT01): the site's numbers mailed, on the Alerts page.
+  digests: {
+    title: 'Digests',
+    lede: 'The numbers, mailed: yesterday every morning, or the week ending yesterday once a week, with the same numbers on one page attached.',
+    describe:
+      'A digest is the Overview in a mail: the numbers against the period before, the shape of the day or the week, the top pages, sources and countries, the goals, and the marks on the chart.',
+    cadenceDaily: 'Daily',
+    cadenceWeekly: 'Weekly',
+    daily: 'Every day at {hour}, about the day before',
+    weekly: 'Every {weekday} at {hour}, about the seven days before',
+    to: 'To {addresses}',
+    lastSent: 'Last sent {when} for {period}, delivered to {delivered} of {of}',
+    neverSent: 'Not sent yet.',
+    sendNow: 'Send now',
+    sending: 'Sending',
+    sendOutcomes: 'What the mail met',
+    delete: 'Delete',
+    deleteConfirm: 'Delete the {cadence} digest? Nothing counted changes.',
+    deleteYes: 'Delete it',
+    deleteNo: 'Keep it',
+    empty: 'No digests yet.',
+    emptyLede: 'Add one below: a daily one, a weekly one, or both.',
+    addTitle: 'Add a digest',
+    cadence: 'How often',
+    addresses: 'Addresses',
+    addressesHelp: 'One per line, up to five.',
+    hour: 'At ({zone})',
+    weekday: 'On',
+    save: 'Add the digest',
+    saving: 'Adding',
+    exists: 'A {cadence} digest already exists. Delete it to change it.',
+    needAddress: 'This needs at least one address.',
+    badAddress: 'One of these is not an address.',
+    tooMany: 'At most five addresses.',
+    mailUnavailable:
+      'This install cannot send email: set {variable}. The variables are named in the ee README.',
+    ownerOnly: 'Only an owner of this site can add or delete a digest.',
+    weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  },
+
   // The settings page. Three forms in three cards, every control drawn for
   // everybody and disabled with the reason for anybody who is not an owner.
   settings: {
