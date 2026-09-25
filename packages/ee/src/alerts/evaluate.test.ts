@@ -38,6 +38,7 @@ function fakeDeliverer(answer: (channel: AlertChannel) => AlertDelivery): Delive
   return {
     available: ['email', 'telegram', 'webhook'],
     sent,
+    sendMail: () => Promise.resolve(null),
     send(channel, message) {
       sent.push({ channel, message });
       return Promise.resolve(answer(channel));

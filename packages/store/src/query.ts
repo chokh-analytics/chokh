@@ -818,6 +818,39 @@ export const MAX_ALERTS_PER_SITE = 20;
 export const MAX_ALERT_CHANNELS = 5;
 export const MAX_ALERT_RECENT = 20;
 
+// A scheduled digest (AN-RPT01, the paid half): the site's numbers for
+// yesterday or for the week ending yesterday, mailed at an hour of the
+// site's own day. One per cadence per site, the id derived from both, so a
+// second daily digest is the same row. What was last sent is kept beside it
+// so the page can say so.
+export type DigestCadence = 'daily' | 'weekly';
+export const DIGEST_CADENCES: readonly DigestCadence[] = ['daily', 'weekly'];
+
+export interface DigestSend {
+  at: number;
+  // The period that was sent, the key the claim was made on.
+  period: string;
+  deliveries: AlertDelivery[];
+}
+
+export interface Digest {
+  siteId: string;
+  id: string;
+  cadence: DigestCadence;
+  to: string[];
+  // The hour of the site's day it goes out at, 0 to 23.
+  hour: number;
+  // For a weekly digest, the day it goes out on: 0 Sunday to 6 Saturday.
+  weekday?: number;
+  createdBy: string;
+  createdAt: number;
+  // The last period claimed, so a period is sent once across processes.
+  lastPeriod?: string;
+  last?: DigestSend;
+}
+
+export const MAX_DIGEST_RECIPIENTS = 5;
+
 // What a read needs of a funnel: the questions in order, and the window.
 export interface FunnelRead {
   steps: GoalMatch[];

@@ -6,6 +6,7 @@ import {
   DEFAULT_TEAM_ID,
   alertIdFor,
   annotationIdFor,
+  digestIdFor,
   funnelIdFor,
   goalIdFor,
   segmentIdFor,
@@ -26,6 +27,7 @@ import {
   type AlertFiring,
   type Annotation,
   type AnnotationKind,
+  type Digest,
   type Filter,
   type Segment,
   type Funnel,
@@ -609,6 +611,69 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
         expect(
           await refusal(() => store.createAnnotation(annotation('s_nobody', NOW, 'note', 'x'))),
         ).toBe('UNKNOWN_SITE');
+      });
+    });
+
+    describe('digests', () => {
+      function digest(siteId: string, cadence: Digest['cadence'], over: Partial<Digest> = {}): Digest {
+        return {
+          siteId,
+          id: digestIdFor(siteId, cadence),
+          cadence,
+          to: ['ops@example.test'],
+          hour: 8,
+          ...(cadence === 'weekly' ? { weekday: 1 } : {}),
+          createdBy: 'u_1',
+          createdAt: NOW,
+          ...over,
+        };
+      }
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_digests', ['digests.example']));
+        await store.createSite(site('s_else', ['else.example']));
+      });
+
+      it('keeps one digest per cadence per site and lists them by cadence', async () => {
+        const weekly = digest('s_digests', 'weekly');
+        await store.createDigest(weekly);
+        await store.createDigest(digest('s_digests', 'daily'));
+        expect(await store.digest('s_digests', weekly.id)).toEqual(weekly);
+        expect((await store.digests('s_digests')).map((row) => row.cadence)).toEqual(['daily', 'weekly']);
+        expect(await store.digests('s_else')).toEqual([]);
+        expect(await refusal(() => store.createDigest(digest('s_digests', 'daily', { hour: 9 })))).toBe(
+          'DIGEST_EXISTS',
+        );
+        expect(await refusal(() => store.createDigest(digest('s_nobody', 'daily')))).toBe('UNKNOWN_SITE');
+      });
+
+      it('claims each period once, never an older one, and records what was sent', async () => {
+        const id = digestIdFor('s_digests', 'daily');
+        expect(await store.claimDigestSend('s_digests', id, 'd:2026-09-24')).toBe(true);
+        expect(await store.claimDigestSend('s_digests', id, 'd:2026-09-24')).toBe(false);
+        expect(await store.claimDigestSend('s_digests', id, 'd:2026-09-23')).toBe(false);
+        expect(await store.claimDigestSend('s_digests', id, 'd:2026-09-25')).toBe(true);
+        expect((await store.digest('s_digests', id))?.lastPeriod).toBe('d:2026-09-25');
+        expect(await store.claimDigestSend('s_else', id, 'd:2026-09-26')).toBe(false);
+        expect(await store.claimDigestSend('s_digests', 'dg_nobody', 'd:2026-09-26')).toBe(false);
+
+        const send = {
+          at: NOW,
+          period: 'd:2026-09-25',
+          deliveries: [{ channel: 'email' as const, target: 'ops@example.test', ok: true }],
+        };
+        expect(await store.recordDigestSend('s_digests', id, send)).toBe(true);
+        expect((await store.digest('s_digests', id))?.last).toEqual(send);
+        expect(await store.recordDigestSend('s_digests', 'dg_nobody', send)).toBe(false);
+      });
+
+      it('deletes a digest and only that one', async () => {
+        const id = digestIdFor('s_digests', 'daily');
+        expect(await store.deleteDigest('s_else', id)).toBe(false);
+        expect(await store.deleteDigest('s_digests', id)).toBe(true);
+        expect(await store.deleteDigest('s_digests', id)).toBe(false);
+        expect((await store.digests('s_digests')).map((row) => row.cadence)).toEqual(['weekly']);
       });
     });
 

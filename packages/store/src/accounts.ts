@@ -192,6 +192,13 @@ export function alertIdFor(siteId: string, condition: AlertCondition): string {
   return `al_${digest.slice(0, 16)}`;
 }
 
+// A digest's id: the site and the cadence, nothing else, so a site has one
+// daily and one weekly and the unique index on {siteId, id} refuses a second.
+export function digestIdFor(siteId: string, cadence: 'daily' | 'weekly'): string {
+  const digest = createHash('sha256').update(JSON.stringify([siteId, cadence])).digest('base64url');
+  return `dg_${digest.slice(0, 16)}`;
+}
+
 // A funnel's id, derived from what it asks, for the reason a goal's is: the
 // same steps in the same order within the same window are the same numbers, so
 // the second is refused by the unique index on {siteId, id} with no read before

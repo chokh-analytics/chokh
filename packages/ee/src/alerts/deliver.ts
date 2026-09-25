@@ -18,12 +18,38 @@ export interface Deliverer {
   // when the alert is created, never quietly kept.
   available: readonly AlertChannelKind[];
   send(channel: AlertChannel, message: AlertMessage): Promise<AlertDelivery>;
+  // One address, one mail, whichever way this install sends; null when it
+  // went, else why it did not.
+  sendMail(to: string, mail: Mail): Promise<string | null>;
 }
 
 // The one call this needs of a mail library, so a test hands in a function
 // and nothing here opens a socket.
 export interface Mailer {
-  sendMail(mail: { from: string; to: string; subject: string; text: string }): Promise<unknown>;
+  sendMail(mail: {
+    from: string;
+    to: string;
+    subject: string;
+    text: string;
+    html?: string;
+    attachments?: { filename: string; content: Buffer; contentType: string }[];
+  }): Promise<unknown>;
+}
+
+// A mail as the digest sends it (AN-RPT01): a text part everybody can read,
+// an HTML part for a client that draws it, and files. An alert is the same
+// with the subject and the text alone.
+export interface MailAttachment {
+  name: string;
+  content: Uint8Array;
+  type: string;
+}
+
+export interface Mail {
+  subject: string;
+  text: string;
+  html?: string;
+  attachments?: MailAttachment[];
 }
 
 export interface DelivererOptions {
@@ -154,15 +180,24 @@ export function createDeliverer(options: DelivererOptions): Deliverer {
   // Over Brevo's API when a key is set, over SMTP otherwise. The API is an
   // HTTPS POST, which is what a host with its SMTP ports closed can do, and
   // it goes through the same two tries the other HTTP deliveries get.
-  function sendBrevo(apiKey: string, from: string, to: string, message: AlertMessage): Promise<string | null> {
+  function sendBrevo(apiKey: string, from: string, to: string, mail: Mail): Promise<string | null> {
     return post(
       BREVO_SEND_URL,
       { 'content-type': 'application/json', 'api-key': apiKey },
       JSON.stringify({
         sender: { email: from },
         to: [{ email: to }],
-        subject: message.subject,
-        textContent: message.text,
+        subject: mail.subject,
+        textContent: mail.text,
+        ...(mail.html === undefined ? {} : { htmlContent: mail.html }),
+        ...(mail.attachments === undefined || mail.attachments.length === 0
+          ? {}
+          : {
+              attachment: mail.attachments.map((each) => ({
+                name: each.name,
+                content: Buffer.from(each.content).toString('base64'),
+              })),
+            }),
       }),
       async (response) => {
         if (response.ok) {
@@ -175,24 +210,43 @@ export function createDeliverer(options: DelivererOptions): Deliverer {
     );
   }
 
-  async function sendEmail(to: string, message: AlertMessage): Promise<string | null> {
+  async function sendMail(to: string, mail: Mail): Promise<string | null> {
     const needs = emailNeeds(env);
     if (needs.length > 0 || env.mailFrom === undefined) {
       return `${needs.join(' and ')} not set on this install`;
     }
     if (env.brevoApiKey !== undefined) {
-      return sendBrevo(env.brevoApiKey, env.mailFrom, to, message);
+      return sendBrevo(env.brevoApiKey, env.mailFrom, to, mail);
     }
     if (env.smtpUrl === undefined) {
       return 'CHOKH_SMTP_URL or CHOKH_BREVO_API_KEY not set on this install';
     }
     try {
       const transport = await mailerFor(env.smtpUrl);
-      await transport.sendMail({ from: env.mailFrom, to, subject: message.subject, text: message.text });
+      await transport.sendMail({
+        from: env.mailFrom,
+        to,
+        subject: mail.subject,
+        text: mail.text,
+        ...(mail.html === undefined ? {} : { html: mail.html }),
+        ...(mail.attachments === undefined || mail.attachments.length === 0
+          ? {}
+          : {
+              attachments: mail.attachments.map((each) => ({
+                filename: each.name,
+                content: Buffer.from(each.content),
+                contentType: each.type,
+              })),
+            }),
+      });
       return null;
     } catch (error) {
       return brief(error);
     }
+  }
+
+  function sendEmail(to: string, message: AlertMessage): Promise<string | null> {
+    return sendMail(to, { subject: message.subject, text: message.text });
   }
 
   function sendTelegram(chatId: string, message: AlertMessage): Promise<string | null> {
@@ -233,6 +287,7 @@ export function createDeliverer(options: DelivererOptions): Deliverer {
 
   return {
     available: availableChannels(env),
+    sendMail,
 
     async send(channel, message) {
       const target = targetOf(channel);

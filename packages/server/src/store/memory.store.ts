@@ -102,6 +102,8 @@ import {
   type Segment,
   type Annotation,
   type Alert,
+  type Digest,
+  type DigestSend,
   type AlertFiring,
   type AlertState,
   type Site,
@@ -148,6 +150,16 @@ function copyFiring(firing: AlertFiring): AlertFiring {
   return { ...firing, deliveries: firing.deliveries.map((delivery) => ({ ...delivery })) };
 }
 
+function copyDigest(digest: Digest): Digest {
+  return {
+    ...digest,
+    to: [...digest.to],
+    ...(digest.last === undefined
+      ? {}
+      : { last: { ...digest.last, deliveries: digest.last.deliveries.map((each) => ({ ...each })) } }),
+  };
+}
+
 function copyAlert(alert: Alert): Alert {
   return {
     ...alert,
@@ -189,6 +201,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let segments: Segment[] = [];
   let annotations: Annotation[] = [];
   let alerts: Alert[] = [];
+  let digests: Digest[] = [];
   let funnels: Funnel[] = [];
 
   function siteOrThrow(siteId: string): Site {
@@ -949,6 +962,56 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       if (firing !== undefined) {
         found.recent = [...found.recent, copyFiring(firing)].slice(-MAX_ALERT_RECENT);
       }
+      return Promise.resolve(true);
+    },
+
+    digests(siteId: string): Promise<Digest[]> {
+      return Promise.resolve(
+        digests
+          .filter((row) => row.siteId === siteId)
+          .sort((left, right) => left.cadence.localeCompare(right.cadence))
+          .map(copyDigest),
+      );
+    },
+
+    digest(siteId: string, digestId: string): Promise<Digest | null> {
+      const found = digests.find((row) => row.siteId === siteId && row.id === digestId);
+      return Promise.resolve(found === undefined ? null : copyDigest(found));
+    },
+
+    async createDigest(digest: Digest): Promise<void> {
+      siteOrThrow(digest.siteId);
+      if (digests.some((row) => row.siteId === digest.siteId && row.id === digest.id)) {
+        throw new StoreQueryError('DIGEST_EXISTS', 'A digest of that cadence already exists');
+      }
+      digests.push(copyDigest(digest));
+    },
+
+    deleteDigest(siteId: string, digestId: string): Promise<boolean> {
+      const kept = digests.filter((row) => !(row.siteId === siteId && row.id === digestId));
+      const deleted = kept.length !== digests.length;
+      digests = kept;
+      return Promise.resolve(deleted);
+    },
+
+    claimDigestSend(siteId: string, digestId: string, period: string): Promise<boolean> {
+      const found = digests.find((row) => row.siteId === siteId && row.id === digestId);
+      if (found === undefined) {
+        return Promise.resolve(false);
+      }
+      if (found.lastPeriod !== undefined && found.lastPeriod >= period) {
+        return Promise.resolve(false);
+      }
+      found.lastPeriod = period;
+      return Promise.resolve(true);
+    },
+
+    recordDigestSend(siteId: string, digestId: string, send: DigestSend): Promise<boolean> {
+      const found = digests.find((row) => row.siteId === siteId && row.id === digestId);
+      if (found === undefined) {
+        return Promise.resolve(false);
+      }
+      found.last = { ...send, deliveries: send.deliveries.map((each) => ({ ...each })) };
       return Promise.resolve(true);
     },
 

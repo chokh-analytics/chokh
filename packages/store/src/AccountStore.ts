@@ -1,5 +1,15 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
-import type { Alert, AlertFiring, AlertState, Annotation, Funnel, Goal, Segment } from './query.js';
+import type {
+  Alert,
+  AlertFiring,
+  AlertState,
+  Annotation,
+  Digest,
+  DigestSend,
+  Funnel,
+  Goal,
+  Segment,
+} from './query.js';
 import type { Site, SiteSettings, SiteShare } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
@@ -120,6 +130,17 @@ export interface AccountStore {
   // One write, compared and set together, so two processes ticking at once
   // evaluate each bucket once between them. False for a row that is not there.
   claimAlertCheck(siteId: string, alertId: string, bucket: number): Promise<boolean>;
+
+  // Digests (AN-RPT01): one per cadence per site. The claim is the same idea
+  // as an alert's bucket: one write that says "this period is mine", refused
+  // when the row already claimed it or a later one, so every process may tick
+  // and each period is sent once.
+  digests(siteId: string): Promise<Digest[]>;
+  digest(siteId: string, digestId: string): Promise<Digest | null>;
+  createDigest(digest: Digest): Promise<void>;
+  deleteDigest(siteId: string, digestId: string): Promise<boolean>;
+  claimDigestSend(siteId: string, digestId: string, period: string): Promise<boolean>;
+  recordDigestSend(siteId: string, digestId: string, send: DigestSend): Promise<boolean>;
   // Write what the evaluation decided: the episode state, and the transition
   // when there was one, kept as the last MAX_ALERT_RECENT of them. The
   // claimed bucket is left as it is. False for a row that is not there.

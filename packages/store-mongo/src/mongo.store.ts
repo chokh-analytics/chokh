@@ -90,6 +90,8 @@ import {
   type Segment,
   type Annotation,
   type Alert,
+  type Digest,
+  type DigestSend,
   type AlertFiring,
   type AlertState,
   type Site,
@@ -155,6 +157,7 @@ import {
   SEGMENTS,
   ANNOTATIONS,
   ALERTS,
+  DIGESTS,
   ROLLUPS_DAILY,
   SESSIONS,
   SITES,
@@ -251,6 +254,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
   const segments = db.collection<Segment>(SEGMENTS);
   const annotations = db.collection<Annotation>(ANNOTATIONS);
   const alerts = db.collection<Alert>(ALERTS);
+  const digests = db.collection<Digest>(DIGESTS);
 
   const siteCache = new Map<string, { site: Site | null; until: number }>();
 
@@ -794,6 +798,52 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
 
     alert(siteId: string, alertId: string): Promise<Alert | null> {
       return alerts.findOne({ siteId, id: alertId }, { projection: { _id: 0 } });
+    },
+
+    async digests(siteId: string): Promise<Digest[]> {
+      const docs = await digests.find({ siteId }, { projection: { _id: 0 } }).toArray();
+      return docs.sort((left, right) => left.cadence.localeCompare(right.cadence));
+    },
+
+    async digest(siteId: string, digestId: string): Promise<Digest | null> {
+      return digests.findOne({ siteId, id: digestId }, { projection: { _id: 0 } });
+    },
+
+    async createDigest(digest: Digest): Promise<void> {
+      await siteOrThrow(digest.siteId);
+      try {
+        await digests.insertOne({ ...digest, to: [...digest.to] });
+      } catch (error) {
+        if (error instanceof MongoServerError && error.code === 11000) {
+          throw new StoreQueryError('DIGEST_EXISTS', 'A digest of that cadence already exists');
+        }
+        throw error;
+      }
+    },
+
+    async deleteDigest(siteId: string, digestId: string): Promise<boolean> {
+      const result = await digests.deleteOne({ siteId, id: digestId });
+      return result.deletedCount > 0;
+    },
+
+    // One write: matched only while the row has never claimed a period or
+    // claimed an older one, so two processes claim each period once between
+    // them.
+    async claimDigestSend(siteId: string, digestId: string, period: string): Promise<boolean> {
+      const result = await digests.updateOne(
+        {
+          siteId,
+          id: digestId,
+          $or: [{ lastPeriod: { $exists: false } }, { lastPeriod: { $lt: period } }],
+        },
+        { $set: { lastPeriod: period } },
+      );
+      return result.matchedCount > 0;
+    },
+
+    async recordDigestSend(siteId: string, digestId: string, send: DigestSend): Promise<boolean> {
+      const result = await digests.updateOne({ siteId, id: digestId }, { $set: { last: send } });
+      return result.matchedCount > 0;
     },
 
     async createAlert(alert: Alert): Promise<void> {

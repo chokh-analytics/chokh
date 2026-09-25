@@ -64,6 +64,7 @@ function fakeDeliverer(): Deliverer & { sent: Sent[] } {
     // No SMTP on this install: email is refused at create time.
     available: ['telegram', 'webhook'],
     sent,
+    sendMail: () => Promise.resolve('no mail in this test'),
     send(channel, message) {
       sent.push({ channel, message });
       const outcome: AlertDelivery =
