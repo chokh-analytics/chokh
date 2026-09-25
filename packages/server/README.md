@@ -172,7 +172,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `DELETE /api/sites/:siteId/funnels/:funnelId` | `admin` | Delete one; nothing counted is lost |
 | `GET /api/sites/:siteId/stats/funnel` | `read:stats` | How far people got through one funnel, `funnel=` required |
 | `GET /api/sites/:siteId/stats/journeys` | `read:stats` | The paths visits took, entry and three pages on |
-| `GET /api/sites/:siteId/export.csv` | `read:stats` | Any breakdown, as a file |
+| `GET /api/sites/:siteId/export.csv` | `read:stats` | Any report as a file: `report=` names the kind, absent means a breakdown |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
 | `GET /api/sites/:siteId/visitors/:visitorId` | `read:stats` | Identity fields gated |
@@ -205,6 +205,14 @@ it starts is refused rather than answered with zeroes, because zeroes read as
 
 - `goal=` a goal's id, on `aggregate`, `breakdown` and `export.csv`. See
   below.
+- `report=` on `export.csv` only: `breakdown` (the default), `timeseries`,
+  `engagement`, `events`, `properties` (with `event=`), `goals`, `funnel`
+  (with `funnel=`) or `journeys`, each with the query its own route takes and
+  one fixed column set per kind. A timeseries file carries the compared series
+  under `series=previous` after the current one; an unknown key is the word
+  `(unknown)` and a journey's Other is `(other)`, never a blank. The file is
+  named `<site>-<report>[-<dimension, event or funnel>]-<from>-<to>.csv`. People and realtime are not
+  exported: one is identity, the other a snapshot.
 
 `meta` carries the site, its timezone and the range that was read, so a chart can
 label itself without drawing a day boundary a second time.

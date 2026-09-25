@@ -440,7 +440,7 @@ describe('the reports', () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers['content-type']).toContain('text/csv');
       expect(response.headers['content-disposition']).toBe(
-        `attachment; filename="${SITE_ID}-page-2026-09-18.csv"`,
+        `attachment; filename="${SITE_ID}-breakdown-page-2026-09-18-2026-09-18.csv"`,
       );
       const lines = response.body.trimEnd().split('\r\n');
       expect(lines[0]).toBe('key,visitors,pageviews,visits,bounces,bounce_rate,avg_duration_ms');

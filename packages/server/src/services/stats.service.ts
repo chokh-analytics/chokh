@@ -1,10 +1,8 @@
-import { csvDocument } from '../lib/csv.js';
 import { attempt, type Outcome } from '../lib/store-error.js';
 import type {
   AggregateResult,
   AnalyticsStore,
   BreakdownResult,
-  Conversion,
   EngagementResult,
   EventsResult,
   FunnelRead,
@@ -13,7 +11,6 @@ import type {
   GoalStatsResult,
   JourneyQuery,
   JourneyResult,
-  Metrics,
   PropertyQuery,
   PropertyResult,
   Query,
@@ -69,70 +66,6 @@ export function goalStats(
 
 // The columns a breakdown export has, in one place, so the CSV and the JSON
 // answer the same numbers under the same names.
-const CSV_HEADER = [
-  'key',
-  'visitors',
-  'pageviews',
-  'visits',
-  'bounces',
-  'bounce_rate',
-  'avg_duration_ms',
-] as const;
-
-// Four more when the export was asked with a goal, the same four the JSON row
-// carries under conversion. Only then: a file with a conversion rate column
-// full of blanks reads as a goal nobody reached.
-const CONVERSION_HEADER = ['converted_visitors', 'completions', 'conversion_rate', 'value'] as const;
-
-function conversionCells(conversion: Conversion | undefined): (number | null)[] {
-  return [
-    conversion?.visitors ?? 0,
-    conversion?.completions ?? 0,
-    conversion?.rate ?? null,
-    conversion?.value ?? null,
-  ];
-}
-
-function csvCells(key: string, metrics: Metrics): (string | number | null)[] {
-  return [
-    key,
-    metrics.visitors,
-    metrics.pageviews,
-    metrics.visits,
-    metrics.bounces,
-    // Null rather than zero, the same as the JSON: a rate over no visits is
-    // unknown, and a spreadsheet averaging a column of invented zeroes is how a
-    // report ends up wrong.
-    metrics.bounceRate,
-    metrics.avgDurationMs,
-  ];
-}
-
-export async function breakdownCsv(
-  store: AnalyticsStore,
-  query: Query,
-): Promise<Outcome<{ dim: string; body: string }>> {
-  const result = await breakdown(store, query);
-  if (!result.ok) {
-    return result;
-  }
-  const withGoal = query.goal !== undefined;
-  return {
-    ok: true,
-    data: {
-      dim: result.data.dim,
-      body: csvDocument(
-        withGoal ? [...CSV_HEADER, ...CONVERSION_HEADER] : CSV_HEADER,
-        result.data.rows.map((row) =>
-          withGoal
-            ? [...csvCells(row.key, row.metrics), ...conversionCells(row.conversion)]
-            : csvCells(row.key, row.metrics),
-        ),
-      ),
-    },
-  };
-}
-
 export function funnelStats(
   store: AnalyticsStore,
   query: Query,

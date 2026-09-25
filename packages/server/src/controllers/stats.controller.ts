@@ -16,7 +16,6 @@ import { goalRead } from '../services/goals.service.js';
 import {
   aggregate,
   breakdown,
-  breakdownCsv,
   engagement,
   events,
   funnelStats,
@@ -25,7 +24,22 @@ import {
   properties,
   timeseries,
 } from '../services/stats.service.js';
-import type { Query, Site } from '../store/AnalyticsStore.js';
+import type { Funnel, JourneyQuery, PropertyQuery, Query, Site } from '../store/AnalyticsStore.js';
+import {
+  breakdownTable,
+  csvOf,
+  engagementTable,
+  eventsTable,
+  funnelTable,
+  goalsTable,
+  isReportKind,
+  journeysTable,
+  propertiesTable,
+  REPORT_KINDS,
+  timeseriesTable,
+  type CsvTable,
+  type ReportKind,
+} from '../lib/csv-report.js';
 
 // The three reports and the export. Each one validates the query string, hands the
 // store's own query shape to the service, and answers with the envelope; the meta
@@ -222,25 +236,133 @@ export function createEngagementController(deps: ApiDeps) {
 // The one route whose success is not the envelope, because a download is a file
 // and not a message. Every refusal on it still is: a 400 from here is the same
 // shape as a 400 from anywhere else, which is what rule 6 is protecting.
+//
+// Every report as a file (AN-RPT01): `report=` names the kind, absent means
+// the breakdown this route always answered (rule 12), and the rest of the
+// query is the report's own, parsed by the same functions the report's route
+// uses, so a file and a page never disagree about what a range or a goal
+// means.
 export function createExportController(deps: ApiDeps) {
   return async function exportController(request: FastifyRequest, reply: FastifyReply) {
-    const parsed = await parseWithGoal(deps, request, reply);
-    if (parsed === null) {
+    const raw = request.query as Record<string, unknown>;
+    const kind = raw.report === undefined ? 'breakdown' : raw.report;
+    if (!isReportKind(kind)) {
+      return reply
+        .code(400)
+        .send(fail('INVALID_QUERY', `report is one of ${REPORT_KINDS.join(', ')}`));
+    }
+    const exported = await exportTable(deps, kind, request, reply);
+    if (exported === null) {
       return reply;
     }
-    const result = await breakdownCsv(deps.store, parsed.query);
-    if (!result.ok) {
-      return reply.code(result.status).send(fail(result.code, result.message));
-    }
-    const day = new Date(parsed.input.from).toISOString().slice(0, 10);
+    const day = (at: number): string => new Date(at).toISOString().slice(0, 10);
+    const what = exported.detail === undefined ? kind : `${kind}-${exported.detail}`;
     return reply
       .type('text/csv; charset=utf-8')
       .header(
         'content-disposition',
-        `attachment; filename="${parsed.site.id}-${result.data.dim}-${day}.csv"`,
+        `attachment; filename="${exported.site.id}-${what}-${day(exported.from)}-${day(exported.to)}.csv"`,
       )
-      .send(result.data.body);
+      .send(csvOf(exported.table));
   };
+}
+
+interface Exported {
+  table: CsvTable;
+  site: Site;
+  from: number;
+  to: number;
+  // What the file is of, when the kind alone does not say: the dimension, the
+  // event, the funnel. Part of the file name and nothing else.
+  detail?: string;
+}
+
+function exported(parsed: Pick<Parsed, 'site' | 'input'>, table: CsvTable, detail?: string): Exported {
+  return {
+    table,
+    site: parsed.site,
+    from: parsed.input.from,
+    to: parsed.input.to,
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+function refused(reply: FastifyReply, result: { status: number; code: string; message: string }): null {
+  void reply.code(result.status).send(fail(result.code, result.message));
+  return null;
+}
+
+async function exportTable(
+  deps: ApiDeps,
+  kind: ReportKind,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<Exported | null> {
+  switch (kind) {
+    case 'breakdown': {
+      const parsed = await parseWithGoal(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await breakdown(deps.store, parsed.query);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, breakdownTable(result.data, parsed.query.goal !== undefined), result.data.dim);
+    }
+    case 'timeseries': {
+      const parsed = await parseWithGoal(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await timeseries(deps.store, parsed.query);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, timeseriesTable(result.data));
+    }
+    case 'engagement': {
+      const parsed = await parseWithGoal(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await engagement(deps.store, parsed.query);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, engagementTable(result.data), result.data.dim);
+    }
+    case 'events': {
+      const parsed = await parseWithGoal(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await events(deps.store, parsed.query);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, eventsTable(result.data));
+    }
+    case 'properties': {
+      const parsed = await parseProperties(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await properties(deps.store, parsed.propertyQuery);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, propertiesTable(result.data), result.data.event);
+    }
+    case 'goals': {
+      const parsed = parse(request, reply);
+      if (parsed === null) return null;
+      if (parsed.input.goal !== undefined) {
+        void reply
+          .code(400)
+          .send(fail('UNSUPPORTED_GOAL', 'The goals report answers every goal and takes none'));
+        return null;
+      }
+      const goals = await deps.store.goals(parsed.site.id);
+      const result = await goalStats(deps.store, parsed.query, goals);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, goalsTable(result.data, goals));
+    }
+    case 'funnel': {
+      const parsed = await parseFunnel(deps, request, reply);
+      if (parsed === null) return null;
+      const result = await funnelStats(deps.store, parsed.query, funnelRead(parsed.funnel));
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, funnelTable(result.data, parsed.funnel), parsed.funnel.id);
+    }
+    case 'journeys': {
+      const parsed = parseJourneys(request, reply);
+      if (parsed === null) return null;
+      const result = await journeys(deps.store, parsed.query);
+      if (!result.ok) return refused(reply, result);
+      return exported(parsed, journeysTable(result.data));
+    }
+  }
 }
 
 // The custom events of the range, by name. Raw rows only, and the meta says so.
@@ -261,42 +383,65 @@ export function createEventsController(deps: ApiDeps) {
 // One event broken down by one of its properties. The event is required, and
 // said to be missing by name rather than as one issue among a validator's:
 // it is the one thing this route cannot guess.
-export function createPropertiesController(deps: ApiDeps) {
-  return async function propertiesController(request: FastifyRequest, reply: FastifyReply) {
-    const site = request.site;
-    if (site === null) {
-      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
-    }
-    const raw = request.query as Record<string, unknown>;
-    if (typeof raw.event !== 'string' || raw.event === '') {
-      return reply.code(400).send(fail('MISSING_EVENT', 'A property breakdown needs an event'));
-    }
-    const input = propertiesQuerySchema.safeParse(request.query);
-    if (!input.success) {
-      return reply
-        .code(400)
-        .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
-    }
-    if (input.data.to <= input.data.from) {
-      return reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
-    }
-    const parsed = await withGoal(
-      deps,
-      { query: toStoreQuery(site.id, input.data), input: input.data, site },
-      reply,
-    );
-    if (parsed === null) {
-      return reply;
-    }
-    const result = await properties(deps.store, {
+interface ParsedProperties extends Parsed {
+  propertyQuery: PropertyQuery;
+}
+
+async function parseProperties(
+  deps: ApiDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<ParsedProperties | null> {
+  const site = request.site;
+  if (site === null) {
+    void reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
+    return null;
+  }
+  const raw = request.query as Record<string, unknown>;
+  if (typeof raw.event !== 'string' || raw.event === '') {
+    void reply.code(400).send(fail('MISSING_EVENT', 'A property breakdown needs an event'));
+    return null;
+  }
+  const input = propertiesQuerySchema.safeParse(request.query);
+  if (!input.success) {
+    void reply
+      .code(400)
+      .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
+    return null;
+  }
+  if (input.data.to <= input.data.from) {
+    void reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
+    return null;
+  }
+  const parsed = await withGoal(
+    deps,
+    { query: toStoreQuery(site.id, input.data), input: input.data, site },
+    reply,
+  );
+  if (parsed === null) {
+    return null;
+  }
+  return {
+    ...parsed,
+    propertyQuery: {
       ...parsed.query,
       event: input.data.event,
       ...(input.data.property === undefined ? {} : { property: input.data.property }),
-    });
+    },
+  };
+}
+
+export function createPropertiesController(deps: ApiDeps) {
+  return async function propertiesController(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = await parseProperties(deps, request, reply);
+    if (parsed === null) {
+      return reply;
+    }
+    const result = await properties(deps.store, parsed.propertyQuery);
     if (!result.ok) {
       return reply.code(result.status).send(fail(result.code, result.message));
     }
-    return reply.send(ok(result.data, rawMeta(site, input.data)));
+    return reply.send(ok(result.data, rawMeta(parsed.site, parsed.input)));
   };
 }
 
@@ -349,75 +494,113 @@ function refuseGoal(input: { goal?: string | undefined }, reply: FastifyReply, w
 // How far the people of the range got through one funnel, named by id and
 // resolved against the site the route already read, so a key of one site can
 // never read another site's funnel. Raw rows only, and the meta says so.
+interface ParsedFunnel {
+  query: Query;
+  input: StatsQueryInput;
+  site: Site;
+  funnel: Funnel;
+}
+
+async function parseFunnel(
+  deps: ApiDeps,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<ParsedFunnel | null> {
+  const site = request.site;
+  if (site === null) {
+    void reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
+    return null;
+  }
+  const raw = request.query as Record<string, unknown>;
+  if (typeof raw.funnel !== 'string' || raw.funnel === '') {
+    void reply.code(400).send(fail('MISSING_FUNNEL', 'A funnel report needs a funnel'));
+    return null;
+  }
+  const input = funnelStatsQuerySchema.safeParse(request.query);
+  if (!input.success) {
+    void reply
+      .code(400)
+      .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
+    return null;
+  }
+  if (input.data.to <= input.data.from) {
+    void reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
+    return null;
+  }
+  if (refuseGoal(input.data, reply, 'A funnel')) {
+    return null;
+  }
+  const funnel = await deps.store.funnel(site.id, input.data.funnel);
+  if (funnel === null) {
+    void reply
+      .code(404)
+      .send(fail('FUNNEL_NOT_FOUND', `No funnel ${input.data.funnel} belongs to ${site.id}`));
+    return null;
+  }
+  return { query: toStoreQuery(site.id, input.data), input: input.data, site, funnel };
+}
+
 export function createFunnelStatsController(deps: ApiDeps) {
   return async function funnelStatsController(request: FastifyRequest, reply: FastifyReply) {
-    const site = request.site;
-    if (site === null) {
-      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
-    }
-    const raw = request.query as Record<string, unknown>;
-    if (typeof raw.funnel !== 'string' || raw.funnel === '') {
-      return reply.code(400).send(fail('MISSING_FUNNEL', 'A funnel report needs a funnel'));
-    }
-    const input = funnelStatsQuerySchema.safeParse(request.query);
-    if (!input.success) {
-      return reply
-        .code(400)
-        .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
-    }
-    if (input.data.to <= input.data.from) {
-      return reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
-    }
-    if (refuseGoal(input.data, reply, 'A funnel')) {
+    const parsed = await parseFunnel(deps, request, reply);
+    if (parsed === null) {
       return reply;
     }
-    const funnel = await deps.store.funnel(site.id, input.data.funnel);
-    if (funnel === null) {
-      return reply
-        .code(404)
-        .send(fail('FUNNEL_NOT_FOUND', `No funnel ${input.data.funnel} belongs to ${site.id}`));
-    }
-    const result = await funnelStats(
-      deps.store,
-      toStoreQuery(site.id, input.data),
-      funnelRead(funnel),
-    );
+    const result = await funnelStats(deps.store, parsed.query, funnelRead(parsed.funnel));
     if (!result.ok) {
       return reply.code(result.status).send(fail(result.code, result.message));
     }
     return reply.send(
-      ok({ funnel, ...result.data }, { ...rawMeta(site, input.data), funnel: funnel.id }),
+      ok(
+        { funnel: parsed.funnel, ...result.data },
+        { ...rawMeta(parsed.site, parsed.input), funnel: parsed.funnel.id },
+      ),
     );
   };
 }
 
 // The paths the range's visits took. Raw rows only, and the meta says so.
+function parseJourneys(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): { query: JourneyQuery; input: StatsQueryInput; site: Site } | null {
+  const site = request.site;
+  if (site === null) {
+    void reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
+    return null;
+  }
+  const input = journeysQuerySchema.safeParse(request.query);
+  if (!input.success) {
+    void reply
+      .code(400)
+      .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
+    return null;
+  }
+  if (input.data.to <= input.data.from) {
+    void reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
+    return null;
+  }
+  if (refuseGoal(input.data, reply, 'The journeys report')) {
+    return null;
+  }
+  const query = toStoreQuery(site.id, input.data);
+  return {
+    query: input.data.branches === undefined ? query : { ...query, branches: input.data.branches },
+    input: input.data,
+    site,
+  };
+}
+
 export function createJourneysController(deps: ApiDeps) {
   return async function journeysController(request: FastifyRequest, reply: FastifyReply) {
-    const site = request.site;
-    if (site === null) {
-      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
-    }
-    const input = journeysQuerySchema.safeParse(request.query);
-    if (!input.success) {
-      return reply
-        .code(400)
-        .send(fail('INVALID_QUERY', 'The query did not validate', input.error.issues));
-    }
-    if (input.data.to <= input.data.from) {
-      return reply.code(400).send(fail('INVALID_RANGE', RANGE_BACKWARDS));
-    }
-    if (refuseGoal(input.data, reply, 'The journeys report')) {
+    const parsed = parseJourneys(request, reply);
+    if (parsed === null) {
       return reply;
     }
-    const query = toStoreQuery(site.id, input.data);
-    const result = await journeys(
-      deps.store,
-      input.data.branches === undefined ? query : { ...query, branches: input.data.branches },
-    );
+    const result = await journeys(deps.store, parsed.query);
     if (!result.ok) {
       return reply.code(result.status).send(fail(result.code, result.message));
     }
-    return reply.send(ok(result.data, rawMeta(site, input.data)));
+    return reply.send(ok(result.data, rawMeta(parsed.site, parsed.input)));
   };
 }

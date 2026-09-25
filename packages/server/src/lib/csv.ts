@@ -8,7 +8,7 @@
 // text, so a breakdown export is otherwise a way to run something in the
 // reader's Excel. Prefixing is what every spreadsheet reads as a literal.
 
-type Cell = string | number | null | undefined;
+export type Cell = string | number | null | undefined;
 
 const NEEDS_QUOTES = /[",\r\n]/;
 const LOOKS_LIKE_A_FORMULA = /^[=+\-@\t\r]/;
