@@ -46,6 +46,16 @@ export interface SiteSettings {
   routeGroups: string[];
 }
 
+// A site's public share (AN-RPT01): the link is the token, and a new token
+// is the revocation. The password hash, when there is one, is argon2 like an
+// account's; PublicSite never carries it.
+export interface SiteShare {
+  token: string;
+  passwordHash?: string;
+  createdBy: string;
+  createdAt: number;
+}
+
 export interface Site {
   id: string;
   name: string;
@@ -59,6 +69,8 @@ export interface Site {
   // which the jobs run while it is set. Until then the stored route of every
   // row and the route rollups are from the rules as they were.
   routesChangedAt?: number;
+  // The public share, when the owner made one.
+  share?: SiteShare;
 }
 
 // What a site gets when nobody has chosen. The public defaults, not Progsity's:

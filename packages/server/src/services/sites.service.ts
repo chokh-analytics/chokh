@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { teamIdOf, type Principal } from '../lib/scopes.js';
+import { publicShare, type PublicShare } from './share.service.js';
 import type {
   AccountStore,
   AnalyticsStore,
@@ -81,6 +82,8 @@ export interface PublicSite {
   settings: PublicSiteSettings;
   // Present while the site waits for the jobs to regroup its routes.
   routesChangedAt?: number;
+  // The public share, without its password hash (AN-RPT01).
+  share?: PublicShare;
 }
 
 // A site as it appears in GET /api/me and GET /api/sites: what it is, plus what
@@ -122,5 +125,6 @@ export function publicSite(site: Site): PublicSite {
     teamId: teamIdOf(site),
     settings,
     ...(site.routesChangedAt === undefined ? {} : { routesChangedAt: site.routesChangedAt }),
+    ...(site.share === undefined ? {} : { share: publicShare(site.share) }),
   };
 }

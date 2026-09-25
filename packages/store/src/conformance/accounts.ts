@@ -237,6 +237,29 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
         expect((await store.site('s_one'))?.settings.ipMode).toBe('full');
       });
 
+      it('keeps a public share on the site and finds the site by its token', async () => {
+        const share = { token: 'tok_one_1234567890', createdBy: 'u_1', createdAt: NOW };
+        const updated = await store.updateSite('s_one', { share });
+        expect(updated.share).toEqual(share);
+        expect((await store.siteByShareToken('tok_one_1234567890'))?.id).toBe('s_one');
+        expect(await store.siteByShareToken('tok_nobody')).toBeNull();
+        // A new token is the revocation of the old one.
+        await store.updateSite('s_one', {
+          share: { ...share, token: 'tok_two_1234567890', passwordHash: 'h' },
+        });
+        expect(await store.siteByShareToken('tok_one_1234567890')).toBeNull();
+        expect((await store.siteByShareToken('tok_two_1234567890'))?.share?.passwordHash).toBe(
+          'h',
+        );
+        // A patch of something else leaves it; null takes it off.
+        expect((await store.updateSite('s_one', { name: 'One' })).share?.token).toBe(
+          'tok_two_1234567890',
+        );
+        expect((await store.updateSite('s_one', { share: null })).share).toBeUndefined();
+        expect((await store.site('s_one'))?.share).toBeUndefined();
+        expect(await store.siteByShareToken('tok_two_1234567890')).toBeNull();
+      });
+
       it('marks a site whose route rules changed, and only then', async () => {
         const changed = await store.updateSite('s_one', {
           settings: { routeGroups: ['/courses/:slug'] },

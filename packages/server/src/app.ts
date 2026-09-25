@@ -26,6 +26,7 @@ import {
 import { registerApiRoutes } from './routes/api.routes.js';
 import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
+import { createShareCodec } from './services/share.service.js';
 import { createSessionCodec } from './services/auth.service.js';
 import type { Bus } from './services/bus.js';
 import { createDedupe } from './services/dedupe.js';
@@ -174,7 +175,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     bus,
     once,
     authLimit: createWindowCounter(MINUTE_MS),
-    limits: { authAttempts: env.AUTH_RATE_LIMIT },
+    shareLimit: createWindowCounter(MINUTE_MS),
+    shareCodec: createShareCodec(session.secret),
+    limits: { authAttempts: env.AUTH_RATE_LIMIT, shareReads: env.SHARE_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },
     license: resolveLicense(extensions),
@@ -195,6 +198,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // A browser asking for a dashboard route gets the single page app; anything
     // else gets the failure envelope.
     if (dashboardRoot !== null && request.method === 'GET' && wantsHtml(request.headers.accept)) {
+      // A shared page is for whoever holds the link, not for a search engine.
+      if (request.url.startsWith('/share/')) {
+        void reply.header('x-robots-tag', 'noindex');
+      }
       return reply.type('text/html').sendFile('index.html');
     }
     return reply

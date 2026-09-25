@@ -173,12 +173,34 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/sites/:siteId/stats/funnel` | `read:stats` | How far people got through one funnel, `funnel=` required |
 | `GET /api/sites/:siteId/stats/journeys` | `read:stats` | The paths visits took, entry and three pages on |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any report as a file: `report=` names the kind, absent means a breakdown |
+| `PUT /api/sites/:siteId/share` | `admin` | Make the public share, regenerate its link, set or clear its password |
+| `DELETE /api/sites/:siteId/share` | `admin` | Take the share off |
+| `GET /api/share/:token` | nothing | Whose numbers, in which zone, whether a password stands in the way |
+| `POST /api/share/:token/unlock` | nothing | The password, for a cookie scoped to this share |
+| `GET /api/share/:token/stats/aggregate`, `/timeseries`, `/breakdown`, `/goals`, `/annotations` | the link, and the cookie when locked | The report's own route and shape, on `read:stats` alone |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
 | `GET /api/sites/:siteId/visitors/:visitorId` | `read:stats` | Identity fields gated |
 | `GET /api/sites/:siteId/users/:userId` | `read:identity` | One identified person |
 | `GET /api/sites/:siteId/users/:userId/presence` | `read:identity` | The online badge |
 | `POST /api/sites/:siteId/events` | `write:events` | What a backend sends |
+
+### The public share
+
+A site has at most one share (`AN-RPT01`): a link made of a 32 character
+token, an optional password, and the Overview's reports under
+`/api/share/:token`. The token is the link and is stored as it is; a new token
+is the revocation, and there is no second secret. The password is argon2 like
+an account's and `PublicSite.share` never carries the hash. A reader who gives
+the password gets an HttpOnly cookie scoped to `/api/share/:token`, signed
+over the token and over the password's hash, so a regenerated link and a
+changed password each end every reader at once. Under the share the report
+controllers run unchanged behind a principal of kind `share` holding
+`read:stats` on that one site and nothing else: identity, people, realtime,
+events, properties and the export are not registered there and answer 404.
+Reads are limited per address at `SHARE_RATE_LIMIT` a minute (120) on a
+counter of their own, and every answer, like the dashboard's `/share/*` page,
+carries `X-Robots-Tag: noindex`.
 
 ### The query every report takes
 

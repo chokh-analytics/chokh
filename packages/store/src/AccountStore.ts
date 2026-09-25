@@ -1,6 +1,6 @@
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
 import type { Alert, AlertFiring, AlertState, Annotation, Funnel, Goal, Segment } from './query.js';
-import type { Site, SiteSettings } from './types.js';
+import type { Site, SiteSettings, SiteShare } from './types.js';
 
 // The second door to storage, beside AnalyticsStore.
 //
@@ -25,6 +25,9 @@ export interface AccountStore {
   // rules apply, and settings are merged field by field so a patch naming one
   // setting does not reset the rest.
   updateSite(siteId: string, patch: SitePatch): Promise<Site>;
+  // The site whose public share carries this token, or null. One site per
+  // token: the adapter's index says so.
+  siteByShareToken(token: string): Promise<Site | null>;
 
   createUser(user: StoredUser): Promise<void>;
   updateUser(userId: string, patch: UserPatch): Promise<void>;
@@ -138,6 +141,8 @@ export interface SitePatch {
   domains?: string[];
   teamId?: string;
   settings?: Partial<SiteSettings>;
+  // The public share: a share to keep, or null to take it off.
+  share?: SiteShare | null;
 }
 
 export interface UserPatch {

@@ -28,6 +28,11 @@ export async function recordIdentityRead(store: AccountStore, read: IdentityRead
   if (read.fields.length === 0) {
     return;
   }
+  if (read.principal.kind === 'share') {
+    // A share holds read:stats alone and no identity route is registered
+    // under it, so this is a defect and not a row.
+    throw new Error('A share principal never reads identity');
+  }
   const actor: AuditRecord['actor'] = { kind: read.principal.kind, id: read.principal.id };
   if (read.principal.email !== undefined) {
     actor.email = read.principal.email;

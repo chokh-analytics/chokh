@@ -105,6 +105,11 @@ export const envSchema = z.object({
   // somebody locks a person out of their own dashboard.
   AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
 
+  // Reads of a public share page a minute per address (AN-RPT01): the page
+  // reads six routes on load and one per range change, so this is room for a
+  // person and a wall for a script.
+  SHARE_RATE_LIMIT: z.coerce.number().int().positive().default(120),
+
   // Whether the session cookie is Secure. Unset means "yes in production", which
   // is what anybody serving this over TLS wants; a developer on plain http has to
   // be able to sign in, which is the only reason this is settable at all.

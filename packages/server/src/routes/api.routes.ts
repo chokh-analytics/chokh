@@ -64,6 +64,12 @@ import {
   createSsoGetController,
   createSsoPostController,
 } from '../controllers/sso.controller.js';
+import {
+  createDeleteShareController,
+  createGetShareController,
+  createPutShareController,
+  createUnlockShareController,
+} from '../controllers/share.controller.js';
 import type { ApiDeps } from '../lib/api-deps.js';
 import type { ClientIpOptions } from '../lib/client-ip.js';
 import {
@@ -72,6 +78,7 @@ import {
   requirePrincipal,
   requireSiteScope,
 } from '../plugins/auth.js';
+import { requireShare } from '../plugins/share.js';
 import type { AuthDeps } from '../services/auth.service.js';
 
 // Every route of the stats API, and the one hook each of them runs first.
@@ -135,6 +142,56 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/identify-secret/rotate',
     { preHandler: scope('admin') },
     createRotateSecretController(deps),
+  );
+
+  // The public share (AN-RPT01). The owner's two routes are on the site;
+  // the reader's are on the token, limited per address on their own counter,
+  // and every report route under it is the report's own controller behind
+  // the share hook, which hands it a principal holding read:stats alone.
+  app.put('/api/sites/:siteId/share', { preHandler: scope('admin') }, createPutShareController(deps));
+  app.delete(
+    '/api/sites/:siteId/share',
+    { preHandler: scope('admin') },
+    createDeleteShareController(deps),
+  );
+  const shareReads = limitAttempts(
+    deps.limits.shareReads,
+    deps.shareLimit,
+    ipOptions,
+    deps.now,
+    'share',
+  );
+  const shared = requireShare(deps);
+  app.get('/api/share/:token', { preHandler: shareReads }, createGetShareController(deps));
+  app.post(
+    '/api/share/:token/unlock',
+    { preHandler: shareReads },
+    createUnlockShareController(deps),
+  );
+  app.get(
+    '/api/share/:token/stats/aggregate',
+    { preHandler: [shareReads, shared] },
+    createAggregateController(deps),
+  );
+  app.get(
+    '/api/share/:token/stats/timeseries',
+    { preHandler: [shareReads, shared] },
+    createTimeseriesController(deps),
+  );
+  app.get(
+    '/api/share/:token/stats/breakdown',
+    { preHandler: [shareReads, shared] },
+    createBreakdownController(deps),
+  );
+  app.get(
+    '/api/share/:token/stats/goals',
+    { preHandler: [shareReads, shared] },
+    createGoalStatsController(deps),
+  );
+  app.get(
+    '/api/share/:token/annotations',
+    { preHandler: [shareReads, shared] },
+    createListAnnotationsController(deps),
   );
 
   // Keys. admin, because a key is a way to hand out access.

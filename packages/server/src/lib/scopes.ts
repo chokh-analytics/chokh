@@ -46,7 +46,7 @@ export interface Grant {
 // It answers null when this caller may not touch the site at all, which a route
 // turns into 403 and never into an empty report.
 export interface Principal {
-  kind: 'session' | 'key';
+  kind: 'session' | 'key' | 'share';
   // The user id for a session, the key id for a key. This is what an audit row
   // records as the actor.
   id: string;
@@ -87,6 +87,19 @@ export function keyPrincipal(keyId: string, siteId: string, scopes: Scope[]): Pr
       // A key belongs to one site. Presenting it at another is not a smaller
       // permission, it is the wrong key.
       return site.id === siteId ? { scopes: new Set(scopes) } : null;
+    },
+  };
+}
+
+// Whoever holds a share link (AN-RPT01): read:stats on that one site and
+// nothing else, so the report controllers serve the public page unchanged
+// and the same rules apply to it.
+export function sharePrincipal(siteId: string): Principal {
+  return {
+    kind: 'share',
+    id: `share:${siteId}`,
+    grantFor(site: Site): Grant | null {
+      return site.id === siteId ? { scopes: new Set<Scope>(['read:stats']) } : null;
     },
   };
 }

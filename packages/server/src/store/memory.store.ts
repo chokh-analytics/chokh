@@ -659,6 +659,12 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         // Field by field, so a patch naming one setting does not reset the rest.
         settings: { ...current.settings, ...patch.settings },
       };
+      // The share: kept, replaced, or taken off with null.
+      if (patch.share === null) {
+        delete updated.share;
+      } else if (patch.share !== undefined) {
+        updated.share = patch.share;
+      }
       // A change to the route rules is a change to what every stored row and
       // every route rollup says, so the site is marked and the jobs regroup it.
       if (
@@ -997,6 +1003,12 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
 
     site(siteId: string): Promise<Site | null> {
       return Promise.resolve(bySiteId.get(siteId) ?? null);
+    },
+
+    siteByShareToken(token: string): Promise<Site | null> {
+      return Promise.resolve(
+        [...bySiteId.values()].find((site) => site.share?.token === token) ?? null,
+      );
     },
 
     sites(): Promise<Site[]> {

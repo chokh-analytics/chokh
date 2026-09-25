@@ -588,6 +588,12 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         // Field by field, so a patch naming one setting does not reset the rest.
         settings: { ...current.settings, ...patch.settings },
       };
+      // The share: kept, replaced, or taken off with null.
+      if (patch.share === null) {
+        delete updated.share;
+      } else if (patch.share !== undefined) {
+        updated.share = patch.share;
+      }
       // A change to the route rules is a change to what every stored row and
       // every route rollup says, so the site is marked and the jobs regroup it.
       if (
@@ -951,6 +957,11 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     async sites(): Promise<Site[]> {
       const docs = await sites.find({}, { projection: { _id: 0 } }).toArray();
       return docs.map(siteOf);
+    },
+
+    async siteByShareToken(token: string): Promise<Site | null> {
+      const doc = await sites.findOne({ 'share.token': token }, { projection: { _id: 0 } });
+      return doc === null ? null : siteOf(doc);
     },
 
     async ingest(batch: StoredEvent[]): Promise<void> {
@@ -1617,6 +1628,7 @@ function siteOf(doc: Site): Site {
   };
   if (doc.teamId !== undefined) site.teamId = doc.teamId;
   if (doc.routesChangedAt !== undefined) site.routesChangedAt = doc.routesChangedAt;
+  if (doc.share !== undefined) site.share = doc.share;
   return site;
 }
 

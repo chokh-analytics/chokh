@@ -112,6 +112,9 @@ export function limitAttempts(
   counter: WindowCounter,
   ipOptions: ClientIpOptions,
   now: () => number,
+  // The bucket's name, so a share's reads and an address's sign-in attempts
+  // are two counts and not one.
+  bucket = 'auth',
 ): preHandlerHookHandler {
   // Async even though it does no waiting: a Fastify hook that returns something
   // other than a promise and never calls done leaves the request hanging.
@@ -127,7 +130,7 @@ export function limitAttempts(
       },
       ipOptions,
     );
-    if (counter.hit(`auth:${address}`, at) > limit) {
+    if (counter.hit(`${bucket}:${address}`, at) > limit) {
       return reply
         .code(429)
         .send(fail('RATE_LIMITED', 'Too many attempts from this address, wait a minute'));

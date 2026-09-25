@@ -43,6 +43,14 @@ export const schema: readonly CollectionSchema[] = [
       // empty domain list rather than letting the driver report a duplicate key
       // for a reason nobody could read.
       { name: 'site_domains', key: { domains: 1 }, unique: true },
+      // The public share's token, one site per token (AN-RPT01). Partial, so
+      // the sites with no share do not all collide on a missing key.
+      {
+        name: 'site_share_token',
+        key: { 'share.token': 1 },
+        unique: true,
+        partialFilterExpression: { 'share.token': { $exists: true } },
+      },
     ],
   },
   {

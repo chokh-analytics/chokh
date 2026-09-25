@@ -2,6 +2,7 @@ import type { LicenseStatusProvider } from '../plugins/extensions.js';
 import type { Bus } from '../services/bus.js';
 import type { OnceOnly } from '../services/once.js';
 import type { SessionCodec } from '../services/auth.service.js';
+import type { ShareCodec } from '../services/share.service.js';
 import type { AccountStore, AnalyticsStore } from '../store/AnalyticsStore.js';
 import type { WindowCounter } from './window-counter.js';
 
@@ -17,7 +18,10 @@ export interface ApiDeps {
   once: OnceOnly;
   // Sign-in attempts a minute, per address.
   authLimit: WindowCounter;
-  limits: { authAttempts: number };
+  // Reads of a public share per address a minute, on their own counter.
+  shareLimit: WindowCounter;
+  shareCodec: ShareCodec;
+  limits: { authAttempts: number; shareReads: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };
   // What GET /api/license answers. The extension's when packages/ee is loaded,
