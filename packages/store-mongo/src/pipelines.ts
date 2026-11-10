@@ -1314,35 +1314,3 @@ export function journeyStepsPipeline(
     { $group: { _id: '$counts', visits: { $sum: 1 } } },
   ];
 }
-
-// What ingest needs to know about one visitor before it folds their batch: the
-// visitor row and their latest stay, in one round trip rather than two. It runs
-// on the visitors collection and answers exactly one document,
-// `{ visitor: [row?], open: [stay?] }`, whether either exists or not. The
-// $facet is what makes that true for a visitor seen for the first time: it
-// answers one document even when the $match found none, so the $lookup after it
-// still runs and an existing stay is never lost behind a missing visitor row.
-// The $lookup is uncorrelated, a plain pipeline on sessions with the two ids as
-// constants, so it is planned like any query there and leads with the
-// newest-first index, the same index the findOne it replaces used. $documents
-// would say this more directly and needs MongoDB 5.1; the README promises 5.0.
-export function ingestReadPipeline(siteId: string, visitorId: string): Document[] {
-  return [
-    { $match: { siteId, id: visitorId } },
-    { $limit: 1 },
-    { $project: { _id: 0, expiresAt: 0 } },
-    { $facet: { visitor: [{ $limit: 1 }] } },
-    {
-      $lookup: {
-        from: SESSIONS,
-        pipeline: [
-          { $match: { siteId, visitorId } },
-          { $sort: { startedAt: -1 } },
-          { $limit: 1 },
-          { $project: { _id: 0, expiresAt: 0 } },
-        ],
-        as: 'open',
-      },
-    },
-  ];
-}

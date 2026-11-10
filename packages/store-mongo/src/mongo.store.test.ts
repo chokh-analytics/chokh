@@ -118,39 +118,3 @@ describe('a site document from before a setting existed', () => {
     }
   });
 });
-
-// AN-ING01: a batch from one visitor costs four round trips once the site row
-// is cached: one aggregation for the visitor and their open stay, then the
-// events, the stays and the visitor written together. A second read creeping
-// back in would make it five, and this is what notices.
-describe('the round trips an ingest costs', () => {
-  it('is one read and three writes for a visitor, with the site cached', async () => {
-    const server = await MongoMemoryServer.create();
-    const client = new MongoClient(server.getUri('chokh_trips'), { monitorCommands: true });
-    await client.connect();
-    const store = await createMongoStore({ client, now: () => fixture.NOW });
-    const sent: string[] = [];
-    client.on('commandStarted', (event) => sent.push(event.commandName));
-    try {
-      await apply(store.db);
-      await store.createSite(fixture.fixtureSite());
-      // Plain pageviews, so no identify adds the merge's two writes.
-      sent.length = 0;
-      await store.ingest([fixture.pageviewOf('v2', fixture.NOW - 60_000, '/a')]);
-      // The first batch reads the site row too, and fills the cache.
-      expect([...sent].sort()).toEqual(['aggregate', 'find', 'insert', 'update', 'update']);
-
-      // A returning visitor with an open stay: the read finds both.
-      sent.length = 0;
-      await store.ingest([fixture.pageviewOf('v2', fixture.NOW - 30_000, '/b')]);
-      expect([...sent].sort()).toEqual(['aggregate', 'insert', 'update', 'update']);
-      // And it found the stay: the second pageview joined it rather than
-      // opening another.
-      expect(await store.db.collection('sessions').countDocuments({ visitorId: 'v2' })).toBe(1);
-    } finally {
-      await store.close();
-      await client.close();
-      await server.stop();
-    }
-  });
-});
