@@ -22,6 +22,11 @@ import {
   assertFunnelSteps,
   assertNoGoal,
   compareFunnelRows,
+  comparePeople,
+  cursorOf,
+  isAfter,
+  matchesPeople,
+  personFrom,
   finishFunnel,
   finishJourneys,
   funnelDepth,
@@ -116,6 +121,8 @@ import {
   type Totals,
   type UserProfile,
   type VisitorProfile,
+  type PeoplePage,
+  type PeopleQuery,
   type AccountStore,
   type ApiKeyRecord,
   type AuditRecord,
@@ -1517,6 +1524,21 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         .filter((row) => row.siteId === siteId && row.userId === userId)
         .sort((left, right) => right.lastSeenAt - left.lastSeenAt)[0];
       return Promise.resolve(newest?.id ?? null);
+    },
+
+    people(query: PeopleQuery): Promise<PeoplePage> {
+      const { after } = query;
+      const found = visitors
+        .filter((row) => row.siteId === query.siteId)
+        .map(personFrom)
+        .filter((row) => (after === undefined || isAfter(row, after)) && matchesPeople(row, query))
+        .sort(comparePeople);
+      const people = found.slice(0, query.limit);
+      const last = people[people.length - 1];
+      return Promise.resolve({
+        people,
+        next: found.length > query.limit && last !== undefined ? cursorOf(last) : null,
+      });
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {

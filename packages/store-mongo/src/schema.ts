@@ -98,6 +98,13 @@ export const schema: readonly CollectionSchema[] = [
         // Not unique: two browsers are two visitors, and the same person
         // signing in on both is exactly what a user lookup has to join.
       },
+      // The people directory (AN-PPL02) reads a site's visitors newest first, a
+      // page at a time. The id after lastSeenAt is the tie break that makes the
+      // order total, and having it in the key is what lets the walk return the
+      // directory's order straight off the index: with (siteId, lastSeenAt)
+      // alone, a sort on both keys is a SORT stage over every visitor of the
+      // site to answer fifty of them.
+      { name: 'visitor_site_last_seen', key: { siteId: 1, lastSeenAt: -1, id: -1 } },
       // Rewritten on every visit, so a visitor who keeps coming back keeps
       // their row, and one who stops loses it at the site's retention.
       { name: 'visitor_ttl', key: { expiresAt: 1 }, expireAfterSeconds: 0 },

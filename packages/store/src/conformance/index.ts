@@ -14,6 +14,8 @@ import {
   type Goal,
   type GoalRead,
   type Metrics,
+  type PeopleQuery,
+  type PersonRow,
 } from '../query.js';
 import { MAX_FUNNEL_ROWS_PER_VISITOR } from '../funnel.js';
 import { dayKey } from '../time.js';
@@ -1593,6 +1595,175 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
 
       it('answers null for a user nobody has identified', async () => {
         expect(await store.user(F.SITE_ID, 'nobody')).toBeNull();
+      });
+    });
+
+    // The people directory (AN-PPL02). The order is the last sign of life,
+    // newest first, with the larger visitor id first inside one millisecond, and
+    // the cursor is the last row's pair: so every page size walks the same
+    // list, no row twice and none missed, including when a page ends inside a
+    // run of people seen at the same instant.
+    describe('people', () => {
+      const SITE = 'site_people';
+      const ELSEWHERE = 'site_people_other';
+      const T = F.NOW - 2 * DAY;
+      const SECOND = 1000;
+
+      function seen(
+        siteId: string,
+        visitorId: string,
+        ts: number,
+        over: Partial<StoredEvent> = {},
+      ): StoredEvent {
+        return {
+          siteId,
+          ts,
+          receivedAt: ts,
+          type: 'pageview',
+          visitorId,
+          bot: false,
+          hostname: 'people.test',
+          path: '/',
+          ip: '198.51.100.9',
+          ...over,
+        };
+      }
+
+      // p2, p3 and p4 share one instant; p5 and p7 are named, p7 with a name
+      // and an address in their traits.
+      const ORDER = ['p7', 'p5', 'p4', 'p3', 'p2', 'p1', 'p6'];
+
+      beforeAll(async () => {
+        for (const [id, domain] of [
+          [SITE, 'people.test'],
+          [ELSEWHERE, 'people-other.test'],
+        ] as const) {
+          await harness.addSite({
+            id,
+            name: id,
+            domains: [domain],
+            settings: defaultSiteSettings({ retentionDays: 30 }),
+          });
+        }
+        await store.ingest([
+          seen(SITE, 'p6', T),
+          seen(SITE, 'p1', T + SECOND),
+          seen(SITE, 'p2', T + 2 * SECOND),
+          seen(SITE, 'p3', T + 2 * SECOND),
+          seen(SITE, 'p4', T + 2 * SECOND),
+          seen(SITE, 'p5', T + 3 * SECOND, {
+            type: 'identify',
+            userId: 'u_bob',
+            traits: { name: 'Bob Marley' },
+          }),
+          seen(SITE, 'p7', T + 4 * SECOND),
+          seen(SITE, 'p7', T + 5 * SECOND, {
+            type: 'identify',
+            userId: 'u_ada',
+            traits: { name: 'Ada Lovelace', email: 'ada@example.test' },
+          }),
+          seen(ELSEWHERE, 'p8', T + 9 * SECOND),
+        ]);
+      });
+
+      async function walk(query: Omit<PeopleQuery, 'siteId' | 'after'>): Promise<string[]> {
+        const ids: string[] = [];
+        let after: PeopleQuery['after'];
+        for (let pages = 0; pages < 20; pages += 1) {
+          const page = await store.people({ siteId: SITE, ...query, after });
+          expect(page.people.length).toBeLessThanOrEqual(query.limit);
+          ids.push(...page.people.map((row) => row.visitorId));
+          if (page.next === null) {
+            return ids;
+          }
+          // A page that says there is more is never short of a full page.
+          expect(page.people).toHaveLength(query.limit);
+          after = page.next;
+        }
+        throw new Error('the cursor never reached the end');
+      }
+
+      it('lists everybody newest first, the tie broken by the visitor id', async () => {
+        const page = await store.people({ siteId: SITE, limit: 50 });
+        expect(page.people.map((row) => row.visitorId)).toEqual(ORDER);
+        expect(page.next).toBeNull();
+      });
+
+      it('walks the same list at every page size, no row twice and none missed', async () => {
+        for (let limit = 1; limit <= ORDER.length + 1; limit += 1) {
+          expect(await walk({ limit })).toEqual(ORDER);
+        }
+      });
+
+      it('says there is no next page when the last page is exactly full', async () => {
+        const page = await store.people({ siteId: SITE, limit: ORDER.length });
+        expect(page.people).toHaveLength(ORDER.length);
+        expect(page.next).toBeNull();
+      });
+
+      it('names the cursor by the last row, inside a run of one instant', async () => {
+        const first = await store.people({ siteId: SITE, limit: 3 });
+        expect(first.next).toEqual({ lastSeenAt: T + 2 * SECOND, visitorId: 'p4' });
+        const second = await store.people({
+          siteId: SITE,
+          limit: 3,
+          after: first.next ?? undefined,
+        });
+        expect(second.people.map((row) => row.visitorId)).toEqual(['p3', 'p2', 'p1']);
+      });
+
+      it('keeps to the identified when asked', async () => {
+        expect(await walk({ limit: 1, identifiedOnly: true })).toEqual(['p7', 'p5']);
+      });
+
+      it('finds a piece of a name, a userId or a visitor id, whatever its case', async () => {
+        expect(await walk({ limit: 5, q: 'LOVEL' })).toEqual(['p7']);
+        expect(await walk({ limit: 5, q: 'example.test' })).toEqual(['p7']);
+        expect(await walk({ limit: 5, q: 'u_b' })).toEqual(['p5']);
+        expect(await walk({ limit: 5, q: 'P3' })).toEqual(['p3']);
+        expect(await walk({ limit: 1, q: 'u_' })).toEqual(['p7', 'p5']);
+        expect(await walk({ limit: 2, q: 'p' })).toEqual(ORDER);
+        expect(await walk({ limit: 5, q: 'u_', identifiedOnly: true })).toEqual(['p7', 'p5']);
+      });
+
+      it('reads a search as text and not as a pattern', async () => {
+        expect(await walk({ limit: 5, q: '(' })).toEqual([]);
+        expect(await walk({ limit: 5, q: '.*' })).toEqual([]);
+      });
+
+      it("never lists another site's people", async () => {
+        expect(await walk({ limit: 50, q: 'p8' })).toEqual([]);
+        const other = await store.people({ siteId: ELSEWHERE, limit: 50 });
+        expect(other.people.map((row) => row.visitorId)).toEqual(['p8']);
+      });
+
+      it('answers an empty page for a site nobody has visited', async () => {
+        expect(await store.people({ siteId: F.OTHER_SITE_ID, limit: 50 })).toEqual({
+          people: [],
+          next: null,
+        });
+      });
+
+      // Unstripped, like visitor() and user(): what the caller may read is the
+      // route's decision, through the same identity gate a profile goes through.
+      it('carries the row as the profile has it, identity fields included', async () => {
+        const page = await store.people({ siteId: F.SITE_ID, limit: 50 });
+        const row: PersonRow | undefined = page.people.find((entry) => entry.visitorId === 'v1');
+        const profile = await store.visitor(F.SITE_ID, 'v1');
+        expect(row).toEqual({
+          visitorId: 'v1',
+          userId: F.USER_ID,
+          traits: { plan: 'pro' },
+          firstSeenAt: profile?.firstSeenAt,
+          lastSeenAt: profile?.lastSeenAt,
+          sessions: profile?.sessions,
+          pageviews: profile?.pageviews,
+          homeGeo: profile?.homeGeo,
+          devices: profile?.devices,
+          ips: profile?.ips,
+        });
+        const times = page.people.map((entry) => entry.lastSeenAt);
+        expect(times).toEqual([...times].sort((left, right) => right - left));
       });
     });
 

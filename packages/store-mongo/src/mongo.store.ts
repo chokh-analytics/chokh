@@ -41,6 +41,8 @@ import {
   groupForFold,
   presenceEntryOf,
   profileFrom,
+  personFrom,
+  cursorOf,
   readPlan,
   rollupTotalSelector,
   routeMatchers,
@@ -104,6 +106,8 @@ import {
   type Totals,
   type UserProfile,
   type VisitorProfile,
+  type PeoplePage,
+  type PeopleQuery,
   type AccountStore,
   type ApiKeyRecord,
   type AuditRecord,
@@ -128,6 +132,7 @@ import {
   engagementPipeline,
   eventsPipeline,
   funnelPipeline,
+  peopleFind,
   journeyStepsPipeline,
   journeyTopPipeline,
   goalStatsPipeline,
@@ -1516,6 +1521,18 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         { projection: { _id: 0, id: 1 }, sort: { lastSeenAt: -1 } },
       );
       return newest?.id ?? null;
+    },
+
+    async people(query: PeopleQuery): Promise<PeoplePage> {
+      const find = peopleFind(query);
+      const rows = await visitors
+        .find<StoredVisitor>(find.filter, { projection: find.projection })
+        .sort(find.sort)
+        .limit(find.limit)
+        .toArray();
+      const people = rows.slice(0, query.limit).map(personFrom);
+      const last = people[people.length - 1];
+      return { people, next: rows.length > query.limit && last !== undefined ? cursorOf(last) : null };
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {

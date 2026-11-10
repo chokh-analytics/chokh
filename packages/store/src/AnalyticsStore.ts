@@ -9,6 +9,8 @@ import type {
   GoalStatsResult,
   JourneyQuery,
   JourneyResult,
+  PeoplePage,
+  PeopleQuery,
   PropertyQuery,
   PropertyResult,
   PurgeSummary,
@@ -107,6 +109,14 @@ export interface AnalyticsStore {
   // is the whole point. It is a one row read on the userId index rather than
   // user(), which builds a profile and a timeline nobody asked for.
   visitorIdForUser(siteId: string, userId: string): Promise<string | null>;
+
+  // The people directory: one page of the site's visitor rows, the most recent
+  // sign of life first, filtered and cut where the query says (people.ts holds
+  // the order and the filters, so both adapters answer alike). Visitor rows
+  // only, never raw events: a page is one walk of the visitors index on
+  // (siteId, lastSeenAt, id) rather than an aggregation per person. Nothing is
+  // stripped here; the route strips what its caller may not read.
+  people(query: PeopleQuery): Promise<PeoplePage>;
 
   // Roll one date key of the site's calendar into rollups_daily. Safe to run
   // twice: the second run writes the same numbers.

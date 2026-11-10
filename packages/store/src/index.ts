@@ -9,6 +9,7 @@ export * from './metrics.js';
 export * from './funnel.js';
 export * from './journey.js';
 export * from './profile.js';
+export * from './people.js';
 export * from './AnalyticsStore.js';
 export * from './accounts.js';
 export * from './routes.js';

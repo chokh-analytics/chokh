@@ -374,6 +374,63 @@ export interface UserProfile extends Omit<VisitorProfile, 'visitorId'> {
   visitorIds: string[];
 }
 
+// The people directory (AN-PPL02): every visitor row the site holds, the most
+// recent sign of life first, a page at a time.
+//
+// A row is the visitor row and nothing read from raw events, which is what makes
+// a page one index walk rather than an aggregation per person: no timeline, no
+// custom event count, no touches. The profile is one click away for those.
+export const PEOPLE_DEFAULT_LIMIT = 50;
+export const PEOPLE_MAX_LIMIT = 100;
+// Longer than any id or name anybody types, short enough that a search is never
+// a way to post a document.
+export const PEOPLE_MAX_QUERY = 200;
+
+export interface PersonRow {
+  visitorId: string;
+  userId?: string;
+  traits?: Attributes;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  sessions: number;
+  pageviews: number;
+  homeGeo?: GeoLocation;
+  devices: string[];
+  ips: string[];
+}
+
+// Where a page stopped: the last row's sighting and id. The id breaks a tie
+// between two people last seen in the same millisecond, so the order is total
+// and a row can be neither repeated nor skipped across pages.
+export interface PeopleCursor {
+  lastSeenAt: number;
+  visitorId: string;
+}
+
+export interface PeopleQuery {
+  siteId: string;
+  limit: number;
+  // Rows strictly after this one in the directory's order.
+  after?: PeopleCursor;
+  // Only the visitors an identify has named.
+  identifiedOnly?: boolean;
+  // A case-insensitive piece of the visitor id, the userId or any trait value.
+  // It can match a name, so the route lets only read:identity ask it.
+  q?: string;
+}
+
+export interface PeoplePage {
+  people: PersonRow[];
+  // Where the next page starts, or null when this one is the last.
+  next: PeopleCursor | null;
+}
+
+// The same page over HTTP, the cursor sealed into one opaque string.
+export interface PeopleList {
+  people: PersonRow[];
+  next: string | null;
+}
+
 export interface RollupSummary {
   siteId: string;
   date: string;

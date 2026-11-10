@@ -8,6 +8,7 @@ import {
   type Filter,
   type FunnelRead,
   type FunnelWindow,
+  type PeopleQuery,
 } from '@chokh/store';
 import { fixture } from '@chokh/store/conformance';
 import { MongoClient, type Db, type Document } from 'mongodb';
@@ -23,6 +24,7 @@ import {
   eventsPipeline,
   funnelPipeline,
   goalStatsPipeline,
+  peopleFind,
   journeyStepsPipeline,
   journeyTopPipeline,
   propertyKeysPipeline,
@@ -593,5 +595,84 @@ describe('the adapter never creates an index', () => {
       const indexes = await bare.collection(name).listIndexes().toArray();
       expect(indexes.map((index) => index.name)).toEqual(['_id_']);
     }
+  });
+});
+
+// AN-PPL02's verify line: an explain on the new index. The directory's read is
+// one walk of visitor_site_last_seen in its own order, so the plan has an index
+// scan of that index, no collection scan and no SORT stage, whichever filters
+// ride on it. A SORT here would be every visitor of the site sorted in memory
+// to answer one page of them.
+describe('people directory', () => {
+  function indexNames(explained: Document): string[] {
+    const names: string[] = [];
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== 'object') {
+        return;
+      }
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      const record = node as Record<string, unknown>;
+      if (record.stage === 'IXSCAN' && typeof record.indexName === 'string') {
+        names.push(record.indexName);
+      }
+      Object.values(record).forEach(walk);
+    };
+    walk(explained.queryPlanner?.winningPlan ?? explained);
+    return names;
+  }
+
+  const cases: [string, PeopleQuery][] = [
+    ['the first page', { siteId: fixture.SITE_ID, limit: 50 }],
+    [
+      'a page after a cursor',
+      {
+        siteId: fixture.SITE_ID,
+        limit: 50,
+        after: { lastSeenAt: fixture.NOW, visitorId: 'v2' },
+      },
+    ],
+    ['the identified only', { siteId: fixture.SITE_ID, limit: 50, identifiedOnly: true }],
+    ['a search', { siteId: fixture.SITE_ID, limit: 50, q: 'rafi' }],
+    [
+      'all of them at once',
+      {
+        siteId: fixture.SITE_ID,
+        limit: 50,
+        identifiedOnly: true,
+        q: 'rafi',
+        after: { lastSeenAt: fixture.NOW, visitorId: 'v2' },
+      },
+    ],
+  ];
+
+  it.each(cases)('walks visitor_site_last_seen with no sort for %s', async (_, query) => {
+    const find = peopleFind(query);
+    const explained = (await db
+      .collection('visitors')
+      .find(find.filter, { projection: find.projection })
+      .sort(find.sort)
+      .limit(find.limit)
+      .explain('queryPlanner')) as unknown as Document;
+    const stages = scanStages(explained.queryPlanner?.winningPlan ?? explained);
+    expect(stages).toContain('IXSCAN');
+    expect(stages).not.toContain('COLLSCAN');
+    expect(stages).not.toContain('SORT');
+    expect(indexNames(explained)).toEqual(['visitor_site_last_seen']);
+  });
+
+  // The production order of events: the image can be running before the
+  // operator has run migrate --apply. The read is slower then, a collection
+  // scan and a sort, and it still answers the same page.
+  it('still answers on a database migrate has not touched yet', async () => {
+    const store = await createMongoStore({ client, dbName: 'chokh_people_no_index' });
+    await store.createSite(fixture.fixtureSite());
+    await store.ingest(fixture.fixtureEvents());
+    const page = await store.people({ siteId: fixture.SITE_ID, limit: 2 });
+    expect(page.people).toHaveLength(2);
+    expect(page.next).not.toBeNull();
+    await client.db('chokh_people_no_index').dropDatabase();
   });
 });

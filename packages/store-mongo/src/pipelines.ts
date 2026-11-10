@@ -17,6 +17,7 @@ import {
   type Goal,
   type GoalMatch,
   type Interval,
+  type PeopleQuery,
   type Range,
   type RollupDim,
 } from '@chokh/store';
@@ -1313,4 +1314,78 @@ export function journeyStepsPipeline(
     { $unwind: '$counts' },
     { $group: { _id: '$counts', visits: { $sum: 1 } } },
   ];
+}
+
+// The people directory's read (AN-PPL02): a find rather than an aggregation,
+// built here like every other read so the explain test holds the one the
+// adapter runs.
+//
+// The sort is the visitor_site_last_seen index read in its own order, so the
+// plan is one index walk with no SORT stage, stopping at the page: the cursor
+// is a bound on that walk (lastSeenAt at most the cursor's) plus one exclusion
+// for the rows of that same millisecond at or before it, and identifiedOnly and
+// q are tests on the rows the walk fetches. The walk asks for one row more than
+// the page, which is how the adapter knows whether there is a next one.
+//
+// q is the same case-insensitive piece of text people.ts matches: of the
+// visitor id, the userId or any trait value. Escaped, because a search box is
+// not a regular expression and a "(" typed into one must not be an error.
+export interface PeopleFind {
+  filter: Document;
+  sort: Document;
+  projection: Document;
+  limit: number;
+}
+
+export function peopleFind(query: PeopleQuery): PeopleFind {
+  const filter: Document = { siteId: query.siteId };
+  const { after } = query;
+  if (after !== undefined) {
+    filter.lastSeenAt = { $lte: after.lastSeenAt };
+    filter.$nor = [{ lastSeenAt: after.lastSeenAt, id: { $gte: after.visitorId } }];
+  }
+  if (query.identifiedOnly === true) {
+    // An expression and not { userId: { $type: 'string' } } on purpose. The
+    // plain form makes visitor_site_user a candidate, and on a site with few
+    // named people the planner takes it and sorts all of them in memory, then
+    // caches that plan for the site that has many. As an expression it is a
+    // test on the rows the walk fetches, so the walk is the only plan.
+    filter.$expr = { $eq: [{ $type: '$userId' }, 'string'] };
+  }
+  if (query.q !== undefined && query.q !== '') {
+    const pattern = escapeRegex(query.q);
+    filter.$or = [
+      { id: { $regex: pattern, $options: 'i' } },
+      { userId: { $regex: pattern, $options: 'i' } },
+      {
+        $expr: {
+          $anyElementTrue: [
+            {
+              $map: {
+                input: { $objectToArray: { $ifNull: ['$traits', {}] } },
+                as: 'trait',
+                in: {
+                  // A trait is a string by contract; the guard keeps a row an
+                  // older writer left with something else from failing the read.
+                  $cond: [
+                    { $eq: [{ $type: '$$trait.v' }, 'string'] },
+                    { $regexMatch: { input: '$$trait.v', regex: pattern, options: 'i' } },
+                    false,
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    ];
+  }
+  return {
+    filter,
+    sort: { lastSeenAt: -1, id: -1 },
+    // What a row of the directory carries and nothing more: the tallies a
+    // profile folds (places, touches) stay on the profile.
+    projection: { _id: 0, expiresAt: 0, places: 0, firstTouch: 0, lastTouch: 0 },
+    limit: query.limit + 1,
+  };
 }
