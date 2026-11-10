@@ -895,3 +895,63 @@ test('shares the Overview with whoever holds the link, behind a password when th
   await expect(guest.getByText('This link does not open anything.')).toBeVisible();
   await context.close();
 });
+
+// The people directory (AN-PPL02) against the real server: the list is the
+// visitor rows, the search finds the one person the fixture's application
+// named, a row opens their profile, and the filtered list is still there on
+// the way back because it lives in the address bar.
+test('lists everybody on People, finds a named person and opens them', async ({ page }) => {
+  await boot(page, `/${SITE}/people`);
+  const list = page.getByRole('region', { name: 'Everybody' });
+  const table = list.getByRole('group', { name: 'Everybody this site has seen, the most recent first' });
+  await expect(table.getByRole('row').nth(2)).toBeVisible();
+  const first = await table.getByRole('row').count();
+
+  const more = list.getByRole('button', { name: 'Show more' });
+  if (await more.isVisible()) {
+    await more.click();
+    await expect.poll(() => table.getByRole('row').count()).toBeGreaterThan(first);
+  }
+
+  await list.getByLabel('Search').fill('u_known');
+  await expect(page).toHaveURL(/[?&]q=u_known/);
+  await expect(list.getByText('All 1 shown')).toBeVisible();
+  await list.getByRole('link', { name: /u_known/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/${SITE}/people/v/v_known$`));
+  await expect(page.getByRole('region', { name: 'Profile' }).getByText('u_known')).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/[?&]q=u_known/);
+  await expect(list.getByLabel('Search')).toHaveValue('u_known');
+  await expect(list.getByText('All 1 shown')).toBeVisible();
+});
+
+test('keeps to the identified with the switch, from the keyboard', async ({ page }) => {
+  await boot(page, `/${SITE}/people`);
+  const list = page.getByRole('region', { name: 'Everybody' });
+  const toggle = list.getByRole('switch', { name: 'Only people you identified' });
+  await toggle.focus();
+  await page.keyboard.press('Space');
+  await expect(toggle).toBeChecked();
+  await expect(page).toHaveURL(/[?&]named=1/);
+  await expect(list.getByRole('link', { name: /u_known/ })).toBeVisible();
+  // Everybody left on the list has a name: none of them reads as a visitor.
+  await expect(list.getByRole('link', { name: /^Visitor/ })).toHaveCount(0);
+});
+
+// The directory is six columns, wider than a phone: it scrolls inside its card
+// and the page never moves sideways.
+test('keeps the people directory inside a phone screen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/people`);
+  const table = page.getByRole('group', {
+    name: 'Everybody this site has seen, the most recent first',
+  });
+  await expect(table.getByRole('row').nth(1)).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'people scrolls sideways').toBeLessThanOrEqual(0);
+  const inner = await table.evaluate((box) => box.scrollWidth - box.clientWidth);
+  expect(inner, 'the directory lost its columns rather than scrolling them').toBeGreaterThan(0);
+});

@@ -1,7 +1,13 @@
-import { QueryClient, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useQueries,
+  useQuery,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type { Dimension, Segment } from '@chokh/store/contract';
 
-import { api, type LicenseStatus, type Me } from './api.js';
+import { api, type LicenseStatus, type Me, type PeopleParams } from './api.js';
 import { isRetryable, type Answer, type Client } from './client.js';
 import { cacheKey, toStatsParams, type ViewQuery } from './query.js';
 import { isLive } from './range.js';
@@ -380,6 +386,33 @@ export function useHasAnyData(
 // Not cached beyond the session and never prefetched: a read that names
 // somebody writes an audit row on the server, so asking speculatively would be
 // writing "this account looked at this person" for a page nobody opened.
+// The people directory, a page at a time (AN-PPL02). Each page asks from the
+// cursor the one before it handed out, so "Show more" appends rather than
+// reloads, and a search or the switch is a new list from the top. Stale like a
+// profile: a directory read that names people writes an audit row, and walking
+// to a profile and back should not write a second one for the same look.
+export const PEOPLE_PAGE = 50;
+
+export function usePeople(
+  client: Client,
+  siteId: string,
+  filters: Pick<PeopleParams, 'identifiedOnly' | 'q'>,
+) {
+  return useInfiniteQuery({
+    queryKey: ['people', siteId, filters.identifiedOnly, filters.q],
+    queryFn: ({ pageParam }) =>
+      api.people(client, siteId, {
+        ...filters,
+        limit: PEOPLE_PAGE,
+        cursor: pageParam === '' ? undefined : pageParam,
+      }),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.data.next ?? undefined,
+    staleTime: PROFILE_STALE_MS,
+    retry: false,
+  });
+}
+
 export function useVisitorProfile(client: Client, siteId: string, visitorId: string | null) {
   return useQuery({
     queryKey: ['visitor', siteId, visitorId],

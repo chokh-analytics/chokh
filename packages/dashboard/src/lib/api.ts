@@ -10,6 +10,7 @@ import type {
   GoalKind,
   GoalStatsResult,
   JourneyResult,
+  PeopleList,
   PropertyResult,
   RealtimeSnapshot,
   Segment,
@@ -444,6 +445,20 @@ export const api = {
   realtime: (client: Client, siteId: string): Promise<Answer<RealtimeSnapshot>> =>
     client.get<RealtimeSnapshot>(`/api/sites/${siteId}/realtime`),
 
+  // One page of the directory (AN-PPL02). The cursor is the next of the page
+  // before, handed back untouched.
+  people: (
+    client: Client,
+    siteId: string,
+    params: PeopleParams,
+  ): Promise<Answer<PeopleList>> =>
+    client.get<PeopleList>(`/api/sites/${siteId}/people`, {
+      limit: params.limit,
+      cursor: params.cursor,
+      identifiedOnly: params.identifiedOnly ? 'true' : undefined,
+      q: params.q === '' ? undefined : params.q,
+    }),
+
   visitor: (client: Client, siteId: string, visitorId: string): Promise<Answer<VisitorProfile>> =>
     client.get<VisitorProfile>(`/api/sites/${siteId}/visitors/${encodeURIComponent(visitorId)}`),
 
@@ -495,6 +510,13 @@ export const api = {
 // puts this in the meta rather than making a page guess from an absent field,
 // because an absent address and a withheld one look identical and mean
 // different things.
+export interface PeopleParams {
+  limit?: number;
+  cursor?: string;
+  identifiedOnly: boolean;
+  q: string;
+}
+
 export function identityAllowed(meta: Record<string, unknown> | undefined): boolean {
   return meta?.identity === true;
 }

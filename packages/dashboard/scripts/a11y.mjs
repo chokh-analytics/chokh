@@ -42,6 +42,9 @@ const PAGES = [
   { name: 'funnels', path: '/s_demo/funnels' },
   // The flow over the seeded walks, and the table under it.
   { name: 'journeys', path: '/s_demo/pages?pages=journeys' },
+  // The people directory (AN-PPL02): the search, the switch and a table of
+  // links, in both themes.
+  { name: 'people', path: '/s_demo/people' },
   // Three forms, every control labelled, the timezone as a fact.
   { name: 'settings', path: '/s_demo/settings' },
   // The first paid feature, described on an install with no key.

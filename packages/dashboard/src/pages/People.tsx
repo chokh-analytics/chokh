@@ -26,6 +26,7 @@ import { InfoDot } from '../ui/InfoDot.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/State.js';
 import { VisitorList } from '../ui/VisitorList.js';
 import styles from './People.module.css';
+import { PeopleDirectory } from './PeopleDirectory.js';
 
 // One person at a time, looked up by hand.
 //
@@ -38,9 +39,10 @@ import styles from './People.module.css';
 // and the page says so on screen, because an audit log nobody can see is a
 // promise rather than a protection.
 //
-// There is no directory here on purpose. A list of everybody who has ever
-// visited is a different product with different obligations, and the founder's
-// decision of 2026-09-19 was lookup first.
+// The founder's decision of 2026-09-19 was lookup first, and the directory came
+// after it (AN-PPL02): the list of everybody leads the page now, with the same
+// gate on it as on a profile, and the exact lookup stays below for somebody
+// holding an id.
 
 const TIMELINE_LIMIT = 50;
 
@@ -403,7 +405,11 @@ function Lookup(): JSX.Element {
   return (
     <div className={styles.page}>
       <h1 className="sr-only">{messages.people.title}</h1>
-      <Card title={messages.people.title}>
+      <PeopleDirectory />
+
+      <HereNow />
+
+      <Card title={messages.people.lookupTitle}>
         <div className={styles.lookup}>
           <p className={styles.lede}>{messages.people.lede}</p>
 
@@ -439,20 +445,16 @@ function Lookup(): JSX.Element {
           <p className={styles.note}>{messages.people.needsScope}</p>
         </div>
       </Card>
-
-      <HereNow />
     </div>
   );
 }
 
 // Everybody the site has seen in the last half hour, under the search box.
 //
-// A lookup with nothing beside it is a page that only works for somebody who
-// already has an id to paste, and nobody has one: the founder's third decision
-// on this ticket was that v1 is lookup plus this list, and a directory of
-// everybody who ever visited is a different product. It is the same read the
-// Realtime page makes, so opening this costs nothing extra, and a row is a way
-// into the profile rather than a report of its own.
+// The directory above answers "who has been here"; this answers "who is here
+// now" with the page they are on, which a visitor row does not carry. It is the
+// same read the Realtime page makes, so opening this costs nothing extra, and a
+// row is a way into the profile rather than a report of its own.
 function HereNow(): JSX.Element {
   const { client, site } = useApp();
   const [, navigate] = useLocation();

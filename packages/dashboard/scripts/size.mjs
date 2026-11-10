@@ -50,7 +50,11 @@ const BUDGETS = [
   // Raised to 39 KB on 2026-09-25 by the commit that spent it, the embed:
   // measured at 38,941 B, the five strings of the Settings card's two
   // snippets, which live in the one messages file the shell carries.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 39 * 1024 },
+  // Raised to 40 KB on 2026-11-11 by the commit that spent it, the people
+  // directory (AN-PPL02): measured at 39,964 B, the directory's twenty five
+  // strings in the one messages file the shell carries and the API call; the
+  // page itself is in the People chunk.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 40 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
@@ -77,12 +81,18 @@ const BUDGETS = [
   // Raised to 39 KB on 2026-09-25 by the commit that spent it, the digests
   // section on the Alerts page: measured at 39,649 B, the list with what
   // happened last, send now, delete and the form, in the Alerts chunk.
-  { name: 'routes', pattern: /\.js$/, bytes: 39 * 1024 },
+  // Raised to 41 KB on 2026-11-11 by the commit that spent it, the people
+  // directory (AN-PPL02): measured at 41,306 B, People 4,560 B with the
+  // search, the switch, the paged table and Show more.
+  { name: 'routes', pattern: /\.js$/, bytes: 41 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
   // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared
   // page: measured at 15,889 B, Share 797 B and the Settings card's rules.
-  { name: 'css', pattern: /\.css$/, bytes: 16 * 1024 },
+  // Raised to 17 KB on 2026-11-11 by the commit that spent it, the people
+  // directory (AN-PPL02): measured at 16,845 B, People 1,630 B with the
+  // switch and the table.
+  { name: 'css', pattern: /\.css$/, bytes: 17 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

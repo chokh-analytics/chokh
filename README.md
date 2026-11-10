@@ -14,7 +14,8 @@ a collector, a stats API, a realtime stream and a dashboard.
 - Referrers, channels (including AI assistants) and UTM campaigns
 - Country, region and city from an offline IP database, plus browser, OS and device
 - Who is on the site right now, which page they are on and how long they have been there
-- Custom events, `identify` for signed-in people, and per-person history
+- Custom events, `identify` for signed-in people, per-person history, and a
+  directory of everybody with search and an identified-only switch
 - Goals with a conversion column on every report, funnels with the drop-off at
   every step, and the paths visits took from the page they came in on
 - Segments: any filter list saved under a name, applied in one press and drawn

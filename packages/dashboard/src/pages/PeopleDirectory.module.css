@@ -1,0 +1,209 @@
+/* The search box and the switch on one line, wrapping under each other on a
+ * phone rather than squeezing the box. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s3) var(--s5);
+  padding: var(--s4) var(--s4) var(--s3);
+}
+
+.search {
+  flex: 1 1 24ch;
+  min-width: 0;
+  max-width: 56ch;
+}
+
+/* A switch is a checkbox drawn as one: the input keeps its role, its focus and
+ * its keyboard, and the track is what a pair of eyes reads. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  /* Level with the input, under its label. */
+  margin-top: calc(var(--t-label) * 1.5 + var(--s1));
+  min-height: 36px;
+  cursor: pointer;
+  position: relative;
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.switchInput {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.switchTrack {
+  flex: none;
+  position: relative;
+  width: 28px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  transition: background var(--fast) ease, border-color var(--fast) ease;
+}
+
+.switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--fast) ease;
+}
+
+.switchInput:checked + .switchTrack {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switchInput:checked + .switchTrack .switchThumb {
+  transform: translateX(8px);
+}
+
+.switchInput:focus-visible + .switchTrack {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.switch:hover .switchTrack {
+  border-color: var(--muted);
+}
+
+.switchLabel {
+  user-select: none;
+}
+
+.loading {
+  display: grid;
+  gap: var(--s2);
+  padding: 0 var(--s4) var(--s4);
+}
+
+/* The one thing on the page allowed to be wider than a phone scrolls here,
+ * inside its card, and never takes the page with it. */
+.scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+
+.head th {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.head th.right {
+  text-align: right;
+}
+
+.row {
+  transition: background var(--fast) ease;
+}
+
+.row:hover {
+  background: var(--accent-soft);
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.right {
+  text-align: right;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 100%;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--r1);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.who {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.whoName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link:hover .whoName {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+.whoId {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+}
+
+.count {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}

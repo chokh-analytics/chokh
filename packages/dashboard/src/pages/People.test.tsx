@@ -112,16 +112,41 @@ function present(over: Record<string, unknown> = {}) {
   };
 }
 
+function person(over: Record<string, unknown> = {}) {
+  return {
+    visitorId: 'v_abcdef123456',
+    firstSeenAt: Date.UTC(2026, 7, 1, 8, 0, 0),
+    lastSeenAt: NOW - 5 * 60_000,
+    sessions: 9,
+    pageviews: 41,
+    homeGeo: { country: 'BD', city: 'Dhaka' },
+    devices: ['Chrome on Windows'],
+    ips: [],
+    ...over,
+  };
+}
+
+function directory(
+  people: unknown[] = [],
+  next: string | null = null,
+  identity = true,
+): Response {
+  return ok({ people, next }, { identity, limit: 50 });
+}
+
 function serve(
   answer: () => Response = () => ok(profile()),
   live: () => Response = () => ok(realtime()),
-): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: string) =>
-      Promise.resolve(String(input).includes('/realtime') ? live() : answer()),
-    ),
-  );
+  list: (url: URL) => Response = () => directory(),
+): ReturnType<typeof vi.fn> {
+  const fetch = vi.fn((input: string) => {
+    const url = new URL(String(input), 'http://chokh.test');
+    if (url.pathname.endsWith('/realtime')) return Promise.resolve(live());
+    if (url.pathname.endsWith('/people')) return Promise.resolve(list(url));
+    return Promise.resolve(answer());
+  });
+  vi.stubGlobal('fetch', fetch);
+  return fetch;
 }
 
 function show(): JSX.Element {
@@ -228,6 +253,149 @@ describe('People, looking somebody up', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Look up' })[1] as HTMLElement);
 
     expect(window.location.pathname).toBe('/s_test/people/v/v_abcdef123456');
+  });
+});
+
+// The directory (AN-PPL02): everybody, a page at a time, each row a way into
+// the profile, the search shut for an account that may not name anybody.
+describe('People, the directory', () => {
+  function asked(fetch: ReturnType<typeof vi.fn>): URL[] {
+    return fetch.mock.calls
+      .map((call) => new URL(String(call[0]), 'http://chokh.test'))
+      .filter((url) => url.pathname.endsWith('/people'));
+  }
+
+  it('lists everybody, named by what identify() said, newest first', async () => {
+    serve(undefined, undefined, () =>
+      directory([
+        person({
+          visitorId: 'v_ada',
+          userId: 'u_ada',
+          traits: { name: 'Ada Lovelace' },
+        }),
+        person({ visitorId: 'v_bob', userId: 'u_bob' }),
+        person({ visitorId: 'v_anon', homeGeo: undefined }),
+      ]),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('Ada Lovelace')).toBeInTheDocument());
+    const rows = within(list).getAllByRole('row').slice(1);
+    expect(rows.map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual([
+      'Ada Lovelaceu_ada',
+      'u_bobv_bob',
+      'Visitorv_anon',
+    ]);
+    expect(within(list).getAllByText('Dhaka, Bangladesh')).toHaveLength(2);
+    expect(within(list).getByText('All 3 shown')).toBeInTheDocument();
+  });
+
+  it('opens the profile from a row, by the keyboard as well as the mouse', async () => {
+    serve(undefined, undefined, () => directory([person()]));
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    const link = await within(list).findByRole('link', { name: /Visitor/ });
+    link.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(window.location.pathname).toBe('/s_test/people/v/v_abcdef123456');
+  });
+
+  it('names nobody and shuts the search for an account without the permission', async () => {
+    serve(undefined, undefined, () => directory([person({ visitorId: 'v_x' })], null, false));
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByLabelText('Search')).toBeDisabled());
+    expect(within(list).getByText(/needs the read:identity permission\. The list itself/)).toBeInTheDocument();
+    expect(within(list).getByRole('switch')).toBeEnabled();
+  });
+
+  it('searches as somebody types, once, and keeps it in the address', async () => {
+    const fetch = serve(undefined, undefined, (url) =>
+      url.searchParams.get('q') === 'ada'
+        ? directory([person({ visitorId: 'v_ada', userId: 'u_ada' })])
+        : directory([person(), person({ visitorId: 'v_other' })]),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('All 2 shown')).toBeInTheDocument());
+    await userEvent.type(within(list).getByLabelText('Search'), 'ada');
+    await waitFor(() => expect(within(list).getByText('u_ada')).toBeInTheDocument());
+
+    const searches = asked(fetch).filter((url) => url.searchParams.has('q'));
+    expect(searches.map((url) => url.searchParams.get('q'))).toEqual(['ada']);
+    expect(window.location.search).toBe('?q=ada');
+  });
+
+  it('keeps to the identified when the switch is on', async () => {
+    const fetch = serve(undefined, undefined, (url) =>
+      url.searchParams.get('identifiedOnly') === 'true'
+        ? directory([person({ userId: 'u_named' })])
+        : directory([person(), person({ visitorId: 'v_other' })]),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('All 2 shown')).toBeInTheDocument());
+    await userEvent.click(within(list).getByRole('switch', { name: 'Only people you identified' }));
+    await waitFor(() => expect(within(list).getByText('u_named')).toBeInTheDocument());
+    expect(within(list).getByRole('switch')).toBeChecked();
+    expect(asked(fetch).some((url) => url.searchParams.get('identifiedOnly') === 'true')).toBe(true);
+    expect(window.location.search).toBe('?named=1');
+  });
+
+  it('shows more from the cursor the page before handed out', async () => {
+    const fetch = serve(undefined, undefined, (url) =>
+      url.searchParams.get('cursor') === 'c_2'
+        ? directory([person({ visitorId: 'v_second' })])
+        : directory([person({ visitorId: 'v_first' })], 'c_2'),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('Showing 1')).toBeInTheDocument());
+    await userEvent.click(within(list).getByRole('button', { name: 'Show more' }));
+    await waitFor(() => expect(within(list).getByText('All 2 shown')).toBeInTheDocument());
+    expect(within(list).getByText('v_first')).toBeInTheDocument();
+    expect(within(list).getByText('v_second')).toBeInTheDocument();
+    expect(within(list).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(asked(fetch).map((url) => url.searchParams.get('cursor'))).toEqual([null, 'c_2']);
+  });
+
+  it('says so when nobody matches, and clears the search from there', async () => {
+    at('/s_test/people?q=zz');
+    serve(undefined, undefined, (url) =>
+      url.searchParams.has('q') ? directory([]) : directory([person()]),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('Nobody matches "zz".')).toBeInTheDocument());
+    await userEvent.click(within(list).getByRole('button', { name: 'Clear the search' }));
+    await waitFor(() => expect(within(list).getByText('All 1 shown')).toBeInTheDocument());
+    expect(window.location.search).toBe('');
+  });
+
+  it('says so when the site has nobody yet', async () => {
+    serve();
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() =>
+      expect(within(list).getByText(/Nobody has been seen on this site yet/)).toBeInTheDocument(),
+    );
+  });
+
+  it('reports a refusal in the card rather than an empty list', async () => {
+    serve(undefined, undefined, () => refused('SCOPE_REQUIRED', 'Searching people needs read:identity'));
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByRole('alert')).toBeInTheDocument());
+    expect(within(list).getByText('Searching people needs read:identity')).toBeInTheDocument();
   });
 });
 
@@ -368,8 +536,8 @@ describe('People, one profile', () => {
     serve();
     render(show());
 
-    await userEvent.click(screen.getByRole('button', { name: 'Look somebody else up' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Back to everybody' }));
     expect(window.location.pathname).toBe('/s_test/people');
-    expect(card('People')).toBeInTheDocument();
+    expect(card('Everybody')).toBeInTheDocument();
   });
 });
