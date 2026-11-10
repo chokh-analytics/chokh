@@ -131,6 +131,7 @@ import {
   journeyStepsPipeline,
   journeyTopPipeline,
   goalStatsPipeline,
+  ingestReadPipeline,
   propertyKeysPipeline,
   propertyValuesPipeline,
   rawTotalsByBucketPipeline,
@@ -1054,21 +1055,17 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         // a count can be lost; a tab sends its batches one after another, and
         // the cure if that ever matters is a findOneAndUpdate, not a lock.
         //
-        // The two reads go together: they are different collections and neither
-        // needs the other's answer, so waiting for them one after the other buys
-        // nothing and costs a round trip. On a laptop against a local mongod that
-        // round trip is most of a millisecond; from a droplet to Atlas it is
-        // several.
-        const [open, visitor] = await Promise.all([
-          sessions.findOne<StoredSession>(
-            { siteId, visitorId },
-            { projection: { _id: 0, expiresAt: 0 }, sort: { startedAt: -1 } },
-          ),
-          visitors.findOne<StoredVisitor>(
-            { siteId, id: visitorId },
-            { projection: { _id: 0, expiresAt: 0 } },
-          ),
-        ]);
+        // The visitor row and their open stay come back in one aggregation, so
+        // a batch costs four round trips (this read and the three writes below)
+        // rather than five. On a laptop against a local mongod a round trip is
+        // most of a millisecond; from a droplet to Atlas it is several.
+        const [read] = await visitors
+          .aggregate<{ visitor: StoredVisitor[]; open: StoredSession[] }>(
+            ingestReadPipeline(siteId, visitorId),
+          )
+          .toArray();
+        const open = read?.open[0] ?? null;
+        const visitor = read?.visitor[0] ?? null;
         const folded = foldVisitor({
           siteId,
           visitorId,
@@ -1116,7 +1113,8 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       }
 
       // Three collections and a presence set, none of which needs another's
-      // answer, so they go together for the same reason the two reads above do.
+      // answer, so they go together: waiting for one before the next buys
+      // nothing and costs a round trip each.
       // There is no ordering to preserve: nothing about a batch is atomic across
       // collections either way, and a reader that catches it half written sees a
       // session whose events are a millisecond behind rather than a wrong number.

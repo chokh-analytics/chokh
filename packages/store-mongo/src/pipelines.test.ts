@@ -23,6 +23,7 @@ import {
   eventsPipeline,
   funnelPipeline,
   goalStatsPipeline,
+  ingestReadPipeline,
   journeyStepsPipeline,
   journeyTopPipeline,
   propertyKeysPipeline,
@@ -592,6 +593,64 @@ describe('the adapter never creates an index', () => {
     for (const name of ['events', 'sites', 'sessions', 'visitors', 'rollups_daily']) {
       const indexes = await bare.collection(name).listIndexes().toArray();
       expect(indexes.map((index) => index.name)).toEqual(['_id_']);
+    }
+  });
+});
+
+// AN-ING01: ingest reads a visitor and their latest stay in one aggregation.
+// The visitor half leads with the unique id index, and the stay half, run by
+// the $lookup, uses the newest-first index and scans no collection.
+describe('ingest read pipeline', () => {
+  const visitorId = fixture.fixtureEvents()[0]!.visitorId;
+
+  it('scans an index for the visitor and for the stay', async () => {
+    const pipeline = ingestReadPipeline(fixture.SITE_ID, visitorId);
+    const explained = await db.collection('visitors').aggregate(pipeline).explain('executionStats');
+    const outer = scanStages(explained);
+    expect(outer).toContain('IXSCAN');
+    expect(outer).not.toContain('COLLSCAN');
+
+    const lookup = (explained.stages as Document[]).find((stage) => '$lookup' in stage);
+    expect(lookup?.collectionScans).toBe(0);
+    expect(lookup?.indexesUsed).toEqual(['session_site_visitor']);
+
+    // The same half explained on its own, for the plan itself.
+    const inner = (pipeline.find((stage) => '$lookup' in stage)?.$lookup as Document)
+      .pipeline as Document[];
+    const stay = scanStages(await db.collection('sessions').aggregate(inner).explain());
+    expect(stay).toContain('IXSCAN');
+    expect(stay).not.toContain('COLLSCAN');
+  });
+
+  it('answers one document with both halves, and finds a stay with no visitor row', async () => {
+    const [known] = await db
+      .collection('visitors')
+      .aggregate(ingestReadPipeline(fixture.SITE_ID, visitorId))
+      .toArray();
+    expect(known?.visitor).toHaveLength(1);
+    expect(known?.open).toHaveLength(1);
+    expect(known?.visitor[0]).not.toHaveProperty('_id');
+    expect(known?.open[0]).not.toHaveProperty('expiresAt');
+
+    const [nobody] = await db
+      .collection('visitors')
+      .aggregate(ingestReadPipeline(fixture.SITE_ID, 'v_nobody'))
+      .toArray();
+    expect(nobody).toEqual({ visitor: [], open: [] });
+
+    // A stay whose visitor row is gone still comes back: the $facet answers a
+    // document even when the visitors $match found none.
+    const orphan = { siteId: fixture.SITE_ID, id: 's_ing01_orphan', visitorId: 'v_ing01_orphan', startedAt: 1 };
+    await db.collection('sessions').insertOne({ ...orphan });
+    try {
+      const [alone] = await db
+        .collection('visitors')
+        .aggregate(ingestReadPipeline(fixture.SITE_ID, orphan.visitorId))
+        .toArray();
+      expect(alone?.visitor).toEqual([]);
+      expect(alone?.open).toEqual([orphan]);
+    } finally {
+      await db.collection('sessions').deleteOne({ siteId: fixture.SITE_ID, id: orphan.id });
     }
   });
 });
