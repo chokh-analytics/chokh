@@ -5,7 +5,7 @@ import type { PersonRow } from '@chokh/store/contract';
 import { useApp } from '../app/context.js';
 import { useWallClock } from '../app/useNow.js';
 import { identityAllowed } from '../lib/api.js';
-import { countryName, formatCount, formatExact, formatSince } from '../lib/format.js';
+import { countryName, formatCount, formatExact, formatLastSeen } from '../lib/format.js';
 import { PROFILE_PRESENCE_MS, usePeople, useRealtime } from '../lib/queries.js';
 import { format, messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
@@ -253,8 +253,11 @@ export function PeopleDirectory(): JSX.Element {
                           {here && <span className="sr-only">{messages.people.onlineNow}</span>}
                         </Link>
                       </td>
-                      <td className={styles.cell} title={new Date(row.lastSeenAt).toISOString()}>
-                        {formatSince(row.lastSeenAt, now, timezone)}
+                      <td
+                        className={[styles.cell, styles.when].join(' ')}
+                        title={new Date(row.lastSeenAt).toISOString()}
+                      >
+                        {formatLastSeen(row.lastSeenAt, now, timezone)}
                       </td>
                       <td className={[styles.cell, styles.num].join(' ')} title={formatExact(row.sessions)}>
                         {formatCount(row.sessions)}

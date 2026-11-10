@@ -242,6 +242,24 @@ export function formatSince(ts: number, now: number, timeZone: string): string {
   return formatClock(ts, timeZone);
 }
 
+// When somebody was last seen, for a list that runs back over days (the people
+// directory). formatSince inside the hour and the clock time later today, but a
+// bare 20:49 on a row from last week reads as this evening, so any other day
+// carries its date, and its year once that differs from now's. "Today" is the
+// site's day, like every other day in this product.
+export function formatLastSeen(ts: number, now: number, timeZone: string): string {
+  const day = timeFormatter(timeZone, { year: 'numeric', month: '2-digit', day: '2-digit' });
+  if (day.format(ts) === day.format(now)) {
+    return formatSince(ts, now, timeZone);
+  }
+  const year = timeFormatter(timeZone, { year: 'numeric' });
+  if (year.format(ts) === year.format(now)) {
+    return formatDateTime(ts, timeZone);
+  }
+  const date = timeFormatter(timeZone, { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${date.format(ts)}, ${formatClock(ts, timeZone)}`;
+}
+
 // How long they have been here, which counts from the start of the stay.
 export function formatOnlineFor(since: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - since) / 60_000));

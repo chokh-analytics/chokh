@@ -142,6 +142,11 @@
   white-space: nowrap;
 }
 
+.when {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
 .num {
   text-align: right;
   font-family: var(--font-mono);

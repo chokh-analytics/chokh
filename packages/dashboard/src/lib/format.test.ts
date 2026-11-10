@@ -14,6 +14,7 @@ import {
   formatRate,
   formatValue,
   formatRatio,
+  formatLastSeen,
   formatSince,
   viewsPerVisit,
   GOOD_WHEN,
@@ -157,6 +158,20 @@ describe('times', () => {
     expect(formatSince(at - 30_000, at, DHAKA)).toBe('now');
     expect(formatSince(at - 14 * 60_000, at, DHAKA)).toBe('14m');
     expect(formatSince(at - 3 * 60 * 60_000, at, DHAKA)).toBe('07:00');
+  });
+
+  // A list ordered by last seen runs back over days, so a bare clock time on a
+  // row from last week would read as this evening (AN-PPL02).
+  it('writes the day on a last sighting that was not today in the site zone', () => {
+    const now = Date.UTC(2026, 10, 11, 4, 0, 0); // 10:00 on 11 Nov in Dhaka
+    expect(formatLastSeen(now - 30_000, now, DHAKA)).toBe('now');
+    expect(formatLastSeen(now - 14 * 60_000, now, DHAKA)).toBe('14m');
+    expect(formatLastSeen(Date.UTC(2026, 10, 10, 18, 30, 0), now, DHAKA)).toBe('00:30');
+    expect(formatLastSeen(Date.UTC(2026, 10, 10, 17, 59, 0), now, DHAKA)).toBe('10 Nov, 23:59');
+    expect(formatLastSeen(Date.UTC(2026, 9, 3, 9, 58, 0), now, DHAKA)).toBe('3 Oct, 15:58');
+    expect(formatLastSeen(Date.UTC(2025, 11, 31, 12, 0, 0), now, DHAKA)).toBe('31 Dec 2025, 18:00');
+    // The site's day, not the reader's: 23:59 UTC on the 10th is the 11th in Dhaka.
+    expect(formatLastSeen(Date.UTC(2026, 10, 10, 23, 59, 0), now, DHAKA)).toBe('05:59');
   });
 
   it('counts online for from the start of the stay', () => {

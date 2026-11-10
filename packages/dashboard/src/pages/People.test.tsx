@@ -291,6 +291,30 @@ describe('People, the directory', () => {
     expect(within(list).getByText('All 3 shown')).toBeInTheDocument();
   });
 
+  // The list is ordered by last seen and runs back over days, so a row that is
+  // not from today carries its day, and its year once that differs.
+  it('writes the day on every last sighting that was not today', async () => {
+    const wall = Date.now();
+    serve(undefined, undefined, () =>
+      directory([
+        person({ visitorId: 'v_today', lastSeenAt: wall - 5 * 60_000 }),
+        person({ visitorId: 'v_yesterday', lastSeenAt: wall - 26 * 60 * 60_000 }),
+        person({ visitorId: 'v_old', lastSeenAt: Date.UTC(2024, 2, 5, 8, 0, 0) }),
+      ]),
+    );
+    render(show());
+
+    const list = await screen.findByRole('region', { name: 'Everybody' });
+    await waitFor(() => expect(within(list).getByText('v_old')).toBeInTheDocument());
+    const seen = within(list)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[1]?.textContent);
+    expect(seen[0]).toBe('5m');
+    expect(seen[1]).toMatch(/^\d{1,2} [A-Z][a-z]{2}, \d\d:\d\d$/);
+    expect(seen[2]).toBe('5 Mar 2024, 08:00');
+  });
+
   it('opens the profile from a row, by the keyboard as well as the mouse', async () => {
     serve(undefined, undefined, () => directory([person()]));
     render(show());

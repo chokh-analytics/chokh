@@ -906,6 +906,10 @@ test('lists everybody on People, finds a named person and opens them', async ({ 
   const table = list.getByRole('group', { name: 'Everybody this site has seen, the most recent first' });
   await expect(table.getByRole('row').nth(2)).toBeVisible();
   const first = await table.getByRole('row').count();
+  // The fixture runs back a week, so the column carries days and not a clock
+  // time that wraps (AN-PPL02's review): some row is from another day.
+  const seen = await table.locator('tbody tr td:nth-child(2)').allTextContents();
+  expect(seen.some((text) => /^\d{1,2} [A-Z][a-z]{2}, \d\d:\d\d$/.test(text))).toBe(true);
 
   const more = list.getByRole('button', { name: 'Show more' });
   if (await more.isVisible()) {
