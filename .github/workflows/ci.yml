@@ -44,14 +44,25 @@ jobs:
 
       # The store conformance suite runs on a downloaded mongod, so no runner
       # and no laptop needs Docker to prove an adapter. Cached because it is
-      # about 600 MB and it never changes between runs.
+      # about 600 MB and it never changes between runs. The path is where
+      # mongodb-memory-server actually writes it under pnpm; the old
+      # node_modules/.cache path was never written, so every run downloaded cold.
       - name: Cache the mongod the conformance suite runs on
         uses: actions/cache@v4
         with:
-          path: node_modules/.cache/mongodb-memory-server
+          path: ~/.cache/mongodb-binaries
           key: mongod-${{ runner.os }}-7.0.24
 
       - run: pnpm install --frozen-lockfile
+
+      # Fetched once, here, before four test files start at the same moment and
+      # race for one lockfile on a cold cache, which failed runs of AN-PPL02 at
+      # the download before any test ran. A no-op when the cache restored it.
+      - name: Fetch mongod once
+        working-directory: packages/store-mongo
+        run: >-
+          node -e "import('mongodb-memory-server').then(async ({ MongoBinary }) =>
+          console.log(await MongoBinary.getPath()))"
 
       - run: pnpm lint
 
