@@ -1,8 +1,8 @@
 import type {
+  Attributes,
   RealtimeSnapshot,
   RealtimeVisitor,
   UserProfile,
-  VisitorProfile,
 } from '../store/AnalyticsStore.js';
 
 // The one place a response is stripped of who it is about.
@@ -54,10 +54,20 @@ export function gateRealtime(snapshot: RealtimeSnapshot, allowed: boolean): Gate
   return { value: { ...snapshot, visitors, recent }, fields: [...found].sort() };
 }
 
-export function gateVisitorProfile(
-  profile: VisitorProfile,
+// What a visitor profile and a row of the people directory both carry about
+// who somebody is. The directory (AN-PPL02) is the same visitor row, so it goes
+// through this same strip, one row at a time, rather than a second copy of the
+// rule that could drift from the first.
+export interface IdentityBearing {
+  ips: string[];
+  userId?: string;
+  traits?: Attributes;
+}
+
+export function gateVisitorProfile<T extends IdentityBearing>(
+  profile: T,
   allowed: boolean,
-): Gated<VisitorProfile> {
+): Gated<Omit<T, 'userId' | 'traits'> & IdentityBearing> {
   const found = new Set<string>();
   if (allowed) {
     if (profile.ips.length > 0) found.add('ips');

@@ -8,7 +8,12 @@ import {
   SITE_ID,
   type Harness,
 } from './api.test-utils.js';
-import type { AuditRecord, StoredEvent, VisitorProfile } from '../store/AnalyticsStore.js';
+import type {
+  AuditRecord,
+  PeopleList,
+  StoredEvent,
+  VisitorProfile,
+} from '../store/AnalyticsStore.js';
 
 // The identity gate, over HTTP, and the audit row every read through it writes.
 //
@@ -273,8 +278,119 @@ describe('reading about a person', () => {
     });
   });
 
+  // The directory (AN-PPL02). Listing is traffic and is stripped like the
+  // visitor route; searching can match a name and is refused without the scope
+  // before anything is read, so a refusal writes no row either.
+  describe('GET /people', () => {
+    beforeEach(async () => {
+      await harness.store.ingest([
+        event({ visitorId: 'v_2', ts: NOW - 20 * 60_000, receivedAt: NOW - 20 * 60_000 }),
+        event({ visitorId: 'v_3', ts: NOW - 10 * 60_000, receivedAt: NOW - 10 * 60_000 }),
+      ]);
+    });
+
+    function list(url: string, headers: Record<string, string>) {
+      return harness.app.inject({
+        method: 'GET',
+        url: `/api/sites/${SITE_ID}/people${url}`,
+        headers,
+      });
+    }
+
+    it('lists everybody newest first, names included, and logs the page once', async () => {
+      const response = await list('', { cookie: harness.owner.cookie });
+      expect(response.statusCode).toBe(200);
+      const parsed = envelope<PeopleList>(response.body);
+      expect(parsed.success).toBe(true);
+      expect(parsed.meta).toMatchObject({ identity: true, limit: 50 });
+      expect(parsed.data?.people.map((row) => row.visitorId)).toEqual(['v_3', 'v_2', 'v_1']);
+      expect(parsed.data?.next).toBeNull();
+      const named = parsed.data?.people[2];
+      expect(named?.userId).toBe('u_42');
+      expect(named?.traits).toEqual({ plan: 'pro' });
+      expect(named?.ips).toEqual(['203.0.113.7']);
+
+      const rows = await trail();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        route: 'GET /api/sites/:siteId/people',
+        fields: ['ips', 'traits', 'userId'],
+        actor: { kind: 'session', id: harness.owner.userId },
+      });
+      expect(rows[0]?.target).toBeUndefined();
+    });
+
+    it('strips the names and addresses for a viewer, and writes no row', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      const response = await list('?identifiedOnly=true', { cookie: viewer.cookie });
+      expect(response.statusCode).toBe(200);
+      const parsed = envelope<PeopleList>(response.body);
+      expect(parsed.meta).toMatchObject({ identity: false });
+      expect(parsed.data?.people.map((row) => row.visitorId)).toEqual(['v_1']);
+      expect(parsed.data?.people[0]?.ips).toEqual([]);
+      expect(response.body).not.toContain('203.0.113.7');
+      expect(response.body).not.toContain('u_42');
+      expect(response.body).not.toContain('"plan"');
+      expect(await trail()).toEqual([]);
+    });
+
+    it('refuses a search without read:identity, to an account and to a key', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      expectFailure(await list('?q=u_4', { cookie: viewer.cookie }), 403, 'SCOPE_REQUIRED');
+      expectFailure(
+        await list('?q=v_', { authorization: await harness.key(['read:stats']) }),
+        403,
+        'SCOPE_REQUIRED',
+      );
+      expect(await trail()).toEqual([]);
+    });
+
+    it('answers a search with the scope and names it in the log', async () => {
+      const response = await list('?q=U_4', {
+        authorization: await harness.key(['read:stats', 'read:identity']),
+      });
+      expect(response.statusCode).toBe(200);
+      const parsed = envelope<PeopleList>(response.body);
+      expect(parsed.data?.people.map((row) => row.visitorId)).toEqual(['v_1']);
+      const rows = await trail();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ target: 'U_4', actor: { kind: 'key' } });
+    });
+
+    it('treats an empty search box as no search, which needs no scope', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      const response = await list('?q=%20%20', { cookie: viewer.cookie });
+      expect(response.statusCode).toBe(200);
+      expect(envelope<PeopleList>(response.body).data?.people).toHaveLength(3);
+    });
+
+    it('walks every page by the cursor it hands out, no row twice', async () => {
+      const seen: string[] = [];
+      let cursor: string | null = '';
+      for (let pages = 0; cursor !== null && pages < 10; pages += 1) {
+        const suffix: string = cursor === '' ? '?limit=1' : `?limit=1&cursor=${cursor}`;
+        const response = await list(suffix, { cookie: harness.owner.cookie });
+        const parsed = envelope<PeopleList>(response.body);
+        seen.push(...(parsed.data?.people.map((row) => row.visitorId) ?? []));
+        cursor = parsed.data?.next ?? null;
+      }
+      expect(seen).toEqual(['v_3', 'v_2', 'v_1']);
+    });
+
+    it('refuses a query it cannot read, in the envelope', async () => {
+      const owner = { cookie: harness.owner.cookie };
+      const long = 'x'.repeat(201);
+      expectFailure(await list('?cursor=nonsense', owner), 400, 'INVALID_CURSOR');
+      expectFailure(await list('?limit=0', owner), 400, 'INVALID_PEOPLE_QUERY');
+      expectFailure(await list('?limit=101', owner), 400, 'INVALID_PEOPLE_QUERY');
+      expectFailure(await list('?identifiedOnly=yes', owner), 400, 'INVALID_PEOPLE_QUERY');
+      expectFailure(await list('?q=' + long, owner), 400, 'INVALID_PEOPLE_QUERY');
+    });
+  });
+
   it('refuses every one of them to nobody at all', async () => {
     for (const url of [
+      `/api/sites/${SITE_ID}/people`,
       `/api/sites/${SITE_ID}/visitors/v_1`,
       `/api/sites/${SITE_ID}/users/u_42`,
       `/api/sites/${SITE_ID}/users/u_42/presence`,

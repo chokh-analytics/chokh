@@ -30,6 +30,7 @@ import {
 } from '../controllers/segments.controller.js';
 import { createLicenseController } from '../controllers/license.controller.js';
 import {
+  createPeopleController,
   createUserController,
   createUserPresenceController,
   createVisitorController,
@@ -356,8 +357,14 @@ export async function registerApiRoutes(
     createRealtimeStreamController(deps),
   );
 
-  // People. The visitor route strips what the caller may not see; the two user
-  // routes need read:identity to be reached at all.
+  // People. The directory and the visitor route strip what the caller may not
+  // see, and the directory refuses a search without read:identity itself; the
+  // two user routes need read:identity to be reached at all.
+  app.get(
+    '/api/sites/:siteId/people',
+    { preHandler: scope('read:stats') },
+    createPeopleController(deps),
+  );
   app.get(
     '/api/sites/:siteId/visitors/:visitorId',
     { preHandler: scope('read:stats') },

@@ -181,6 +181,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/share/:token/widget.svg` | the link, and the cookie when locked | A badge: `metric=visitors` or `pageviews`, `range=today`, `7d` or `30d`; cached five minutes |
 | `GET /api/sites/:siteId/realtime` | `read:stats` | Who is here now |
 | `GET /api/sites/:siteId/realtime/stream` | `read:stats` | The same, as server sent events |
+| `GET /api/sites/:siteId/people` | `read:stats`; `q` needs `read:identity` | The directory: `limit` (1 to 100, default 50), `cursor` (the `next` of the page before), `identifiedOnly=true`, `q` (a piece of a visitor id, userId or trait); newest first, identity fields gated |
 | `GET /api/sites/:siteId/visitors/:visitorId` | `read:stats` | Identity fields gated |
 | `GET /api/sites/:siteId/users/:userId` | `read:identity` | One identified person |
 | `GET /api/sites/:siteId/users/:userId/presence` | `read:identity` | The online badge |

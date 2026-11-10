@@ -8,18 +8,20 @@ import { attempt, type Outcome } from '../lib/store-error.js';
 import {
   ONLINE_WINDOW_MS,
   type AnalyticsStore,
+  type PeoplePage,
+  type PeopleQuery,
   type RealtimeSnapshot,
   type UserProfile,
   type VisitorProfile,
 } from '../store/AnalyticsStore.js';
 
 // The reads that are about people rather than about traffic: who is here now,
-// one visitor's history, one identified person's history, and whether they are
-// online.
+// the directory of everybody, one visitor's history, one identified person's
+// history, and whether they are online.
 //
 // Every one of them goes through the identity gate, and every one answers with
 // the fields that survived it so the caller can write the audit row from the same
-// pass. That is the whole reason these four are in one file: they are the four
+// pass. That is the whole reason these are in one file: they are the
 // places a response can name somebody, and keeping them together is what makes
 // "every read that passes the gate writes a row" checkable by reading.
 
@@ -40,6 +42,27 @@ export function visitor(
   return attempt(async () => {
     const found = await store.visitor(siteId, visitorId);
     return found === null ? null : gateVisitorProfile(found, identityAllowed);
+  });
+}
+
+// The directory (AN-PPL02): one page of everybody, every row through the same
+// strip a profile goes through, and the fields that survived anywhere on the
+// page gathered for the one audit row the read writes. A page of anonymous
+// visitors, or any page read without the scope, carries none and writes none.
+export function people(
+  store: AnalyticsStore,
+  query: PeopleQuery,
+  identityAllowed: boolean,
+): Promise<Outcome<Gated<PeoplePage>>> {
+  return attempt(async () => {
+    const page = await store.people(query);
+    const found = new Set<string>();
+    const rows = page.people.map((row) => {
+      const gated = gateVisitorProfile(row, identityAllowed);
+      for (const field of gated.fields) found.add(field);
+      return gated.value;
+    });
+    return { value: { people: rows, next: page.next }, fields: [...found].sort() };
   });
 }
 

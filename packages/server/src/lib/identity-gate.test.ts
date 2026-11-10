@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { gateRealtime, gateVisitorProfile, identityFieldsOfUser } from './identity-gate.js';
-import type { RealtimeSnapshot, UserProfile, VisitorProfile } from '../store/AnalyticsStore.js';
+import type {
+  PersonRow,
+  RealtimeSnapshot,
+  UserProfile,
+  VisitorProfile,
+} from '../store/AnalyticsStore.js';
 
 const NOW = Date.UTC(2026, 8, 18, 12, 0, 0);
 
@@ -162,5 +167,36 @@ describe('identityFieldsOfUser', () => {
     const plain: UserProfile = { ...user, ips: [] };
     delete plain.traits;
     expect(identityFieldsOfUser(plain)).toEqual(['userId']);
+  });
+});
+
+// A row of the people directory is the same visitor row, so it goes through the
+// same strip: the rule is written once and both reads use it.
+describe('gateVisitorProfile on a directory row', () => {
+  const row: PersonRow = {
+    visitorId: 'v_1',
+    userId: 'u_42',
+    traits: { plan: 'pro' },
+    firstSeenAt: NOW - 60_000,
+    lastSeenAt: NOW,
+    sessions: 1,
+    pageviews: 2,
+    devices: ['Chrome on Windows'],
+    ips: ['203.0.113.7'],
+  };
+
+  it('keeps the row whole and lists its fields for a caller with the scope', () => {
+    const gated = gateVisitorProfile(row, true);
+    expect(gated.value).toEqual(row);
+    expect(gated.fields).toEqual(['ips', 'traits', 'userId']);
+  });
+
+  it('strips the name, the traits and the addresses for one without', () => {
+    const gated = gateVisitorProfile(row, false);
+    expect('userId' in gated.value).toBe(false);
+    expect('traits' in gated.value).toBe(false);
+    expect(gated.value.ips).toEqual([]);
+    expect(gated.value.devices).toEqual(['Chrome on Windows']);
+    expect(gated.fields).toEqual([]);
   });
 });
