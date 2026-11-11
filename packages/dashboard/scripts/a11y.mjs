@@ -45,6 +45,11 @@ const PAGES = [
   // The people directory (AN-PPL02): the search, the switch and a table of
   // links, in both themes.
   { name: 'people', path: '/s_demo/people' },
+  // Retention (AN-PPL01): the cohort grid, whose shaded cells carry their
+  // numbers in both themes, and the activity view's tiles, chart, curve and
+  // list of the most active people.
+  { name: 'retention', path: '/s_demo/retention' },
+  { name: 'retention-activity', path: '/s_demo/retention?view=activity' },
   // Three forms, every control labelled, the timezone as a fact.
   { name: 'settings', path: '/s_demo/settings' },
   // The first paid feature, described on an install with no key.

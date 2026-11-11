@@ -123,6 +123,17 @@ step made from a goal copies the goal's question, so deleting the goal changes n
 funnel. Like a goal, a funnel is a question asked of the raw events: deleting
 one loses nothing, and only an owner of the site adds or removes one.
 
+**Retention** asks who comes back. Cohorts group people by the week or month
+they were first seen and shade the share of each that returned in every later
+one, the bucket still running drawn open rather than read as a drop. Activity
+draws daily, weekly and monthly active people, stickiness (an ordinary day's
+share of the month's people), the returning rate, how many days people came (the
+power user curve) and the most active people, named only for an account allowed
+to see names. Attribution splits everybody who reached a goal by what first
+brought them and by the visit they converted in, across days. It reads visits,
+so on a site with cookieless ids, whose visitor ids last a day, it says why
+nobody is seen to return.
+
 **Journeys** is the fourth tab of Top pages, beside Entry and Exit: the paths
 visits took from the page they came in on through the next three.
 
@@ -164,7 +175,8 @@ and CI fails a build that puts any group over its own.
 ### Accessibility
 
 Lighthouse scores it 1 on the Overview, on Realtime, on Funnels with a funnel
-drawn, on the Journeys tab, on the settings page, on the Alerts page as an
+drawn, on the Journeys tab, on People, on Retention's cohort grid and its
+activity view, on the settings page, on the Alerts page as an
 install with no key sees it, and on the shared page as somebody with the link
 and no session sees it, in both the light and the dark palette, against the
 real server rather than a fixture. CI fails under 1, and the run also asserts

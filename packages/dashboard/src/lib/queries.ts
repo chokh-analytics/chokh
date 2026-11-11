@@ -5,9 +5,20 @@ import {
   useQuery,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import type { Dimension, Segment } from '@chokh/store/contract';
+import type {
+  AttributionDimension,
+  CohortInterval,
+  Dimension,
+  Segment,
+} from '@chokh/store/contract';
 
-import { api, type LicenseStatus, type Me, type PeopleParams } from './api.js';
+import {
+  api,
+  type LicenseStatus,
+  type Me,
+  type PeopleParams,
+  type RetentionWindow,
+} from './api.js';
 import { isRetryable, type Answer, type Client } from './client.js';
 import { cacheKey, toStatsParams, type ViewQuery } from './query.js';
 import { isLive } from './range.js';
@@ -410,6 +421,59 @@ export function usePeople(
     getNextPageParam: (last) => last.data.next ?? undefined,
     staleTime: PROFILE_STALE_MS,
     retry: false,
+  });
+}
+
+// The retention reads (AN-PPL01). Each reads every stay of its window, so they
+// are asked once a minute at most and never polled: a cohort grid does not
+// move in the seconds a live chart does, and the window's end only moves when
+// the page's own clock does.
+export function useCohorts(
+  client: Client,
+  siteId: string,
+  window: RetentionWindow,
+  interval: CohortInterval,
+) {
+  return useQuery({
+    queryKey: ['cohorts', siteId, interval, window.from, window.to],
+    queryFn: () => api.cohorts(client, siteId, window, interval),
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+export function useActivity(client: Client, siteId: string, window: RetentionWindow) {
+  return useQuery({
+    queryKey: ['activity', siteId, window.from, window.to],
+    queryFn: () => api.activity(client, siteId, window),
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+export function usePowerUsers(
+  client: Client,
+  siteId: string,
+  window: RetentionWindow,
+  limit: number,
+) {
+  return useQuery({
+    queryKey: ['power-users', siteId, limit, window.from, window.to],
+    queryFn: () => api.powerUsers(client, siteId, window, limit),
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+export function useAttribution(
+  client: Client,
+  siteId: string,
+  window: RetentionWindow,
+  goalId: string | null,
+  dim: AttributionDimension,
+) {
+  return useQuery({
+    queryKey: ['attribution', siteId, goalId, dim, window.from, window.to],
+    queryFn: () => api.attribution(client, siteId, window, goalId ?? '', dim),
+    enabled: goalId !== null,
+    staleTime: HISTORY_STALE_MS,
   });
 }
 

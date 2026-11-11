@@ -1,0 +1,440 @@
+.page {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.stack {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+/* The three views on the left, the window on the right, wrapping under each
+ * other on a phone rather than squeezing either onto two lines. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.views,
+.choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  padding: 2px;
+  max-width: 100%;
+}
+
+.view,
+.choiceItem {
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  border-radius: var(--r1);
+  min-height: 32px;
+  padding: 4px var(--s3);
+  font-family: var(--font-sans);
+  font-size: var(--t-body);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out;
+}
+
+.choiceItem {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.04em;
+  min-height: 28px;
+}
+
+.view:hover,
+.choiceItem:hover {
+  color: var(--ink);
+}
+
+.view:focus-visible,
+.choiceItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.viewOn,
+.choiceOn {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-size: var(--t-body);
+}
+
+.loading {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s4);
+}
+
+.rawNote,
+.hint,
+.summary {
+  margin: 0;
+  padding: var(--s2) var(--s4) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.summary {
+  padding-top: var(--s3);
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+/* Shown only where the grid can be wider than its card. */
+.hint {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .hint {
+    display: block;
+  }
+}
+
+/* The one thing on the page allowed to be wider than a phone scrolls here,
+ * inside its card, and never takes the page with it. Positioned, so the
+ * visually hidden words in its cells are placed inside the box: without it
+ * they are placed against the page, a thousand pixels to the right. */
+.scroll {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.grid,
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--t-body);
+}
+
+.headCell {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  background: var(--paper);
+}
+
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.headCell.num {
+  font-size: var(--t-label);
+}
+
+/* The cohort's own name stays put while the periods scroll past it. */
+.sticky {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+}
+
+.rowHead {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.size {
+  color: var(--muted);
+}
+
+.heat {
+  min-width: 52px;
+  color: var(--ink);
+  border-left: 2px solid var(--paper);
+  transition: filter var(--fast) ease;
+}
+
+.heat:hover {
+  filter: saturate(1.4);
+}
+
+/* Five bands, the palest the same as the map's lightest step. Each stops short
+ * of the accent itself so the number written on it reads in both themes. */
+.band0 {
+  background: color-mix(in oklab, var(--accent) 8%, var(--paper));
+}
+
+.band1 {
+  background: color-mix(in oklab, var(--accent) 17%, var(--paper));
+}
+
+.band2 {
+  background: color-mix(in oklab, var(--accent) 27%, var(--paper));
+}
+
+.band3 {
+  background: color-mix(in oklab, var(--accent) 36%, var(--paper));
+}
+
+.band4 {
+  background: color-mix(in oklab, var(--accent) 45%, var(--paper));
+}
+
+.zero {
+  color: var(--muted);
+}
+
+.nobody {
+  color: var(--muted);
+}
+
+/* The bucket still running: its number can only grow, so it is drawn open
+ * rather than read as a drop. */
+.running {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    color-mix(in oklab, var(--paper) 55%, transparent) 6px 9px
+  );
+  font-style: italic;
+}
+
+/* The power user curve: one column per number of days, the axis under it. */
+.curve {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 160px;
+  padding: var(--s4) var(--s4) 0;
+}
+
+.curveSlot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: end;
+}
+
+.curveBar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.85;
+  transition: opacity var(--fast) ease;
+}
+
+.curveSlot:hover .curveBar {
+  opacity: 1;
+}
+
+.curveTick {
+  display: block;
+  height: 16px;
+  padding-top: 2px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+  overflow: hidden;
+}
+
+.axis {
+  margin: 0;
+  padding: var(--s1) var(--s4) var(--s3);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.row {
+  transition: background var(--fast) ease;
+}
+
+.row:hover {
+  background: var(--accent-soft);
+}
+
+.when {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 100%;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--r1);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.who {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.whoName {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link:hover .whoName {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+.whoId {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--muted);
+}
+
+/* Attribution: a goal and a split side by side, stacking on a phone. */
+.pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  padding: var(--s4) var(--s4) 0;
+  max-width: 640px;
+}
+
+@media (max-width: 520px) {
+  .pickers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+  padding: 0 var(--s4) var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.keyCell {
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+  text-align: left;
+}
+
+.barCell {
+  display: grid;
+  grid-template-columns: minmax(64px, 1fr) auto;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 150px;
+}
+
+.barTrack {
+  display: block;
+  height: 8px;
+  border-radius: var(--r4);
+  background: var(--soft);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r4);
+  transition: width var(--slow) ease-out;
+}
+
+.first {
+  background: var(--accent);
+}
+
+.last {
+  background: var(--muted);
+}
+
+.barValue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+.barShare {
+  font-size: var(--t-micro);
+  color: var(--muted);
+  min-width: 4ch;
+  text-align: right;
+}

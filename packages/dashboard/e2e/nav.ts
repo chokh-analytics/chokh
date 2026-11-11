@@ -12,6 +12,7 @@ export const DESTINATIONS = [
   'Goals',
   'Funnels',
   'People',
+  'Retention',
   'Alerts',
 ];
 

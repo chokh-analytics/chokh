@@ -166,6 +166,36 @@ async function seed(store, now) {
     });
   }
 
+  // People who come back (AN-PPL01), because everybody above is seen once and
+  // a cohort grid of one column proves nothing. Ten regulars, one first seen in
+  // each of the last ten weeks, each back every two to five days; every third
+  // stops after a fortnight, so the grid thins out to the right, and every
+  // other one came from a newsletter and signs up on their fourth visit, so
+  // attribution has a first touch and a later one to tell apart. None is here
+  // within the last two hours, so the stream case still starts from nobody.
+  for (let regular = 0; regular < 10; regular += 1) {
+    const visitorId = `v_regular_${regular}`;
+    const first = now - (regular + 1) * 7 * DAY_MS - 5 * 3_600_000;
+    const every = (2 + (regular % 4)) * DAY_MS;
+    const until = regular % 3 === 2 ? first + 14 * DAY_MS : now - 2 * 3_600_000;
+    let visit = 0;
+    for (let at = first; at < until; at += every) {
+      events.push(
+        pageview(store, at, regular, {
+          visitorId,
+          path: PAGES[(regular + visit) % PAGES.length],
+          ...(visit === 0 && regular % 2 === 0
+            ? { utm: { source: 'newsletter', medium: 'email' } }
+            : {}),
+        }),
+      );
+      if (visit === 3 && regular % 2 === 0) {
+        events.push({ ...pageview(store, at + 30_000, regular, { visitorId }), type: 'event', name: 'signup' });
+      }
+      visit += 1;
+    }
+  }
+
   await store.ingest(events);
 
   // Every finished day rolled up, because that is where a past day's numbers

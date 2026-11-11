@@ -99,6 +99,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Goals', 'Goals'],
     ['Funnels', 'Funnels'],
     ['People', 'People'],
+    ['Retention', 'Retention'],
     ['Alerts', 'Alerts'],
   ] as const) {
     await goTo(page, label);
@@ -196,6 +197,7 @@ test('keeps the destinations in one row at 390 and at 1024, with the current one
       ['goals', 'Goals'],
       ['funnels', 'Funnels'],
       ['people', 'People'],
+      ['retention', 'Retention'],
       ['events', 'Events'],
     ] as const) {
       await boot(page, `/${SITE}/${path}`);
@@ -959,7 +961,7 @@ test('shows every destination in the row or under More at 1024 and 1280, and fad
       movedThroughMore = true;
     }
   }
-  // Eleven destinations beside the mark, the site and the account do not fit
+  // Twelve destinations beside the mark, the site and the account do not fit
   // in 1024, so this case went through More at least once.
   expect(movedThroughMore).toBe(true);
 
@@ -1038,4 +1040,98 @@ test('keeps the people directory inside a phone screen', async ({ page }) => {
   expect(overflow, 'people scrolls sideways').toBeLessThanOrEqual(0);
   const inner = await table.evaluate((box) => box.scrollWidth - box.clientWidth);
   expect(inner, 'the directory lost its columns rather than scrolling them').toBeGreaterThan(0);
+});
+
+// Retention (AN-PPL01) against the real server: the regulars the seed brings
+// back fill a cohort grid whose running week is marked, the grid scrolls inside
+// its card on a phone while the page does not, the views and the windows are
+// reachable from the keyboard and kept in the address bar, the most active
+// people carry the day they were last seen, and attribution splits a goal made
+// over the API both ways.
+test('reads the cohort grid on a phone inside its card, with the running week marked', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/retention`);
+  await expect(page.getByRole('heading', { name: 'Retention', level: 1 })).toBeAttached();
+  const grid = page.getByRole('group', { name: /Cohorts by when people were first seen/ });
+  await expect(grid.getByRole('row').nth(12)).toBeVisible();
+  // Somebody came back in a later week: a rate above zero past the first column.
+  const later = await grid.locator('tbody tr td:nth-child(4)').allTextContents();
+  expect(later.some((text) => /^[1-9]\d*(\.\d)?%/.test(text)), later.join(' | ')).toBe(true);
+  await expect(grid.getByText(/still running/).first()).toBeAttached();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'retention scrolls sideways').toBeLessThanOrEqual(0);
+  const inner = await grid.evaluate((box) => box.scrollWidth - box.clientWidth);
+  expect(inner, 'the grid lost its weeks rather than scrolling them').toBeGreaterThan(0);
+  // The first column holds still while the weeks scroll past it.
+  await grid.evaluate((box) => {
+    box.scrollLeft = box.scrollWidth;
+  });
+  const sticky = await grid.locator('tbody th').first().boundingBox();
+  const box = await grid.boundingBox();
+  expect(sticky !== null && box !== null && sticky.x <= box.x + 2).toBe(true);
+});
+
+test('walks the retention views from the keyboard and keeps each in the address bar', async ({ page }) => {
+  await boot(page, `/${SITE}/retention`);
+  const monthly = page.getByRole('radio', { name: 'Monthly' });
+  await monthly.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/[?&]interval=month/);
+  await expect(page.getByRole('radio', { name: 'Monthly' })).toHaveAttribute('aria-checked', 'true');
+
+  await page.getByRole('tab', { name: 'Activity' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/[?&]view=activity/);
+  const people = page.getByRole('group', { name: 'The most active people of the window' });
+  await expect(people.getByRole('row').nth(1)).toBeVisible();
+  // A list over thirty days says which day, not a bare clock time.
+  const seen = await people.locator('tbody tr td:nth-child(4)').allTextContents();
+  expect(seen.every((text) => /^(now|\d+m|\d\d:\d\d|\d{1,2} [A-Z][a-z]{2,3}, \d\d:\d\d)$/.test(text)), seen.join(' | ')).toBe(true);
+  expect(seen.some((text) => /^\d{1,2} [A-Z][a-z]{2,3}, \d\d:\d\d$/.test(text))).toBe(true);
+  await expect(page.getByRole('table', { name: /number of days they were active/ })).toBeAttached();
+
+  // Over ninety days a power user is active on thirty of them, which nobody in
+  // the seed is: the list says so in those words rather than going blank.
+  await page.getByRole('radio', { name: 'Last 90 days' }).click();
+  await expect(page).toHaveURL(/[?&]window=90/);
+  await expect(page.getByText('Nobody was active on 30 or more days of this window.')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'activity scrolls sideways').toBeLessThanOrEqual(0);
+});
+
+test('splits a goal by first touch and last touch', async ({ page }) => {
+  const created = await page.request.post(`/api/sites/${SITE}/goals`, {
+    data: { name: 'Signed up in the attribution case', kind: 'event', match: 'signup' },
+  });
+  const body = (await created.json()) as {
+    data?: { goal: { id: string } };
+    error?: { details?: { goalId?: string } };
+  };
+  const goalId = body.data?.goal.id ?? body.error?.details?.goalId;
+  expect(goalId, `the goal was refused: ${JSON.stringify(body)}`).toBeTruthy();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/retention?view=attribution&window=90&goal=${goalId as string}`);
+  const table = page.getByRole('group', { name: /by first touch and by last touch/ });
+  await expect(table.getByRole('row').nth(1)).toBeVisible();
+  // The newsletter brought the regulars who signed up; their later visits did
+  // not, so Email is a first touch and something else is a last one.
+  const email = table.getByRole('row', { name: /^Email/ });
+  await expect(email).toBeVisible();
+  await expect(page.getByText(/people converted, \d+ times/)).toBeVisible();
+  await page.getByLabel('Split by').selectOption('utm_source');
+  await expect(page).toHaveURL(/[?&]split=utm_source/);
+  await expect(table.getByRole('row', { name: /^newsletter/ })).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'attribution scrolls sideways').toBeLessThanOrEqual(0);
+
+  const removed = await page.request.delete(`/api/sites/${SITE}/goals/${goalId as string}`);
+  expect(removed.ok()).toBe(true);
 });

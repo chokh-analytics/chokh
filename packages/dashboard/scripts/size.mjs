@@ -57,7 +57,12 @@ const BUDGETS = [
   // Raised to 41 KB on 2026-11-12 by the commit that spent it, the bar that
   // never hides a destination (AN-DSH03): measured at 41,067 B, the row that
   // measures what fits, the More menu and its three strings, in the shell.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 41 * 1024 },
+  // Raised to 42 KB on 2026-11-12 by the commit that spent it, retention and
+  // attribution (AN-PPL01): measured at 42,648 B with AN-DSH03 under it, the
+  // page's seventy strings in the one messages file the shell carries, the
+  // twelfth destination and its key, and the four API calls; the page itself
+  // is the Retention chunk.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 42 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
@@ -87,7 +92,11 @@ const BUDGETS = [
   // Raised to 41 KB on 2026-11-11 by the commit that spent it, the people
   // directory (AN-PPL02): measured at 41,306 B, People 4,560 B with the
   // search, the switch, the paged table and Show more.
-  { name: 'routes', pattern: /\.js$/, bytes: 41 * 1024 },
+  // Raised to 46 KB on 2026-11-12 by the commit that spent it, retention and
+  // attribution (AN-PPL01): measured at 46,465 B, Retention its own chunk at
+  // 5,056 B with the cohort grid, the activity tiles, chart, curve and list,
+  // and the attribution table.
+  { name: 'routes', pattern: /\.js$/, bytes: 46 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
   // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared
@@ -95,7 +104,10 @@ const BUDGETS = [
   // Raised to 17 KB on 2026-11-11 by the commit that spent it, the people
   // directory (AN-PPL02): measured at 16,845 B, People 1,630 B with the
   // switch and the table.
-  { name: 'css', pattern: /\.css$/, bytes: 17 * 1024 },
+  // Raised to 19 KB on 2026-11-12 by the commit that spent it, retention and
+  // attribution (AN-PPL01): measured at 18,773 B, Retention 1,778 B with the
+  // shaded grid, its sticky column, the curve and the bars.
+  { name: 'css', pattern: /\.css$/, bytes: 19 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

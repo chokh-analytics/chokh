@@ -1,4 +1,10 @@
 import type {
+  ActivityResult,
+  AttributionDimension,
+  AttributionResult,
+  CohortInterval,
+  CohortResult,
+  PowerUsersResult,
   AggregateResult,
   BreakdownResult,
   EngagementResult,
@@ -442,6 +448,45 @@ export const api = {
       ...(property === null ? {} : { property }),
     }),
 
+  // Retention (AN-PPL01). Each takes its own window rather than the range bar's,
+  // and none takes a filter: the server refuses one rather than ignore it.
+  cohorts: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+    interval: CohortInterval,
+  ): Promise<Answer<CohortResult>> =>
+    client.get<CohortResult>(`/api/sites/${siteId}/stats/cohorts`, { ...window, interval }),
+
+  activity: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+  ): Promise<Answer<ActivityResult>> =>
+    client.get<ActivityResult>(`/api/sites/${siteId}/stats/activity`, { ...window }),
+
+  // Names people, so the meta says whether this caller may see the names.
+  powerUsers: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+    limit: number,
+  ): Promise<Answer<PowerUsersResult>> =>
+    client.get<PowerUsersResult>(`/api/sites/${siteId}/stats/power-users`, { ...window, limit }),
+
+  attribution: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+    goalId: string,
+    dim: AttributionDimension,
+  ): Promise<Answer<AttributionResult>> =>
+    client.get<AttributionResult>(`/api/sites/${siteId}/stats/attribution`, {
+      ...window,
+      goal: goalId,
+      dim,
+    }),
+
   realtime: (client: Client, siteId: string): Promise<Answer<RealtimeSnapshot>> =>
     client.get<RealtimeSnapshot>(`/api/sites/${siteId}/realtime`),
 
@@ -505,6 +550,12 @@ export const api = {
   streamUrl: (client: Client, siteId: string): string =>
     client.url(`/api/sites/${siteId}/realtime/stream`),
 };
+
+// The window a retention read covers, as instants.
+export interface RetentionWindow {
+  from: number;
+  to: number;
+}
 
 // Whether a response carried the fields only read:identity unlocks. The server
 // puts this in the meta rather than making a page guess from an absent field,
