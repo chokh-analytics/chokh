@@ -52,6 +52,7 @@ export function destinationsFor(siteId: string): Destination[] {
     { path: `/${siteId}/funnels`, label: messages.nav.funnels },
     { path: `/${siteId}/people`, label: messages.nav.people },
     { path: `/${siteId}/retention`, label: messages.nav.retention },
+    { path: `/${siteId}/health`, label: messages.nav.health },
     // Last, and on every install (AGENTS.md rule 10): the page names the
     // feature and says it is part of Chokh Pro where there is no key.
     { path: `/${siteId}/alerts`, label: messages.nav.alerts },
@@ -462,17 +463,30 @@ function Nav({ siteId }: { siteId: string }): JSX.Element {
     if (!phone || box === null) {
       return undefined;
     }
-    const here = box.querySelector<HTMLElement>('[aria-current="page"]');
-    if (here !== null) {
-      const left = here.offsetLeft - box.offsetLeft;
-      const right = left + here.offsetWidth;
-      if (left < box.scrollLeft || right > box.scrollLeft + box.clientWidth) {
-        box.scrollLeft = Math.max(0, left - (box.clientWidth - here.offsetWidth) / 2);
+    let live = true;
+    const reveal = (): void => {
+      const here = box.querySelector<HTMLElement>('[aria-current="page"]');
+      if (here !== null) {
+        const left = here.offsetLeft - box.offsetLeft;
+        const right = left + here.offsetWidth;
+        if (left < box.scrollLeft || right > box.scrollLeft + box.clientWidth) {
+          box.scrollLeft = Math.max(0, left - (box.clientWidth - here.offsetWidth) / 2);
+        }
       }
-    }
-    measureEdges();
+      measureEdges();
+    };
+    reveal();
+    // Again once the product's own fonts arrive: they are wider than the
+    // fallback, so a link scrolled into view before them can end up past the
+    // edge after them, which thirteen destinations (AN-VIT01) made happen.
+    void document.fonts?.ready.then(() => {
+      if (live) reveal();
+    });
     window.addEventListener('resize', measureEdges);
-    return () => window.removeEventListener('resize', measureEdges);
+    return () => {
+      live = false;
+      window.removeEventListener('resize', measureEdges);
+    };
   }, [phone, location, measureEdges]);
 
   const shown = phone ? destinations : destinations.slice(0, fit.shown);
