@@ -1,4 +1,19 @@
 import {
+  ERROR_GROUP_DEFAULT_LIMIT,
+  assertHealthRange,
+  foldCoverage,
+  foldErrors,
+  foldVitals,
+  type CoverageQuery,
+  type CoverageResult,
+  type ErrorFacetTally,
+  type ErrorSample,
+  type ErrorsQuery,
+  type ErrorsResult,
+  type VitalBucketCount,
+  type VitalMetric,
+  type VitalsQuery,
+  type VitalsResult,
   ACTIVITY_WINDOWS,
   activityPlan,
   addCohortCell,
@@ -189,6 +204,13 @@ import {
   cohortPipeline,
   powerUsersPipeline,
 } from './retention.pipelines.js';
+import {
+  coveragePipeline,
+  errorFacetsPipeline,
+  errorMessagesPipeline,
+  errorTotalsPipeline,
+  vitalsPipeline,
+} from './health.pipelines.js';
 import {
   API_KEYS,
   AUDIT_LOG,
@@ -1681,6 +1703,106 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
         });
       }
       return finishAttribution(query.dim, query.goal, first, last);
+    },
+
+    async vitals(query: VitalsQuery): Promise<VitalsResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertHealthRange(query.from, query.to);
+      const rows = await events
+        .aggregate(vitalsPipeline(site.id, { from: query.from, to: query.to }, query.device), {
+          allowDiskUse: true,
+        })
+        .toArray();
+      return foldVitals(
+        rows.map((row) => ({
+          page: String(row._id.p),
+          device: String(row._id.d),
+          metric: row._id.m as VitalMetric,
+          buckets: (row.buckets as VitalBucketCount[]).map((bucket) => ({
+            q: Number(bucket.q),
+            n: Number(bucket.n),
+          })),
+        })),
+        query.sort ?? 'LCP',
+      );
+    },
+
+    async errors(query: ErrorsQuery): Promise<ErrorsResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertHealthRange(query.from, query.to);
+      const range = { from: query.from, to: query.to };
+      const limit = query.limit ?? ERROR_GROUP_DEFAULT_LIMIT;
+      const [head] = await events
+        .aggregate(errorMessagesPipeline(site.id, range, limit), { allowDiskUse: true })
+        .toArray();
+      const top = (head?.top ?? []) as Document[];
+      const groupsTotal = Number((head?.groups as Document[] | undefined)?.[0]?.n ?? 0);
+      const [totals] = await events
+        .aggregate(errorTotalsPipeline(site.id, range), { allowDiskUse: true })
+        .toArray();
+      const messages = top.map((row) => String(row._id));
+      const [facets] =
+        messages.length === 0
+          ? [undefined]
+          : await events
+              .aggregate(errorFacetsPipeline(site.id, range, messages), { allowDiskUse: true })
+              .toArray();
+      const people = new Map<string, number>(
+        ((facets?.people ?? []) as Document[]).map((row) => [String(row._id), Number(row.n)]),
+      );
+      const flatten = (rows: Document[] | undefined): ErrorFacetTally[] =>
+        (rows ?? []).flatMap((row) =>
+          (row.top as Document[]).map((each) => ({
+            message: String(row._id),
+            key: String(each.key),
+            count: Number(each.count),
+          })),
+        );
+      return foldErrors(
+        {
+          total: Number(totals?.total ?? 0),
+          visitors: Number(totals?.visitors ?? 0),
+          groupsTotal,
+          messages: top.map((row) => {
+            const raw = row.sample as Document;
+            const sample: ErrorSample = {
+              at: Number(raw.at),
+              page: String(raw.page),
+              browser: String(raw.browser),
+            };
+            if (typeof raw.frame === 'string') sample.frame = raw.frame;
+            if (typeof raw.stack === 'string') sample.stack = raw.stack;
+            return {
+              message: String(row._id),
+              count: Number(row.count),
+              visitors: people.get(String(row._id)) ?? 0,
+              firstSeen: Number(row.firstSeen),
+              lastSeen: Number(row.lastSeen),
+              sample,
+            };
+          }),
+          pages: flatten(facets?.pages as Document[] | undefined),
+          browsers: flatten(facets?.browsers as Document[] | undefined),
+        },
+        limit,
+      );
+    },
+
+    async coverage(query: CoverageQuery): Promise<CoverageResult> {
+      const site = await siteOrThrow(query.siteId);
+      assertHealthRange(query.from, query.to);
+      const rows = await events
+        .aggregate(coveragePipeline(site.id, { from: query.from, to: query.to }), {
+          allowDiskUse: true,
+        })
+        .toArray();
+      return foldCoverage(
+        rows.map((row) => ({
+          userId: String(row._id),
+          server: row.server === true,
+          browser: row.browser === true,
+        })),
+      );
     },
 
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {

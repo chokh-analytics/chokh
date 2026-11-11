@@ -318,6 +318,8 @@ jobs:
           echo "${report}" | grep -q 'missing: 0'
           # The people directory's index (AN-PPL02) is the fourth on visitors.
           echo "${report}" | grep -Eq 'visitors +indexes 4/4'
+          # The health reads' index (AN-VIT01) is the sixth on events.
+          echo "${report}" | grep -Eq 'events +indexes 6/6'
 
       - name: Logs on failure
         if: failure()

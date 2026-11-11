@@ -59,6 +59,11 @@ export const schema: readonly CollectionSchema[] = [
     purpose: 'Raw events. Aged out by the TTL below, at the site retention.',
     indexes: [
       { name: 'event_site_ts', key: { siteId: 1, ts: 1 } },
+      // The health reads (AN-VIT01) walk one type of row over a range: the
+      // vitals, which are a share of the events, and the errors, which are a
+      // sliver of them. Without the type in the key both are a walk of every
+      // event of the range, a month of pageviews read to find a month of errors.
+      { name: 'event_site_type_ts', key: { siteId: 1, type: 1, ts: 1 } },
       { name: 'event_site_session', key: { siteId: 1, sessionId: 1 } },
       { name: 'event_site_user_ts', key: { siteId: 1, userId: 1, ts: 1 } },
       // Not in the plan's table, added because visitor() reads by it and would

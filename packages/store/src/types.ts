@@ -44,6 +44,15 @@ export interface SiteSettings {
   // Path patterns whose pageviews are reported as one row in the route
   // dimension, in order, first match wins: /courses/:slug. See routes.ts.
   routeGroups: string[];
+  // JavaScript error capture (AN-VIT01), off unless the site turns it on: an
+  // error row for a site with this off is dropped by the collector before it is
+  // derived, whatever e.js sends. Optional so a site written before it reads as
+  // off and needs no backfill.
+  errorCapture?: boolean;
+  // Whether a captured error keeps its stack (scrubbed and cut to 1,000
+  // characters). Off by default: the message and the source line are kept, the
+  // frames are dropped.
+  errorStacks?: boolean;
 }
 
 // A site's public share (AN-RPT01): the link is the token, and a new token
@@ -87,11 +96,20 @@ export function defaultSiteSettings(overrides: Partial<SiteSettings> = {}): Site
     excludePaths: [],
     excludeQueryParams: [],
     routeGroups: [],
+    errorCapture: false,
+    errorStacks: false,
     ...overrides,
   };
 }
 
-export type EventType = 'pageview' | 'event' | 'heartbeat' | 'leave' | 'identify' | 'vital';
+export type EventType =
+  | 'pageview'
+  | 'event'
+  | 'heartbeat'
+  | 'leave'
+  | 'identify'
+  | 'vital'
+  | 'error';
 
 // Where an event came from. A browser unless it says otherwise; 'server' is an
 // event an application sent through POST /api/sites/:siteId/events with a key,
@@ -142,6 +160,12 @@ export interface StoredEvent {
   scrollDepth?: number;
   value?: number;
   rating?: string;
+  // A JavaScript error (AN-VIT01): the message is the name, the frame is the
+  // file, line and column it came from, and the stack is kept only where the
+  // site asked for it. All three scrubbed by the collector before the row
+  // exists.
+  frame?: string;
+  stack?: string;
 }
 
 // A visitor's stay. Written by ingest through the fold in session.ts: one row

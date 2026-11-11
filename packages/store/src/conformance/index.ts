@@ -2211,6 +2211,309 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
       });
     });
 
+    describe('health', () => {
+      const H = 'site_health_vitals';
+      const E = 'site_health_errors';
+      const C_OK = 'site_cov_ok';
+      const C_NONE = 'site_cov_none';
+      const C_ANON = 'site_cov_anon';
+      const C_FEW = 'site_cov_few';
+      const MINUTE = 60 * 1000;
+      const week = { from: F.NOW - 7 * DAY, to: F.NOW };
+      const DESKTOP = { browser: 'Chrome', os: 'Windows', device: 'desktop' as const };
+      const MOBILE = { browser: 'Chrome', os: 'Android', device: 'mobile' as const };
+      let at = F.NOW - 6 * DAY;
+
+      function row(siteId: string, visitorId: string, over: Partial<StoredEvent>): StoredEvent {
+        at += MINUTE;
+        return {
+          siteId,
+          ts: at,
+          receivedAt: at,
+          type: 'pageview',
+          visitorId,
+          bot: false,
+          hostname: `${siteId}.test`,
+          path: '/',
+          ...over,
+        };
+      }
+
+      function vital(
+        visitor: string,
+        path: string,
+        name: string,
+        value: number,
+        ua: StoredEvent['ua'],
+        over: Partial<StoredEvent> = {},
+      ): StoredEvent {
+        return row(H, visitor, { type: 'vital', path, name, value, ...(ua === undefined ? {} : { ua }), ...over });
+      }
+
+      function err(
+        visitor: string,
+        name: string,
+        path: string,
+        browser: string,
+        over: Partial<StoredEvent> = {},
+      ): StoredEvent {
+        return row(E, visitor, { type: 'error', name, path, ua: { browser, device: 'desktop' }, ...over });
+      }
+
+      function server(siteId: string, userId: string): StoredEvent {
+        return row(siteId, `u:${userId}`, { type: 'event', name: 'paid', source: 'server', userId });
+      }
+
+      function browser(siteId: string, userId: string): StoredEvent {
+        return row(siteId, `b_${userId}`, { userId });
+      }
+
+      function site(id: string): Site {
+        return {
+          id,
+          name: id,
+          domains: [`${id}.test`],
+          settings: defaultSiteSettings({ visitorIdMode: 'persistent', retentionDays: 400 }),
+        };
+      }
+
+      beforeAll(async () => {
+        for (const id of [H, E, C_OK, C_NONE, C_ANON, C_FEW]) await harness.addSite(site(id));
+        const rows: StoredEvent[] = [];
+        // /fast: twenty LCPs on desktop, 100 ms to 2,000 ms, and twenty CLS
+        // values, fourteen of exactly 0.1 and six of 0.101.
+        for (let i = 0; i < 20; i += 1) {
+          rows.push(vital(`h_d${i}`, '/fast', 'LCP', 100 * (i + 1), DESKTOP));
+          rows.push(vital(`h_d${i}`, '/fast', 'CLS', i < 14 ? 0.1 : 0.101, DESKTOP));
+        }
+        // /slow: twenty LCPs on a phone, 3,000 ms to 4,900 ms.
+        for (let i = 0; i < 20; i += 1) {
+          rows.push(vital(`h_m${i}`, '/slow', 'LCP', 3000 + 100 * i, MOBILE));
+        }
+        // /rare: five LCPs, too few for a number.
+        for (let i = 0; i < 5; i += 1) rows.push(vital(`h_r${i}`, '/rare', 'LCP', 9000, DESKTOP));
+        // Never measured: a crawler, a negative, an impossible value, a name
+        // v.js does not send, and a vital before the range.
+        rows.push(vital('h_bot', '/fast', 'LCP', 60_000, DESKTOP, { bot: true }));
+        rows.push(vital('h_x', '/fast', 'LCP', -5, DESKTOP));
+        rows.push(vital('h_x', '/fast', 'LCP', 1e9, DESKTOP));
+        rows.push(vital('h_x', '/fast', 'XYZ', 50, DESKTOP));
+        const old = F.NOW - 8 * DAY;
+        rows.push(vital('h_x', '/fast', 'LCP', 99_000, DESKTOP, { ts: old, receivedAt: old }));
+
+        // Errors. TypeError five times by three people over four pages, the
+        // newest from /b on Firefox with its frame and stack; ReferenceError
+        // twice, newer than Older's two.
+        rows.push(err('e5', 'Older', '/old', 'Edge'));
+        rows.push(err('e5', 'Older', '/old', 'Edge'));
+        rows.push(err('e1', 'TypeError: x is undefined', '/a', 'Chrome'));
+        rows.push(err('e1', 'TypeError: x is undefined', '/a', 'Chrome'));
+        rows.push(err('e2', 'TypeError: x is undefined', '/c', 'Chrome'));
+        rows.push(err('e3', 'TypeError: x is undefined', '/d', 'Chrome'));
+        rows.push(err('e4', 'ReferenceError: y is not defined', '/c', 'Safari'));
+        rows.push(err('e4', 'ReferenceError: y is not defined', '/c', 'Safari'));
+        rows.push(
+          err('e3', 'TypeError: x is undefined', '/b', 'Firefox', {
+            frame: 'https://e.test/app.js:10:5',
+            stack: 'at f (https://e.test/app.js:10:5)',
+          }),
+        );
+        rows.push(err('e_bot', 'Bot error', '/a', 'Chrome', { bot: true }));
+        rows.push(err('e6', 'Ancient', '/a', 'Chrome', { ts: old, receivedAt: old }));
+        rows.push(row(H, 'h_e', { type: 'error', name: 'Elsewhere' }));
+
+        // Coverage. C_OK: 25 people the server named, 20 of them also seen in
+        // a browser, and 3 more seen only in a browser.
+        for (let i = 0; i < 25; i += 1) {
+          rows.push(server(C_OK, `p${i}`));
+          if (i < 20) rows.push(browser(C_OK, `p${i}`));
+        }
+        for (let i = 0; i < 3; i += 1) rows.push(browser(C_OK, `q${i}`));
+        // A crawler carrying a name the browser never showed: not counted.
+        rows.push(row(C_OK, 'b_bot', { userId: 'p24', bot: true }));
+        // C_NONE: browser identities, no server.
+        for (let i = 0; i < 30; i += 1) rows.push(browser(C_NONE, `n${i}`));
+        // C_ANON: a server naming 30 people, pages that never identify anybody.
+        for (let i = 0; i < 30; i += 1) {
+          rows.push(server(C_ANON, `a${i}`));
+          rows.push(row(C_ANON, `anon_${i}`, {}));
+        }
+        // C_FEW: five people, three seen.
+        for (let i = 0; i < 5; i += 1) {
+          rows.push(server(C_FEW, `f${i}`));
+          if (i < 3) rows.push(browser(C_FEW, `f${i}`));
+        }
+        await store.ingest(rows);
+      });
+
+      describe('vitals', () => {
+        it('answers p75 by nearest rank per metric, with the shares and the device split', async () => {
+          const result = await store.vitals({ siteId: H, ...week });
+          expect(result.minSamples).toBe(20);
+          expect(result.metrics.map((each) => each.metric)).toEqual(['LCP', 'INP', 'CLS', 'FCP', 'TTFB']);
+          const lcp = result.metrics.find((each) => each.metric === 'LCP');
+          // 45 samples: rank 34 is the 14th phone value, 4,300 ms.
+          expect(lcp).toMatchObject({ p75: 4300, samples: 45, rating: 'poor' });
+          expect(lcp?.shares?.good).toBeCloseTo(20 / 45, 10);
+          expect(lcp?.shares?.needsImprovement).toBeCloseTo(11 / 45, 10);
+          expect(lcp?.shares?.poor).toBeCloseTo(14 / 45, 10);
+          expect(lcp?.devices).toEqual([
+            { device: 'desktop', p75: 1900, samples: 25, rating: 'good' },
+            { device: 'mobile', p75: 4400, samples: 20, rating: 'poor' },
+          ]);
+          // 0.101 is rounded up, never down: the p75 is 0.11 and needs work.
+          const cls = result.metrics.find((each) => each.metric === 'CLS');
+          expect(cls).toMatchObject({ p75: 0.11, samples: 20, rating: 'needs-improvement' });
+          const inp = result.metrics.find((each) => each.metric === 'INP');
+          expect(inp).toEqual({
+            metric: 'INP',
+            p75: null,
+            samples: 0,
+            rating: null,
+            shares: null,
+            devices: [],
+          });
+        });
+
+        it('lists the slow pages slowest first and says a page with too few samples is so', async () => {
+          const result = await store.vitals({ siteId: H, ...week });
+          expect(result.sort).toBe('LCP');
+          expect(result.pagesTotal).toBe(3);
+          expect(
+            result.pages.map((page) => [page.page, page.metrics.LCP?.p75, page.samples]),
+          ).toEqual([
+            ['/slow', 4400, 20],
+            ['/fast', 1500, 20],
+            ['/rare', null, 5],
+          ]);
+          expect(result.pages[2]?.metrics.LCP).toEqual({ p75: null, samples: 5, rating: null });
+          expect(result.pages[1]?.metrics.CLS).toEqual({
+            p75: 0.11,
+            samples: 20,
+            rating: 'needs-improvement',
+          });
+        });
+
+        it('sorts by another metric and reads one device class', async () => {
+          const byCls = await store.vitals({ siteId: H, ...week, sort: 'CLS' });
+          // Neither of the others has a CLS, so they follow by name.
+          expect(byCls.pages.map((page) => page.page)).toEqual(['/fast', '/rare', '/slow']);
+          const phones = await store.vitals({ siteId: H, ...week, device: 'mobile' });
+          expect(phones.pages.map((page) => page.page)).toEqual(['/slow']);
+          expect(phones.metrics[0]).toMatchObject({ metric: 'LCP', p75: 4400, samples: 20 });
+        });
+
+        it('answers an empty site with no numbers and refuses more than 90 days', async () => {
+          const empty = await store.vitals({ siteId: C_NONE, ...week });
+          expect(empty.pages).toEqual([]);
+          expect(empty.metrics.every((each) => each.p75 === null && each.samples === 0)).toBe(true);
+          await expect(
+            store.vitals({ siteId: H, from: F.NOW - 92 * DAY, to: F.NOW }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+          await expect(
+            store.errors({ siteId: E, from: F.NOW - 92 * DAY, to: F.NOW }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+          await expect(
+            store.coverage({ siteId: C_OK, from: F.NOW - 92 * DAY, to: F.NOW }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+        });
+      });
+
+      describe('errors', () => {
+        it('groups by message with the visitors, the pages, the browsers and the newest sample', async () => {
+          const result = await store.errors({ siteId: E, ...week });
+          expect(result.total).toBe(9);
+          expect(result.visitors).toBe(5);
+          expect(result.groupsTotal).toBe(3);
+          expect(
+            result.groups.map((group) => [group.message, group.count, group.visitors]),
+          ).toEqual([
+            ['TypeError: x is undefined', 5, 3],
+            ['ReferenceError: y is not defined', 2, 1],
+            ['Older', 2, 1],
+          ]);
+          const type = result.groups[0]!;
+          // Four pages, the top three: the busiest, then the ties by name.
+          expect(type.pages).toEqual([
+            { page: '/a', count: 2 },
+            { page: '/b', count: 1 },
+            { page: '/c', count: 1 },
+          ]);
+          expect(type.browsers).toEqual([
+            { browser: 'Chrome', count: 4 },
+            { browser: 'Firefox', count: 1 },
+          ]);
+          expect(type.sample).toEqual({
+            at: type.lastSeen,
+            page: '/b',
+            browser: 'Firefox',
+            frame: 'https://e.test/app.js:10:5',
+            stack: 'at f (https://e.test/app.js:10:5)',
+          });
+          expect(type.firstSeen).toBeLessThan(type.lastSeen);
+          const older = result.groups[2]!;
+          expect(older.sample).toEqual({ at: older.lastSeen, page: '/old', browser: 'Edge' });
+        });
+
+        it('cuts the groups at the limit and keeps the totals', async () => {
+          const result = await store.errors({ siteId: E, ...week, limit: 2 });
+          expect(result.groups.map((group) => group.message)).toEqual([
+            'TypeError: x is undefined',
+            'ReferenceError: y is not defined',
+          ]);
+          expect(result.groupsTotal).toBe(3);
+          expect(result.total).toBe(9);
+        });
+
+        it('answers nothing for a site with no errors', async () => {
+          expect(await store.errors({ siteId: C_OK, ...week })).toEqual({
+            total: 0,
+            visitors: 0,
+            groups: [],
+            groupsTotal: 0,
+            rawOnly: true,
+          });
+        });
+      });
+
+      describe('coverage', () => {
+        it('answers the share of the people the server named that no browser row carries', async () => {
+          expect(await store.coverage({ siteId: C_OK, ...week })).toEqual({
+            state: 'ok',
+            people: 25,
+            seenInBrowser: 20,
+            serverOnly: 5,
+            share: 0.2,
+            browserIdentified: 23,
+            minPeople: 20,
+            rawOnly: true,
+          });
+        });
+
+        it('cannot be estimated without server events, without browser identities or with too few', async () => {
+          expect(await store.coverage({ siteId: C_NONE, ...week })).toMatchObject({
+            state: 'no_server_events',
+            people: 0,
+            share: null,
+            browserIdentified: 30,
+          });
+          expect(await store.coverage({ siteId: C_ANON, ...week })).toMatchObject({
+            state: 'no_browser_identity',
+            people: 30,
+            seenInBrowser: 0,
+            share: null,
+          });
+          expect(await store.coverage({ siteId: C_FEW, ...week })).toMatchObject({
+            state: 'too_few',
+            people: 5,
+            seenInBrowser: 3,
+            serverOnly: 2,
+            share: null,
+          });
+        });
+      });
+    });
+
     describe('sessions', () => {
       it('cuts a stay at a gap of thirty minutes and not at one of twenty eight', async () => {
         // v3 read a page at 09:30 and was still there at 09:58, one stay; v1's

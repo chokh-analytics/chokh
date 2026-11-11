@@ -30,6 +30,14 @@ import type {
   UserProfile,
   VisitorProfile,
 } from './query.js';
+import type {
+  CoverageQuery,
+  CoverageResult,
+  ErrorsQuery,
+  ErrorsResult,
+  VitalsQuery,
+  VitalsResult,
+} from './health.js';
 import type { Presence } from './presence.js';
 import type { Site, StoredEvent } from './types.js';
 
@@ -149,6 +157,23 @@ export interface AnalyticsStore {
   // and by the stay they converted in. The goal's raw rows, then one visitor
   // row and one stay per converter.
   attribution(query: AttributionQuery): Promise<AttributionResult>;
+
+  // Health (AN-VIT01). Raw rows only and capped at about 90 days; health.ts
+  // holds the buckets, the percentile, the thresholds and the order so both
+  // adapters answer alike, and the definitions are on the result types there.
+  //
+  // Core Web Vitals at p75, per metric, per device and per page (the slow
+  // pages). The site's vital rows of the range, crawlers left out, as one
+  // histogram per page, device and metric.
+  vitals(query: VitalsQuery): Promise<VitalsResult>;
+
+  // The range's JavaScript errors grouped by message, with their pages and
+  // browsers. Counts only: nothing here names a person.
+  errors(query: ErrorsQuery): Promise<ErrorsResult>;
+
+  // Of the people the site's server named in the range, how many no browser
+  // row of the range carries. The identified rows of the range only.
+  coverage(query: CoverageQuery): Promise<CoverageResult>;
 
   // Roll one date key of the site's calendar into rollups_daily. Safe to run
   // twice: the second run writes the same numbers.

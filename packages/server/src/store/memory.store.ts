@@ -17,6 +17,24 @@ import {
   StoreQueryError,
   activityPlan,
   addVisitorDays,
+  assertHealthRange,
+  foldCoverage,
+  foldErrors,
+  foldVitals,
+  isVitalMetric,
+  vitalBucket,
+  ERROR_GROUP_DEFAULT_LIMIT,
+  type CoverageQuery,
+  type CoverageResult,
+  type CoverageTally,
+  type ErrorFacetTally,
+  type ErrorMessageTally,
+  type ErrorsQuery,
+  type ErrorsResult,
+  type VitalCell,
+  type VitalMetric,
+  type VitalsQuery,
+  type VitalsResult,
   attributeConverter,
   attributionValue,
   cohortPlan,
@@ -1673,6 +1691,145 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
           });
         }
         return finishAttribution(query.dim, query.goal, first, last);
+      });
+    },
+
+    // Health (AN-VIT01): the site's raw rows of the range, crawlers left out,
+    // tallied the way the MongoDB pipelines tally them and folded by health.ts.
+    vitals(query: VitalsQuery): Promise<VitalsResult> {
+      return Promise.resolve().then(() => {
+        siteOrThrow(query.siteId);
+        assertHealthRange(query.from, query.to);
+        const cells = new Map<string, VitalCell>();
+        const counts = new Map<string, Map<number, number>>();
+        for (const event of events) {
+          if (
+            event.siteId !== query.siteId ||
+            event.type !== 'vital' ||
+            event.bot ||
+            event.ts < query.from ||
+            event.ts >= query.to ||
+            event.name === undefined ||
+            !isVitalMetric(event.name) ||
+            event.value === undefined
+          ) {
+            continue;
+          }
+          const device = event.ua?.device ?? '';
+          if (query.device !== undefined && device !== query.device) continue;
+          const metric: VitalMetric = event.name;
+          const bucket = vitalBucket(metric, event.value);
+          if (bucket === null) continue;
+          const page = event.route ?? event.path ?? '';
+          const key = JSON.stringify([page, device, metric]);
+          if (!cells.has(key)) cells.set(key, { page, device, metric, buckets: [] });
+          const histogram = counts.get(key) ?? new Map<number, number>();
+          counts.set(key, histogram);
+          histogram.set(bucket, (histogram.get(bucket) ?? 0) + 1);
+        }
+        const answered = [...cells].map(([key, cell]) => ({
+          ...cell,
+          buckets: [...(counts.get(key) ?? new Map<number, number>())].map(([q, n]) => ({ q, n })),
+        }));
+        return foldVitals(answered, query.sort ?? 'LCP');
+      });
+    },
+
+    errors(query: ErrorsQuery): Promise<ErrorsResult> {
+      return Promise.resolve().then(() => {
+        siteOrThrow(query.siteId);
+        assertHealthRange(query.from, query.to);
+        const messages = new Map<string, ErrorMessageTally & { people: Set<string> }>();
+        const facets = { pages: new Map<string, ErrorFacetTally>(), browsers: new Map<string, ErrorFacetTally>() };
+        const everybody = new Set<string>();
+        let total = 0;
+        const bump = (into: Map<string, ErrorFacetTally>, message: string, key: string): void => {
+          const id = JSON.stringify([message, key]);
+          const row = into.get(id) ?? { message, key, count: 0 };
+          row.count += 1;
+          into.set(id, row);
+        };
+        for (const event of events) {
+          if (
+            event.siteId !== query.siteId ||
+            event.type !== 'error' ||
+            event.bot ||
+            event.ts < query.from ||
+            event.ts >= query.to
+          ) {
+            continue;
+          }
+          total += 1;
+          everybody.add(event.visitorId);
+          const message = event.name ?? '';
+          const page = event.route ?? event.path ?? '';
+          const browser = event.ua?.browser ?? '';
+          bump(facets.pages, message, page);
+          bump(facets.browsers, message, browser);
+          const sample = {
+            at: event.ts,
+            page,
+            browser,
+            ...(event.frame === undefined ? {} : { frame: event.frame }),
+            ...(event.stack === undefined ? {} : { stack: event.stack }),
+          };
+          const known = messages.get(message);
+          if (known === undefined) {
+            messages.set(message, {
+              message,
+              count: 1,
+              visitors: 0,
+              firstSeen: event.ts,
+              lastSeen: event.ts,
+              sample,
+              people: new Set([event.visitorId]),
+            });
+            continue;
+          }
+          known.count += 1;
+          known.people.add(event.visitorId);
+          if (event.ts < known.firstSeen) known.firstSeen = event.ts;
+          if (event.ts >= known.lastSeen) {
+            known.lastSeen = event.ts;
+            known.sample = sample;
+          }
+        }
+        return foldErrors(
+          {
+            total,
+            visitors: everybody.size,
+            groupsTotal: messages.size,
+            messages: [...messages.values()].map(({ people, ...row }) => ({ ...row, visitors: people.size })),
+            pages: [...facets.pages.values()],
+            browsers: [...facets.browsers.values()],
+          },
+          query.limit ?? ERROR_GROUP_DEFAULT_LIMIT,
+        );
+      });
+    },
+
+    coverage(query: CoverageQuery): Promise<CoverageResult> {
+      return Promise.resolve().then(() => {
+        siteOrThrow(query.siteId);
+        assertHealthRange(query.from, query.to);
+        const byUser = new Map<string, CoverageTally>();
+        for (const event of events) {
+          if (
+            event.siteId !== query.siteId ||
+            event.userId === undefined ||
+            event.userId === '' ||
+            event.bot ||
+            event.ts < query.from ||
+            event.ts >= query.to
+          ) {
+            continue;
+          }
+          const row = byUser.get(event.userId) ?? { userId: event.userId, server: false, browser: false };
+          if (event.source === 'server') row.server = true;
+          else row.browser = true;
+          byUser.set(event.userId, row);
+        }
+        return foldCoverage([...byUser.values()]);
       });
     },
 
