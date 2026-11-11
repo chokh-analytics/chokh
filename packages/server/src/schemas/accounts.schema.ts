@@ -79,6 +79,10 @@ export const siteSettingsPatchSchema = z
     retentionDays: z.number().int().min(1).max(3650),
     timezone: z.string().min(1).max(64),
     allowUnsignedIdentify: z.boolean(),
+    // JavaScript error capture and whether it keeps stacks (AN-VIT01), both off
+    // until the site turns them on.
+    errorCapture: z.boolean(),
+    errorStacks: z.boolean(),
     // Each checked the way the collector will read it, so a rule that would
     // exclude nobody is refused here rather than stored as a silent no-op.
     excludeIps: z

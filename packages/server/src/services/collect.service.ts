@@ -1,6 +1,13 @@
 import type { ClientHints, GeoReader } from '@chokh/geo';
 import { parseUserAgent } from '@chokh/geo';
 
+import {
+  ERROR_FRAME_MAX,
+  ERROR_MESSAGE_MAX,
+  ERROR_STACK_MAX,
+  errorPath,
+  scrubbedErrorField,
+} from '../lib/error-scrub.js';
 import { applyIpMode } from '../lib/ip-privacy.js';
 import type { WindowCounter } from '../lib/window-counter.js';
 import type { Bus } from './bus.js';
@@ -31,8 +38,11 @@ export interface CollectDeps {
   ipLimit: WindowCounter;
   siteLimit: WindowCounter;
   visitorRate: WindowCounter;
+  // Error rows per visitor per window (AN-VIT01), so a page whose script throws
+  // in a loop cannot flood ingest whatever e.js was told.
+  errorRate: WindowCounter;
   dedupe: Dedupe;
-  limits: { perIp: number; perSite: number };
+  limits: { perIp: number; perSite: number; errorsPerVisitor: number };
   // Wakes the realtime streams watching this site once the batch has landed.
   // Optional, because the collector is a complete thing without a dashboard
   // attached and a test of ingestion should not have to build a bus.
@@ -130,6 +140,17 @@ function toStoredEvent(
   // one would put a beat in the status report, which is a dimension of what
   // pages answered and nothing else.
   if (event.type === 'pageview' && event.status !== undefined) stored.status = event.status;
+  if (event.type === 'error') {
+    // The message, the frame and the stack are text the page's own script
+    // wrote, so they are scrubbed before the row exists (error-scrub.ts), and
+    // the stack is kept only where the site asked for it.
+    if (event.name !== undefined) stored.name = scrubbedErrorField(event.name, ERROR_MESSAGE_MAX);
+    if (event.path !== undefined) stored.path = errorPath(event.path);
+    if (event.frame !== undefined) stored.frame = scrubbedErrorField(event.frame, ERROR_FRAME_MAX);
+    if (event.stack !== undefined && site.settings.errorStacks === true) {
+      stored.stack = scrubbedErrorField(event.stack, ERROR_STACK_MAX);
+    }
+  }
   if (event.duration !== undefined) stored.duration = event.duration;
   if (event.scrollDepth !== undefined) stored.scrollDepth = event.scrollDepth;
   if (event.value !== undefined) stored.value = event.value;
@@ -206,6 +227,15 @@ export async function collect(deps: CollectDeps, input: CollectInput): Promise<C
   const stored: StoredEvent[] = [];
   for (const raw of batch.events) {
     if (raw.type === 'identify' && userId === undefined) {
+      continue;
+    }
+    // Errors only for a site that turned capture on, whatever a page sends,
+    // and at most so many per visitor in a window.
+    if (
+      raw.type === 'error' &&
+      (site.settings.errorCapture !== true ||
+        deps.errorRate.hit(`${site.id}:${visitorId}`, receivedAt) > deps.limits.errorsPerVisitor)
+    ) {
       continue;
     }
     // Before the dedupe key is drawn, so two views of one page that differ

@@ -37,6 +37,9 @@ import type { AccountStore, AnalyticsStore, Presence } from './store/AnalyticsSt
 import { createMemoryStore } from './store/memory.store.js';
 
 const MINUTE_MS = 60_000;
+// JavaScript errors kept per visitor per minute (AN-VIT01). e.js sends at most
+// ten a page load; this is the collector's own bound on a looping error.
+const COLLECT_ERRORS_PER_VISITOR = 10;
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -162,8 +165,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ipLimit: createWindowCounter(MINUTE_MS),
       siteLimit: createWindowCounter(MINUTE_MS),
       visitorRate: createWindowCounter(MINUTE_MS),
+      errorRate: createWindowCounter(MINUTE_MS),
       dedupe: createDedupe(),
-      limits: { perIp: env.COLLECT_RATE_LIMIT_IP, perSite: env.COLLECT_RATE_LIMIT_SITE },
+      limits: {
+        perIp: env.COLLECT_RATE_LIMIT_IP,
+        perSite: env.COLLECT_RATE_LIMIT_SITE,
+        errorsPerVisitor: COLLECT_ERRORS_PER_VISITOR,
+      },
       bus,
       now,
     },

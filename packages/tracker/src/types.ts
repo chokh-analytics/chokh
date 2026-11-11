@@ -1,4 +1,4 @@
-export type EventType = 'pageview' | 'event' | 'heartbeat' | 'leave' | 'identify' | 'vital';
+export type EventType = 'pageview' | 'event' | 'heartbeat' | 'leave' | 'identify' | 'vital' | 'error';
 
 export type Props = Record<string, string>;
 
@@ -19,6 +19,9 @@ export interface TrackedEvent {
   scrollDepth?: number;
   value?: number;
   rating?: string;
+  // An error from e.js: the file, line and column, and the stack.
+  frame?: string;
+  stack?: string;
 }
 
 export interface Batch {

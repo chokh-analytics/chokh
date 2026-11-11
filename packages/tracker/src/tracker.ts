@@ -6,6 +6,14 @@ import { pagePath, readUtm, watchNavigation } from './router';
 import type { Config, Context, Pa, Props, TrackedEvent } from './types';
 import { clearVisitorId, readVisitorId, safeStorage } from './visitor';
 
+// What v.js and e.js hand over beside a name.
+interface Detail {
+  value?: unknown;
+  rating?: unknown;
+  frame?: unknown;
+  stack?: unknown;
+}
+
 function asProps(value: unknown): Props | undefined {
   if (typeof value !== 'object' || value === null) {
     return undefined;
@@ -153,19 +161,17 @@ function boot(win: Window, doc: Document, config: Config): void {
       queue.allow(first === true);
       return;
     }
-    if (name === 'vital' && typeof first === 'string') {
-      // v.js reports through the same queue, so vitals share the consent gate,
-      // the visitor id and the batch with everything else.
-      const event: TrackedEvent = { type: 'vital', ts: Date.now(), path, name: first };
-      if (typeof second === 'object' && second !== null) {
-        const detail = second as { value?: unknown; rating?: unknown };
-        if (typeof detail.value === 'number') {
-          event.value = detail.value;
-        }
-        if (typeof detail.rating === 'string') {
-          event.rating = detail.rating;
-        }
-      }
+    if ((name === 'vital' || name === 'error') && typeof first === 'string') {
+      // v.js and e.js report through the same queue, so vitals and errors share
+      // the consent gate, the visitor id and the batch with everything else.
+      // Each field is copied only when it has the type the collector accepts:
+      // a batch it refuses would take the page's other events with it.
+      const event: TrackedEvent = { type: name, ts: Date.now(), path, name: first };
+      const detail = (typeof second === 'object' && second !== null ? second : {}) as Detail;
+      if (typeof detail.value === 'number') event.value = detail.value;
+      if (typeof detail.rating === 'string') event.rating = detail.rating;
+      if (typeof detail.frame === 'string') event.frame = detail.frame;
+      if (typeof detail.stack === 'string') event.stack = detail.stack;
       queue.push(event);
     }
   }

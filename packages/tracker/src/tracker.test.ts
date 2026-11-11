@@ -172,3 +172,32 @@ describe('identify, and the proof a site can put behind it', () => {
     expect(lastBatch()?.sig).toBeUndefined();
   });
 });
+
+describe('what v.js and e.js hand over', () => {
+  it('queues an error with its frame and stack, and a field of the wrong type not at all', () => {
+    window.pa?.('error', 'TypeError: a is undefined', {
+      frame: 'https://s.test/app.js:1:2',
+      stack: 'at f',
+      value: 'not a number',
+    });
+    window.pa?.('vital', 'LCP', { value: 1800, rating: 'good', stack: 7 });
+    settle();
+    const sent = lastBatch()?.events ?? [];
+    expect(sent.find((one) => one.type === 'error')).toEqual({
+      type: 'error',
+      ts: expect.any(Number),
+      path: expect.any(String),
+      name: 'TypeError: a is undefined',
+      frame: 'https://s.test/app.js:1:2',
+      stack: 'at f',
+    });
+    expect(sent.find((one) => one.type === 'vital')).toEqual({
+      type: 'vital',
+      ts: expect.any(Number),
+      path: expect.any(String),
+      name: 'LCP',
+      value: 1800,
+      rating: 'good',
+    });
+  });
+});

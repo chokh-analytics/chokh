@@ -24,16 +24,21 @@ const gzipped = gzipSync(raw, { level: 9 }).byteLength;
 const percent = ((gzipped / BUDGET_BYTES) * 100).toFixed(1);
 const summary = `tracker a.js: ${raw.byteLength} B raw, ${gzipped} B gzipped, budget ${BUDGET_BYTES} B (${percent}%)`;
 
-// v.js is the optional vitals script. It has no budget of its own, because a
-// site only pays for it when it asks for it, but its size is worth reading.
-const vitalsPath = resolve(repoRoot, 'packages/tracker/dist/v.js');
+// v.js and e.js are the optional vitals and error scripts. Neither has a budget
+// of its own, because a site only pays for one when it asks for it, but their
+// sizes are worth reading.
 let vitals = '';
-try {
-  const vitalsRaw = readFileSync(vitalsPath);
-  vitals = `
-     vitals v.js (optional, no budget): ${vitalsRaw.byteLength} B raw, ${gzipSync(vitalsRaw, { level: 9 }).byteLength} B gzipped`;
-} catch {
-  vitals = '';
+for (const [file, label] of [
+  ['v.js', 'vitals'],
+  ['e.js', 'errors'],
+]) {
+  try {
+    const optionalRaw = readFileSync(resolve(repoRoot, 'packages/tracker/dist', file));
+    vitals += `
+     ${label} ${file} (optional, no budget): ${optionalRaw.byteLength} B raw, ${gzipSync(optionalRaw, { level: 9 }).byteLength} B gzipped`;
+  } catch {
+    // Not built: nothing to report.
+  }
 }
 
 if (gzipped > BUDGET_BYTES) {

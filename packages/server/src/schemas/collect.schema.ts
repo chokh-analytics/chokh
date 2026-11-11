@@ -5,7 +5,7 @@ import { z } from 'zod';
 const attributes = z.record(z.string().max(100), z.string().max(500));
 
 const eventSchema = z.object({
-  type: z.enum(['pageview', 'event', 'heartbeat', 'leave', 'identify', 'vital']),
+  type: z.enum(['pageview', 'event', 'heartbeat', 'leave', 'identify', 'vital', 'error']),
   ts: z.number().int(),
   path: z.string().max(1024).optional(),
   title: z.string().max(512).optional(),
@@ -26,6 +26,12 @@ const eventSchema = z.object({
   scrollDepth: z.number().min(0).max(100).optional(),
   value: z.number().optional(),
   rating: z.string().max(40).optional(),
+  // A JavaScript error from e.js (AN-VIT01): the file, line and column, and the
+  // stack. Generous here, and scrubbed and cut by the collector, so a long one
+  // is shortened rather than refused: a refused batch takes the page's other
+  // events with it.
+  frame: z.string().max(2000).optional(),
+  stack: z.string().max(8000).optional(),
 });
 
 export const batchSchema = z.object({

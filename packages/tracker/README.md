@@ -116,10 +116,11 @@ identify, because the `userId` does; an identify the site will not confirm is
 dropped, the rest of the batch is still collected, and nothing about that
 visitor is ever filed under the name.
 
-There is a fifth command, `pa('vital', name, { value, rating })`. It is internal:
-`v.js` uses it to report a Core Web Vital through this script rather than posting
-on its own, so vitals share the consent gate, the visitor id and the batch. A
-site never calls it.
+There are two more commands, `pa('vital', name, { value, rating })` and
+`pa('error', message, { frame, stack })`. They are internal: `v.js` and `e.js`
+use them to report a Core Web Vital or a JavaScript error through this script
+rather than posting on their own, so both share the consent gate, the visitor id
+and the batch. A site never calls them.
 
 ### Calling pa() before the script loads
 
@@ -150,6 +151,24 @@ vitals share its consent gate, visitor id and batching.
 AN-TRK01 asks for the `web-vitals` build to be inlined into `a.js` when it fits
 the 3 KB budget. Measured on 2026-09-18 it does not: inlined, `a.js` is 5995 B
 gzipped, which is 2923 B over. Hence the second file.
+
+## JavaScript errors
+
+`e.js` is optional too (438 B gzipped) and reports uncaught errors and
+unhandled promise rejections through `a.js`. It does nothing useful until the
+site's owner turns **JavaScript errors** on in the dashboard's Settings: the
+collector drops every error of a site that has not, whatever a page sends.
+
+```html
+<script defer data-site="YOUR_SITE_KEY" src="https://analytics.example.com/a.js"></script>
+<script defer src="https://analytics.example.com/e.js"></script>
+```
+
+Each distinct message is sent once per page load and ten at most, cut to 200
+characters (the frame to 300, the stack to 1,000). The collector then takes the
+query string off every URL and path in them, replaces email addresses, tokens,
+ids and long numbers, and keeps the stack only when the site turned stacks on as
+well. A message is never more than what the page's own script wrote.
 
 ## Transport
 
@@ -193,8 +212,8 @@ header says.
 }
 ```
 
-`type` is one of `pageview`, `event`, `heartbeat`, `leave`, `identify` or
-`vital`. A pageview also carries `status` when the page declared one, as a
+`type` is one of `pageview`, `event`, `heartbeat`, `leave`, `identify`,
+`vital` or `error`. A pageview also carries `status` when the page declared one, as a
 string of three digits. The collector enriches each event with IP, geo, user agent and bot
 flags, applies the site's IP mode, exclusions and retention, and cuts the
 visitor's events into sessions under a thirty minute gap rule.
