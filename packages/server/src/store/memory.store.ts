@@ -23,6 +23,7 @@ import {
   comparePowerUsers,
   emptyActivityTally,
   finishActivity,
+  powerMinDays,
   finishAttribution,
   finishCohorts,
   powerUserRow,
@@ -1607,8 +1608,9 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve().then(() => {
         const site = siteOrThrow(query.siteId);
         const plan = activityPlan(query, site.settings.timezone);
+        const minDays = query.minDays ?? powerMinDays(plan.days);
         const ranked = tallyPowerUsers(humanStays(query.siteId, plan.range), plan)
-          .filter((tally) => tally.activeDays >= query.minDays)
+          .filter((tally) => tally.activeDays >= minDays)
           .sort(comparePowerUsers);
         const people = [];
         // The top `limit` first, then their rows: a stay whose visitor row has
@@ -1620,7 +1622,7 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
           );
           if (row !== undefined) people.push(powerUserRow(personFrom(row), tally));
         }
-        return { people, days: plan.days, minDays: query.minDays, rawOnly: true as const };
+        return { people, days: plan.days, minDays, rawOnly: true as const };
       });
     },
 

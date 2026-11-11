@@ -36,6 +36,12 @@ import {
   createVisitorController,
 } from '../controllers/people.controller.js';
 import {
+  createActivityController,
+  createAttributionController,
+  createCohortsController,
+  createPowerUsersController,
+} from '../controllers/retention.controller.js';
+import {
   createRealtimeController,
   createRealtimeStreamController,
 } from '../controllers/realtime.controller.js';
@@ -343,6 +349,31 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/stats/journeys',
     { preHandler: scope('read:stats') },
     createJourneysController(deps),
+  );
+
+  // Retention (AN-PPL01). Cohorts, stickiness and attribution are reports and
+  // name nobody. The power users are people, so that route strips names,
+  // addresses and traits without read:identity and writes an audit row when
+  // they survive, the way GET /people does.
+  app.get(
+    '/api/sites/:siteId/stats/cohorts',
+    { preHandler: scope('read:stats') },
+    createCohortsController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/activity',
+    { preHandler: scope('read:stats') },
+    createActivityController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/attribution',
+    { preHandler: scope('read:stats') },
+    createAttributionController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/power-users',
+    { preHandler: scope('read:stats') },
+    createPowerUsersController(deps),
   );
 
   // Who is here now.

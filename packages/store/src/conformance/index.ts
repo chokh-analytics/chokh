@@ -2058,6 +2058,9 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
           expect(one.people.map((row) => row.visitorId)).toEqual(['r_b']);
           const none = await store.powerUsers({ siteId: R, from: FROM, to: F.NOW, limit: 10, minDays: 4 });
           expect(none.people).toEqual([]);
+          // With none named, a third of the range's thirty days.
+          const byDefault = await store.powerUsers({ siteId: R, from: FROM, to: F.NOW, limit: 10 });
+          expect(byDefault).toMatchObject({ minDays: 10, people: [] });
         });
       });
 

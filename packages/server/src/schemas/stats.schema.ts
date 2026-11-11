@@ -19,7 +19,7 @@ import {
 // milliseconds from a program, an ISO 8601 date or timestamp from a person or a
 // URL somebody typed. A bare date means midnight UTC, which is why a dashboard
 // asking about a site in Dhaka sends instants and not dates.
-const instant = z
+export const instant = z
   .string()
   .min(1)
   .transform((value, context) => {

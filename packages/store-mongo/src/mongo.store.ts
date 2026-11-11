@@ -11,6 +11,7 @@ import {
   finishActivity,
   finishAttribution,
   finishCohorts,
+  powerMinDays,
   powerUserRow,
   type ActivityQuery,
   type ActivityResult,
@@ -1616,13 +1617,14 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       const site = await siteOrThrow(query.siteId);
       const timezone = site.settings.timezone;
       const plan = activityPlan(query, timezone);
+      const minDays = query.minDays ?? powerMinDays(plan.days);
       const people: PowerUserRow[] =
         plan.days === 0
           ? []
           : (
               await sessions
                 .aggregate(
-                  powerUsersPipeline(site.id, plan.range, timezone, query.minDays, query.limit),
+                  powerUsersPipeline(site.id, plan.range, timezone, minDays, query.limit),
                   { allowDiskUse: true },
                 )
                 .toArray()
@@ -1635,7 +1637,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
                 }),
               )
               .sort(comparePowerUsers);
-      return { people, days: plan.days, minDays: query.minDays, rawOnly: true };
+      return { people, days: plan.days, minDays, rawOnly: true };
     },
 
     async attribution(query: AttributionQuery): Promise<AttributionResult> {

@@ -10,6 +10,8 @@ import {
   type AnalyticsStore,
   type PeoplePage,
   type PeopleQuery,
+  type PowerUsersQuery,
+  type PowerUsersResult,
   type RealtimeSnapshot,
   type UserProfile,
   type VisitorProfile,
@@ -63,6 +65,26 @@ export function people(
       return gated.value;
     });
     return { value: { people: rows, next: page.next }, fields: [...found].sort() };
+  });
+}
+
+// The most active people of a range (AN-PPL01), gated exactly as the directory
+// is: every row through the profile's strip, and the fields that survived
+// anywhere on the page gathered for the one audit row the read writes.
+export function powerUsers(
+  store: AnalyticsStore,
+  query: PowerUsersQuery,
+  identityAllowed: boolean,
+): Promise<Outcome<Gated<PowerUsersResult>>> {
+  return attempt(async () => {
+    const result = await store.powerUsers(query);
+    const found = new Set<string>();
+    const rows = result.people.map((row) => {
+      const gated = gateVisitorProfile(row, identityAllowed);
+      for (const field of gated.fields) found.add(field);
+      return gated.value;
+    });
+    return { value: { ...result, people: rows }, fields: [...found].sort() };
   });
 }
 

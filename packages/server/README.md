@@ -172,6 +172,10 @@ success envelope. A failure on either is the ordinary envelope.
 | `DELETE /api/sites/:siteId/funnels/:funnelId` | `admin` | Delete one; nothing counted is lost |
 | `GET /api/sites/:siteId/stats/funnel` | `read:stats` | How far people got through one funnel, `funnel=` required |
 | `GET /api/sites/:siteId/stats/journeys` | `read:stats` | The paths visits took, entry and three pages on |
+| `GET /api/sites/:siteId/stats/cohorts` | `read:stats` | Weekly or monthly cohorts: `interval=week` (default, up to 26) or `month` (up to 12) |
+| `GET /api/sites/:siteId/stats/activity` | `read:stats` | DAU, WAU and MAU per day, stickiness, the returning rate and the power user curve, up to 90 days |
+| `GET /api/sites/:siteId/stats/attribution` | `read:stats` | First touch against last touch for one goal: `goal=` required, `dim=` `channel` (default), `referrer`, `utm_source`, `utm_medium`, `utm_campaign` or `entry` |
+| `GET /api/sites/:siteId/stats/power-users` | `read:stats`; names need `read:identity` | The most active people of the range: `limit` (1 to 100, default 20), `minDays` (default a third of the range's days); identity fields gated like `/people` |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any report as a file: `report=` names the kind, absent means a breakdown |
 | `PUT /api/sites/:siteId/share` | `admin` | Make the public share, regenerate its link, set or clear its password |
 | `DELETE /api/sites/:siteId/share` | `admin` | Take the share off; answers `{ deleted: true }` |
@@ -473,6 +477,39 @@ draws a comparison: `compare` is ignored, as it is on the events report.
 The dashboard draws both: Funnels is a destination of its own, and Journeys is a
 tab on Pages. A page pressed in the flow filters the report with `page`, the
 one of the two that every other card of that report can answer too.
+
+### Retention and attribution
+
+Four reads about people coming back, all raw for their whole range (stays,
+and for attribution the goal's own rows), all saying so with `rawOnly: true`
+and `retentionDays`, and all strict: a parameter a read cannot honour, a
+filter or a `compare` among them, is `400 INVALID_QUERY` rather than ignored.
+"Active on a day" means began a visit that day in the site's calendar, and a
+visitor is a browser, as everywhere else. On a site with cookieless ids a
+visitor id lasts a day, so nobody is ever seen to return there; the meta
+carries `visitorIdMode` so a dashboard can say so.
+
+- `GET /stats/cohorts`: the buckets of the site's calendar the range touches
+  (weeks from Monday, months from the 1st, whole). A visitor's cohort is the
+  bucket of their first visit, counted once; period k of a cohort is how many
+  of it began a visit k buckets later, with `rate` a fraction of the cohort and
+  `complete: false` on the bucket still running.
+- `GET /stats/activity`: per day, `dau`, `wau` and `mau` (distinct visitors in
+  the day, the 7 days and the 30 days ending that day; the 29 days before the
+  range are read so the first day's month is whole), then means over the
+  complete days, `stickiness` (mean DAU over mean MAU), `returning` (active on a
+  day after the day they were first seen) and `returningRate`, and `curve`, the
+  power user curve: how many visitors were active on exactly 1, 2, ... n days.
+  `powerUsers` counts those on at least `powerMinDays`, a third of the days.
+- `GET /stats/power-users`: those people, most active days first, then most
+  visits, as rows of the people directory with `activeDays` and `visits`. It
+  goes through the identity gate exactly as `GET /people` does.
+- `GET /stats/attribution`: the distinct visitors who reached the goal in the
+  range, each counted once in two columns: `first`, by what first brought their
+  visitor row here, and `last`, by the visit their first conversion in the
+  range happened in, Direct included. Each column adds up, `rows` plus `other`,
+  to `visitors` and `completions`; `''` is a value nobody recorded. This is the
+  cross-day view; the conversion rate on a breakdown stays same-day.
 
 ### Time on page and scroll depth
 

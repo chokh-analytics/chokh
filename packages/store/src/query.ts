@@ -556,8 +556,9 @@ export interface PowerUsersQuery {
   from: number;
   to: number;
   limit: number;
-  // Active on at least this many days of the range; powerMinDays by default.
-  minDays: number;
+  // Active on at least this many days of the range; when absent, powerMinDays
+  // of the range's day count in the site calendar.
+  minDays?: number;
 }
 
 // A directory row and how active they were in the range. Ordered by active
