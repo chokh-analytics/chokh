@@ -33,7 +33,7 @@ interface Range {
   to: number;
 }
 
-function parse<S extends z.ZodType<Range, z.ZodTypeDef, unknown>>(
+export function parse<S extends z.ZodType<Range, z.ZodTypeDef, unknown>>(
   schema: S,
   request: FastifyRequest,
   reply: FastifyReply,
@@ -58,7 +58,7 @@ function parse<S extends z.ZodType<Range, z.ZodTypeDef, unknown>>(
   return { site, input };
 }
 
-function rawMeta(site: Site, range: Range): Record<string, unknown> {
+export function rawMeta(site: Site, range: Range): Record<string, unknown> {
   return {
     siteId: site.id,
     timezone: site.settings.timezone,

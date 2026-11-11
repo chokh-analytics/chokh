@@ -36,6 +36,11 @@ import {
   createVisitorController,
 } from '../controllers/people.controller.js';
 import {
+  createCoverageController,
+  createErrorsController,
+  createVitalsController,
+} from '../controllers/site-health.controller.js';
+import {
   createActivityController,
   createAttributionController,
   createCohortsController,
@@ -374,6 +379,25 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/stats/power-users',
     { preHandler: scope('read:stats') },
     createPowerUsersController(deps),
+  );
+
+  // Health (AN-VIT01): Core Web Vitals and the slow pages, the JavaScript
+  // errors and the tracker's coverage. Reports that name nobody; the error
+  // text was scrubbed by the collector before it was stored.
+  app.get(
+    '/api/sites/:siteId/stats/vitals',
+    { preHandler: scope('read:stats') },
+    createVitalsController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/errors',
+    { preHandler: scope('read:stats') },
+    createErrorsController(deps),
+  );
+  app.get(
+    '/api/sites/:siteId/stats/coverage',
+    { preHandler: scope('read:stats') },
+    createCoverageController(deps),
   );
 
   // Who is here now.

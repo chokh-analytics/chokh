@@ -176,6 +176,9 @@ success envelope. A failure on either is the ordinary envelope.
 | `GET /api/sites/:siteId/stats/activity` | `read:stats` | DAU, WAU and MAU per day, stickiness, the returning rate and the power user curve, up to 90 days |
 | `GET /api/sites/:siteId/stats/attribution` | `read:stats` | First touch against last touch for one goal: `goal=` required, `dim=` `channel` (default), `referrer`, `utm_source`, `utm_medium`, `utm_campaign` or `entry` |
 | `GET /api/sites/:siteId/stats/power-users` | `read:stats`; names need `read:identity` | The most active people of the range: `limit` (1 to 100, default 20), `minDays` (default a third of the range's days); identity fields gated like `/people` |
+| `GET /api/sites/:siteId/stats/vitals` | `read:stats` | Core Web Vitals at p75 per metric, device and page, up to 90 days: `device=` `desktop`, `mobile` or `tablet`, `sort=` `LCP` (default), `INP`, `CLS`, `FCP` or `TTFB` |
+| `GET /api/sites/:siteId/stats/errors` | `read:stats` | JavaScript errors grouped by message, up to 90 days: `limit` (1 to 100, default 50) |
+| `GET /api/sites/:siteId/stats/coverage` | `read:stats` | Of the people the site's server named, the share no browser row carries, up to 90 days |
 | `GET /api/sites/:siteId/export.csv` | `read:stats` | Any report as a file: `report=` names the kind, absent means a breakdown |
 | `PUT /api/sites/:siteId/share` | `admin` | Make the public share, regenerate its link, set or clear its password |
 | `DELETE /api/sites/:siteId/share` | `admin` | Take the share off; answers `{ deleted: true }` |
@@ -510,6 +513,37 @@ carries `visitorIdMode` so a dashboard can say so.
   range happened in, Direct included. Each column adds up, `rows` plus `other`,
   to `visitors` and `completions`; `''` is a value nobody recorded. This is the
   cross-day view; the conversion rate on a breakdown stays same-day.
+
+### Vitals, errors and coverage
+
+Three reads about a site's health (AN-VIT01), raw for their whole range, at
+most about 90 days, strict like the retention reads, and naming nobody.
+
+- `GET /stats/vitals`: what `v.js` measured. Each value is kept as a bucket
+  (milliseconds rounded up to 10 ms, CLS up to 0.01), and `p75` is the nearest
+  rank 75th percentile of the buckets, per metric (`metrics`), per device
+  (`devices`) and per page (`pages`, the route where a rule groups it). A figure
+  behind fewer than `minSamples` (20) measurements has `p75: null` and no
+  `rating`, never a number. `rating` reads the published thresholds: LCP 2.5 s
+  and 4 s, INP 200 and 500 ms, CLS 0.1 and 0.25, FCP 1.8 and 3 s, TTFB 0.8 and
+  1.8 s, the boundary on the better side. `shares` are the fractions of the
+  measurements in each band. `pages` are the slow pages: slowest p75 of `sort`
+  first, those with too few samples after, 50 at most of `pagesTotal`.
+- `GET /stats/errors`: what `e.js` sent for a site with error capture on,
+  grouped by message, biggest first: `count`, distinct `visitors`, `firstSeen`
+  and `lastSeen`, the top three `pages` and `browsers`, and the newest row as
+  `sample` (page, browser, `frame` and, where the site keeps stacks, `stack`).
+  The text was scrubbed by the collector before it was stored; no row carries a
+  visitor, a user, an address or a place. The meta says `errorCapture` and
+  `errorStacks`, so an empty report can say which it is.
+- `GET /stats/coverage`: Chokh has no server pageviews (a server event is never
+  a pageview), so the ad-block estimate is per person: of the `people` the
+  site's server named in the range (`POST /events`), how many no browser row of
+  the range carries (`serverOnly`), as `share`. That is blocked or declined: a
+  content blocker, Do Not Track or consent not given. `state` is `ok`, or why
+  there is no share: `no_server_events`, `no_browser_identity` (the pages never
+  identify anybody, so everybody would read as blocked) or `too_few` (under
+  `minPeople`, 20).
 
 ### Time on page and scroll depth
 
