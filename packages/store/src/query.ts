@@ -431,6 +431,208 @@ export interface PeopleList {
   next: string | null;
 }
 
+// Retention (AN-PPL01): who comes back. Every read here is "which person",
+// which no daily rollup can answer, so all four read stay rows (and attribution
+// the goal's own raw rows) for their whole range and say so with rawOnly. A
+// stay is a visit: "active on a day" means began a stay that day, in the site's
+// calendar, the rule a visit already counts by. Crawlers are never counted.
+//
+// A visitor is a browser, as everywhere else: a person on two browsers is two
+// visitors. On a site with cookieless ids (the public default) a visitor id
+// lasts a day, so nobody is ever seen to come back there; the reads still
+// answer, honestly, and the dashboard says why the numbers are what they are.
+
+export type CohortInterval = 'week' | 'month';
+
+export const COHORT_INTERVALS: readonly CohortInterval[] = ['week', 'month'];
+
+// Half a year of weeks, a year of months. A cohort older than the site keeps
+// its stays has lost its later periods anyway.
+export const MAX_COHORTS: Readonly<Record<CohortInterval, number>> = { week: 26, month: 12 };
+
+// The cohorts are the buckets of the site's calendar the range touches (weeks
+// from Monday, months from the 1st), whole, so a range that starts on a
+// Wednesday still reads its whole week.
+export interface CohortQuery {
+  siteId: string;
+  from: number;
+  to: number;
+  interval: CohortInterval;
+}
+
+// Period k of a cohort: how many of its people began a stay in the k-th bucket
+// after the one they were first seen in. Period 0 is everybody, by definition.
+export interface CohortPeriod {
+  start: number;
+  end: number;
+  visitors: number;
+  // visitors over the cohort's size, as a fraction; null over nobody.
+  rate: number | null;
+  // False for the bucket still running (or cut by the range's end): its number
+  // can only grow, so a grid shades it rather than reading it as a drop.
+  complete: boolean;
+}
+
+// The people first seen in one bucket: a visitor whose first stay (the one
+// that made their visitor row) began in it, counted once however many stays
+// they had. Periods run from the cohort's own bucket to the last one the range
+// reaches, so later cohorts have fewer.
+export interface Cohort {
+  start: number;
+  end: number;
+  visitors: number;
+  periods: CohortPeriod[];
+}
+
+export interface CohortResult {
+  interval: CohortInterval;
+  cohorts: Cohort[];
+  rawOnly: true;
+}
+
+// Stickiness reads a month before the range so the first day's MAU is a whole
+// month, and is capped so that read stays a few months of stays.
+export const MAX_ACTIVITY_DAYS = 90;
+export const WAU_DAYS = 7;
+export const MAU_DAYS = 30;
+
+// The range is whole days of the site's calendar: from is taken back to the
+// start of its day.
+export interface ActivityQuery {
+  siteId: string;
+  from: number;
+  to: number;
+}
+
+export interface ActivityDay {
+  start: number;
+  end: number;
+  // Distinct visitors who began a stay that day, in the 7 days ending that day,
+  // and in the 30 days ending that day.
+  dau: number;
+  wau: number;
+  mau: number;
+  // False for the day still running (or cut by the range's end).
+  complete: boolean;
+}
+
+// A power user is somebody active on at least this many days of a window: a
+// third of them, so 10 of 30 and 30 of 90. A default the site owner can ask
+// past with minDays on the power users read.
+export function powerMinDays(days: number): number {
+  return Math.max(1, Math.ceil(days / 3));
+}
+
+export interface ActivityResult {
+  days: ActivityDay[];
+  // Means over the complete days of the range; null when there are none.
+  dau: number | null;
+  wau: number | null;
+  mau: number | null;
+  // Mean DAU over mean MAU, a fraction: how many of a month's people come on
+  // an ordinary day. Null when there is no complete day or nobody in a month.
+  stickiness: number | null;
+  // Distinct visitors active in the range.
+  visitors: number;
+  // Of them, the ones active on a day after the day they were first seen: a
+  // visitor first seen before the range is returning on every day of it, and
+  // one first seen inside it is returning once they come back on a later day.
+  returning: number;
+  returningRate: number | null;
+  // curve[i] is how many visitors were active on exactly i + 1 days of the
+  // range: the power user curve. Its length is the range's day count.
+  curve: number[];
+  powerMinDays: number;
+  // Visitors active on at least powerMinDays days of the range.
+  powerUsers: number;
+  rawOnly: true;
+}
+
+export const POWER_USERS_DEFAULT_LIMIT = 20;
+export const POWER_USERS_MAX_LIMIT = 100;
+
+export interface PowerUsersQuery {
+  siteId: string;
+  from: number;
+  to: number;
+  limit: number;
+  // Active on at least this many days of the range; powerMinDays by default.
+  minDays: number;
+}
+
+// A directory row and how active they were in the range. Ordered by active
+// days, then visits, then the larger visitor id, so a tie never reorders.
+export interface PowerUserRow extends PersonRow {
+  activeDays: number;
+  visits: number;
+}
+
+export interface PowerUsersResult {
+  people: PowerUserRow[];
+  days: number;
+  minDays: number;
+  rawOnly: true;
+}
+
+// What a conversion can be attributed to: the fields a touch and a stay both
+// carry.
+export const ATTRIBUTION_DIMENSIONS = [
+  'channel',
+  'referrer',
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'entry',
+] as const satisfies readonly Dimension[];
+
+export type AttributionDimension = (typeof ATTRIBUTION_DIMENSIONS)[number];
+
+export const ATTRIBUTION_ROW_LIMIT = 100;
+
+export interface AttributionQuery {
+  siteId: string;
+  from: number;
+  to: number;
+  goal: GoalRead;
+  dim: AttributionDimension;
+}
+
+export interface AttributionCount {
+  visitors: number;
+  completions: number;
+}
+
+// One value of the dimension, as the first touch and as the last. The key ''
+// is a value nobody recorded (no referrer, no campaign) or a visitor whose row
+// has already aged out.
+export interface AttributionRow {
+  key: string;
+  first: AttributionCount;
+  last: AttributionCount;
+}
+
+// Cross-day attribution, which AN-EVT01's same-day conversion left here.
+//
+// The converters are the distinct visitors with a row reaching the goal in the
+// range (conversionMatcher), each counted once over the whole range, with
+// every completion of theirs in it. Each is attributed twice, once per column:
+// first touch is what first brought their visitor row here (written once, on
+// their first stay); last touch is the stay their first conversion in the
+// range happened in, Direct included. So each column adds up, rows plus other,
+// to exactly the visitors and completions above it.
+export interface AttributionResult {
+  dim: AttributionDimension;
+  visitors: number;
+  completions: number;
+  // completions times the goal's value; null when the goal has none.
+  value: number | null;
+  // Most attributed first, at most ATTRIBUTION_ROW_LIMIT.
+  rows: AttributionRow[];
+  // Everything past the limit, folded so the columns still add up.
+  other: { first: AttributionCount; last: AttributionCount };
+  rawOnly: true;
+}
+
 export interface RollupSummary {
   siteId: string;
   date: string;

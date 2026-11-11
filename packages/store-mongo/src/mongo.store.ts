@@ -1,4 +1,29 @@
 import {
+  ACTIVITY_WINDOWS,
+  activityPlan,
+  addCohortCell,
+  attributeConverter,
+  attributionValue,
+  cohortBucketOf,
+  cohortPlan,
+  comparePowerUsers,
+  emptyActivityTally,
+  finishActivity,
+  finishAttribution,
+  finishCohorts,
+  powerUserRow,
+  type ActivityQuery,
+  type ActivityResult,
+  type ActivityTally,
+  type AttributionCount,
+  type AttributionQuery,
+  type AttributionResult,
+  type CohortCounts,
+  type CohortQuery,
+  type CohortResult,
+  type PowerUsersQuery,
+  type PowerUsersResult,
+  type PowerUserRow,
   DEFAULT_BREAKDOWN_LIMIT,
   MAX_FUNNELS_PER_SITE,
   MAX_GOALS_PER_SITE,
@@ -102,6 +127,7 @@ import {
   type StoredSession,
   type StoredVisitor,
   type TimeseriesPoint,
+  type Touch,
   type TimeseriesResult,
   type Totals,
   type UserProfile,
@@ -153,6 +179,15 @@ import {
   sessionSourcedBreakdownPipeline,
   sessionTotalsPipeline,
 } from './pipelines.js';
+import {
+  ATTRIBUTION_LOOKUP_BATCH,
+  activityDayStages,
+  activityFoldStages,
+  attributionConvertersPipeline,
+  attributionLookups,
+  cohortPipeline,
+  powerUsersPipeline,
+} from './retention.pipelines.js';
 import {
   API_KEYS,
   AUDIT_LOG,
@@ -1535,6 +1570,117 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
       return { people, next: rows.length > query.limit && last !== undefined ? cursorOf(last) : null };
     },
 
+    async cohorts(query: CohortQuery): Promise<CohortResult> {
+      const site = await siteOrThrow(query.siteId);
+      const timezone = site.settings.timezone;
+      const plan = cohortPlan(query, timezone);
+      const counts: CohortCounts = new Map();
+      if (plan.starts.length > 0) {
+        for (const row of await sessions
+          .aggregate(cohortPipeline(site.id, plan.span, timezone, query.interval), {
+            allowDiskUse: true,
+          })
+          .toArray()) {
+          const key = row._id as { c: Date; b: Date };
+          addCohortCell(
+            counts,
+            cohortBucketOf(plan, key.c.getTime()),
+            cohortBucketOf(plan, key.b.getTime()),
+            row.visitors as number,
+          );
+        }
+      }
+      return finishCohorts(plan, counts, now());
+    },
+
+    async activity(query: ActivityQuery): Promise<ActivityResult> {
+      const site = await siteOrThrow(query.siteId);
+      const timezone = site.settings.timezone;
+      const plan = activityPlan(query, timezone);
+      const rows =
+        plan.days === 0
+          ? []
+          : await sessions
+              .aggregate(
+                [
+                  ...activityDayStages(site.id, plan.span, timezone),
+                  ...activityFoldStages(plan.offset, ACTIVITY_WINDOWS),
+                ],
+                { allowDiskUse: true },
+              )
+              .toArray();
+      return finishActivity(plan, activityTallyFrom(rows, plan.starts.length, plan.offset, plan.days), now());
+    },
+
+    async powerUsers(query: PowerUsersQuery): Promise<PowerUsersResult> {
+      const site = await siteOrThrow(query.siteId);
+      const timezone = site.settings.timezone;
+      const plan = activityPlan(query, timezone);
+      const people: PowerUserRow[] =
+        plan.days === 0
+          ? []
+          : (
+              await sessions
+                .aggregate(
+                  powerUsersPipeline(site.id, plan.range, timezone, query.minDays, query.limit),
+                  { allowDiskUse: true },
+                )
+                .toArray()
+            )
+              .map((row) =>
+                powerUserRow(personFrom(row.visitor as StoredVisitor), {
+                  visitorId: String(row._id),
+                  activeDays: row.activeDays as number,
+                  visits: row.visits as number,
+                }),
+              )
+              .sort(comparePowerUsers);
+      return { people, days: plan.days, minDays: query.minDays, rawOnly: true };
+    },
+
+    async attribution(query: AttributionQuery): Promise<AttributionResult> {
+      const site = await siteOrThrow(query.siteId);
+      const converters = await events
+        .aggregate(
+          attributionConvertersPipeline(site.id, { from: query.from, to: query.to }, query.goal),
+          { allowDiskUse: true },
+        )
+        .toArray();
+      const touches = new Map<string, Touch | undefined>();
+      const stays = new Map<string, Document>();
+      for (let at = 0; at < converters.length; at += ATTRIBUTION_LOOKUP_BATCH) {
+        const batch = converters.slice(at, at + ATTRIBUTION_LOOKUP_BATCH);
+        const reads = attributionLookups(
+          site.id,
+          batch.map((row) => String(row._id)),
+          batch
+            .map((row) => row.sessionId as unknown)
+            .filter((id): id is string => typeof id === 'string'),
+        );
+        for (const row of await visitors
+          .find<Document>(reads.visitors.filter, { projection: reads.visitors.projection })
+          .toArray()) {
+          touches.set(String(row.id), row.firstTouch as Touch | undefined);
+        }
+        for (const row of await sessions
+          .find<Document>(reads.stays.filter, { projection: reads.stays.projection })
+          .toArray()) {
+          stays.set(String(row.id), row);
+        }
+      }
+      const first = new Map<string, AttributionCount>();
+      const last = new Map<string, AttributionCount>();
+      for (const row of converters) {
+        const sessionId = typeof row.sessionId === 'string' ? row.sessionId : undefined;
+        attributeConverter(first, last, {
+          first: attributionValue(touches.get(String(row._id)), query.dim),
+          last: attributionValue(sessionId === undefined ? undefined : stays.get(sessionId), query.dim),
+          completions: row.completions as number,
+        });
+      }
+      return finishAttribution(query.dim, query.goal, first, last);
+    },
+
     async rollupDay(siteId: string, date: string): Promise<RollupSummary> {
       const site = await siteOrThrow(siteId);
       const timezone = site.settings.timezone;
@@ -1710,4 +1856,44 @@ function requiredUri(uri: string | undefined): string {
     throw new Error('createMongoStore needs a uri or a client');
   }
   return uri;
+}
+
+// The deltas activityFoldStages answers with, back into the tally the memory
+// adapter builds directly: each window's +1/-1 per span day summed from the
+// span's first day, and read from the range's.
+export function activityTallyFrom(
+  rows: Document[],
+  spanDays: number,
+  offset: number,
+  rangeDays: number,
+): ActivityTally {
+  const tally = emptyActivityTally(rangeDays);
+  const deltas = new Map<number, number[]>(
+    ACTIVITY_WINDOWS.map((width) => [width, new Array<number>(spanDays).fill(0)]),
+  );
+  for (const row of rows) {
+    const key = row._id as { k: number | string; d: number };
+    const count = row.n as number;
+    if (key.k === 'c') {
+      tally.curve[key.d - 1] = (tally.curve[key.d - 1] ?? 0) + count;
+      tally.visitors += count;
+      continue;
+    }
+    if (key.k === 'r') {
+      tally.returning += count;
+      continue;
+    }
+    const series = deltas.get(Number(key.k));
+    if (series !== undefined && key.d < spanDays) series[key.d]! += count;
+  }
+  const targets = [tally.dau, tally.wau, tally.mau];
+  ACTIVITY_WINDOWS.forEach((width, which) => {
+    let running = 0;
+    const series = deltas.get(width)!;
+    for (let day = 0; day < spanDays; day += 1) {
+      running += series[day]!;
+      if (day >= offset) targets[which]![day - offset] = running;
+    }
+  });
+  return tally;
 }

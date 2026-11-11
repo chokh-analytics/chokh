@@ -1,6 +1,12 @@
 import type {
+  ActivityQuery,
+  ActivityResult,
   AggregateResult,
+  AttributionQuery,
+  AttributionResult,
   BreakdownResult,
+  CohortQuery,
+  CohortResult,
   EngagementResult,
   EventsResult,
   FunnelRead,
@@ -11,6 +17,8 @@ import type {
   JourneyResult,
   PeoplePage,
   PeopleQuery,
+  PowerUsersQuery,
+  PowerUsersResult,
   PropertyQuery,
   PropertyResult,
   PurgeSummary,
@@ -117,6 +125,30 @@ export interface AnalyticsStore {
   // (siteId, lastSeenAt, id) rather than an aggregation per person. Nothing is
   // stripped here; the route strips what its caller may not read.
   people(query: PeopleQuery): Promise<PeoplePage>;
+
+  // Retention (AN-PPL01). All four read stay rows for their whole range, never
+  // the rollups, which hold counts and not people; retention.ts holds the
+  // buckets, windows and arithmetic so both adapters answer alike, and the
+  // definitions are on the result types in query.ts.
+  //
+  // The weekly or monthly cohorts of the range: people grouped by the bucket
+  // of their first stay, and how many of each began a stay in every bucket
+  // after it. One walk of the stays by (siteId, startedAt).
+  cohorts(query: CohortQuery): Promise<CohortResult>;
+
+  // DAU, WAU and MAU per day of the range, stickiness, the returning rate and
+  // the power user curve. One walk of the range's stays and the month before.
+  activity(query: ActivityQuery): Promise<ActivityResult>;
+
+  // The most active people of the range, active on at least minDays days,
+  // each as a directory row. Unstripped; the route strips what its caller may
+  // not read, the way it does for people().
+  powerUsers(query: PowerUsersQuery): Promise<PowerUsersResult>;
+
+  // Who converted on a goal in the range, split by what first brought them
+  // and by the stay they converted in. The goal's raw rows, then one visitor
+  // row and one stay per converter.
+  attribution(query: AttributionQuery): Promise<AttributionResult>;
 
   // Roll one date key of the site's calendar into rollups_daily. Safe to run
   // twice: the second run writes the same numbers.

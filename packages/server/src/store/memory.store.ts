@@ -15,6 +15,30 @@ import {
   SESSION_DIMENSIONS,
   SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
+  activityPlan,
+  addVisitorDays,
+  attributeConverter,
+  attributionValue,
+  cohortPlan,
+  comparePowerUsers,
+  emptyActivityTally,
+  finishActivity,
+  finishAttribution,
+  finishCohorts,
+  powerUserRow,
+  tallyCohorts,
+  tallyPowerUsers,
+  visitorDaysOf,
+  type ActivityQuery,
+  type ActivityResult,
+  type AttributionCount,
+  type AttributionQuery,
+  type AttributionResult,
+  type CohortQuery,
+  type CohortResult,
+  type PowerUsersQuery,
+  type PowerUsersResult,
+  type StayMark,
   addLeave,
   addSession,
   addTotals,
@@ -210,6 +234,24 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let alerts: Alert[] = [];
   let digests: Digest[] = [];
   let funnels: Funnel[] = [];
+
+  // A site's stays that began in a span, crawlers out, as the retention folds
+  // want them.
+  function humanStays(siteId: string, span: Range): StayMark[] {
+    return sessions
+      .filter(
+        (session) =>
+          session.siteId === siteId &&
+          !session.bot &&
+          session.startedAt >= span.from &&
+          session.startedAt < span.to,
+      )
+      .map((session) => ({
+        visitorId: session.visitorId,
+        startedAt: session.startedAt,
+        isNew: session.isNew,
+      }));
+  }
 
   function siteOrThrow(siteId: string): Site {
     const site = bySiteId.get(siteId);
@@ -1538,6 +1580,97 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       return Promise.resolve({
         people,
         next: found.length > query.limit && last !== undefined ? cursorOf(last) : null,
+      });
+    },
+
+    cohorts(query: CohortQuery): Promise<CohortResult> {
+      return Promise.resolve().then(() => {
+        const site = siteOrThrow(query.siteId);
+        const plan = cohortPlan(query, site.settings.timezone);
+        return finishCohorts(plan, tallyCohorts(humanStays(query.siteId, plan.span), plan), now());
+      });
+    },
+
+    activity(query: ActivityQuery): Promise<ActivityResult> {
+      return Promise.resolve().then(() => {
+        const site = siteOrThrow(query.siteId);
+        const plan = activityPlan(query, site.settings.timezone);
+        const tally = emptyActivityTally(plan.days);
+        for (const visitor of visitorDaysOf(humanStays(query.siteId, plan.span), plan)) {
+          addVisitorDays(tally, plan, visitor);
+        }
+        return finishActivity(plan, tally, now());
+      });
+    },
+
+    powerUsers(query: PowerUsersQuery): Promise<PowerUsersResult> {
+      return Promise.resolve().then(() => {
+        const site = siteOrThrow(query.siteId);
+        const plan = activityPlan(query, site.settings.timezone);
+        const ranked = tallyPowerUsers(humanStays(query.siteId, plan.range), plan)
+          .filter((tally) => tally.activeDays >= query.minDays)
+          .sort(comparePowerUsers);
+        const people = [];
+        // The top `limit` first, then their rows: a stay whose visitor row has
+        // aged out names nobody and is dropped, the way the MongoDB lookup that
+        // finds nothing drops it, so both adapters can answer short alike.
+        for (const tally of ranked.slice(0, query.limit)) {
+          const row = visitors.find(
+            (candidate) => candidate.siteId === query.siteId && candidate.id === tally.visitorId,
+          );
+          if (row !== undefined) people.push(powerUserRow(personFrom(row), tally));
+        }
+        return { people, days: plan.days, minDays: query.minDays, rawOnly: true as const };
+      });
+    },
+
+    attribution(query: AttributionQuery): Promise<AttributionResult> {
+      return Promise.resolve().then(() => {
+        siteOrThrow(query.siteId);
+        const reached = conversionMatcher(query.goal);
+        const byVisitor = new Map<string, { completions: number; ts: number; sessionId: string }>();
+        for (const event of events) {
+          if (
+            event.siteId !== query.siteId ||
+            event.bot ||
+            event.ts < query.from ||
+            event.ts >= query.to ||
+            !reached(event)
+          ) {
+            continue;
+          }
+          const sessionId = event.sessionId ?? '';
+          const known = byVisitor.get(event.visitorId);
+          if (known === undefined) {
+            byVisitor.set(event.visitorId, { completions: 1, ts: event.ts, sessionId });
+            continue;
+          }
+          known.completions += 1;
+          // The first conversion, and between two at one instant the smaller
+          // stay id, which is the order the MongoDB read sorts by.
+          if (event.ts < known.ts || (event.ts === known.ts && sessionId < known.sessionId)) {
+            known.ts = event.ts;
+            known.sessionId = sessionId;
+          }
+        }
+        const first = new Map<string, AttributionCount>();
+        const last = new Map<string, AttributionCount>();
+        const visitorById = new Map(
+          visitors.filter((row) => row.siteId === query.siteId).map((row) => [row.id, row]),
+        );
+        const stayById = new Map(
+          sessions.filter((row) => row.siteId === query.siteId).map((row) => [row.id, row]),
+        );
+        for (const [visitorId, converted] of byVisitor) {
+          const visitor = visitorById.get(visitorId);
+          const stay = stayById.get(converted.sessionId);
+          attributeConverter(first, last, {
+            first: attributionValue(visitor?.firstTouch, query.dim),
+            last: attributionValue(stay, query.dim),
+            completions: converted.completions,
+          });
+        }
+        return finishAttribution(query.dim, query.goal, first, last);
       });
     },
 

@@ -217,6 +217,11 @@ export function bucketIndexAt(starts: readonly number[], ts: number, rangeEnd: n
   return low;
 }
 
+// Where the bucket that begins at start ends: the next one's start.
+export function bucketEnd(start: number, interval: Interval, timezone: string): number {
+  return nextBucket(start, interval, timezone);
+}
+
 function nextBucket(start: number, interval: Interval, timezone: string): number {
   if (interval === 'minute') {
     return start + 60_000;

@@ -7,6 +7,8 @@ import {
   MAX_MINUTE_RANGE_HOURS,
   ONLINE_WINDOW_MS,
   StoreQueryError,
+  type AttributionResult,
+  type AttributionRow,
   type BreakdownResult,
   type Conversion,
   type FunnelRead,
@@ -1764,6 +1766,443 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         });
         const times = page.people.map((entry) => entry.lastSeenAt);
         expect(times).toEqual([...times].sort((left, right) => right - left));
+      });
+    });
+
+    // AN-PPL01. Three small worlds of their own, so every number below can be
+    // counted by hand from the lines that seed it.
+    describe('retention', () => {
+      const R = 'site_retention';
+      const LONDON = 'site_retention_london';
+      const A = 'site_attribution';
+      const HOUR = 60 * 60 * 1000;
+
+      // A wall clock in Dhaka (UTC+6, no daylight saving) as an instant.
+      function dhaka(date: string, hour: number, minute = 0): number {
+        const [year, month, day] = date.split('-').map(Number) as [number, number, number];
+        return Date.UTC(year, month - 1, day, hour - 6, minute);
+      }
+
+      function stay(
+        siteId: string,
+        visitorId: string,
+        ts: number,
+        over: Partial<StoredEvent> = {},
+      ): StoredEvent {
+        return {
+          siteId,
+          ts,
+          receivedAt: ts,
+          type: 'pageview',
+          visitorId,
+          bot: false,
+          hostname: `${siteId}.test`,
+          path: '/',
+          ...over,
+        };
+      }
+
+      // Weeks in Dhaka from Monday: W0 = 24 Aug, W1 = 31 Aug, W2 = 7 Sep,
+      // W3 = 14 Sep (the running week; now is Friday 18 Sep 10:00).
+      //   r_a  first W0 (24 Aug), back 1 Sep (W1) and 15 Sep (W3)
+      //   r_b  first W0 (25 Aug), again 27 Aug (W0, one person), back 8 Sep (W2)
+      //   r_c  first Mon 31 Aug 03:00 in Dhaka, which is Sunday 21:00 UTC: W1
+      //   r_d  a crawler in W0, never counted
+      //   r_e  first W2 (7 Sep), back today
+      //   r_f  first 10 Aug, before every cohort read here, back 2 Sep
+      // Nobody is new in W3, so its cohort is empty.
+      // No row here carries a country: the breakdown case at the end reads
+      // that.
+      beforeAll(async () => {
+        await harness.addSite({
+          id: R,
+          name: R,
+          domains: [`${R}.test`],
+          settings: defaultSiteSettings({
+            timezone: F.TIMEZONE,
+            visitorIdMode: 'persistent',
+            retentionDays: 400,
+          }),
+        });
+        await harness.addSite({
+          id: LONDON,
+          name: LONDON,
+          domains: [`${LONDON}.test`],
+          settings: defaultSiteSettings({
+            timezone: 'Europe/London',
+            visitorIdMode: 'persistent',
+            retentionDays: 400,
+          }),
+        });
+        await harness.addSite({
+          id: A,
+          name: A,
+          domains: [`${A}.test`],
+          settings: defaultSiteSettings({ visitorIdMode: 'persistent', retentionDays: 400 }),
+        });
+        await store.ingest([
+          stay(R, 'r_f', dhaka('2026-08-10', 10)),
+          stay(R, 'r_a', dhaka('2026-08-24', 10)),
+          stay(R, 'r_d', dhaka('2026-08-24', 11), { bot: true }),
+          stay(R, 'r_b', dhaka('2026-08-25', 10)),
+          stay(R, 'r_b', dhaka('2026-08-27', 10)),
+          stay(R, 'r_c', dhaka('2026-08-31', 3)),
+          stay(R, 'r_a', dhaka('2026-09-01', 10)),
+          stay(R, 'r_f', dhaka('2026-09-02', 10)),
+          stay(R, 'r_e', dhaka('2026-09-07', 12)),
+          stay(R, 'r_b', dhaka('2026-09-08', 10)),
+          stay(R, 'r_a', dhaka('2026-09-15', 10)),
+          stay(R, 'r_e', dhaka('2026-09-18', 9)),
+          // London changed to summer time at 01:00 UTC on Sunday 29 March 2026.
+          // l1 first at 23:30 that Sunday (22:30 UTC), back at 00:15 Monday;
+          // l2 first at 00:30 Monday 30 March, which UTC still calls Sunday.
+          stay(LONDON, 'l_1', Date.UTC(2026, 2, 29, 22, 30)),
+          stay(LONDON, 'l_1', Date.UTC(2026, 2, 29, 23, 15)),
+          stay(LONDON, 'l_2', Date.UTC(2026, 2, 29, 23, 30)),
+        ]);
+      });
+
+      describe('cohorts', () => {
+        const W0 = dhaka('2026-08-24', 0);
+
+        it('groups people by the week of their first stay and counts each once', async () => {
+          const result = await store.cohorts({ siteId: R, from: W0, to: F.NOW, interval: 'week' });
+          expect(result.rawOnly).toBe(true);
+          expect(result.cohorts.map((cohort) => cohort.start)).toEqual([
+            W0,
+            dhaka('2026-08-31', 0),
+            dhaka('2026-09-07', 0),
+            dhaka('2026-09-14', 0),
+          ]);
+          expect(
+            result.cohorts.map((cohort) => [
+              cohort.visitors,
+              cohort.periods.map((period) => period.visitors),
+            ]),
+          ).toEqual([
+            [2, [2, 1, 1, 1]],
+            [1, [1, 0, 0]],
+            [1, [1, 1]],
+            [0, [0]],
+          ]);
+          expect(result.cohorts[0]?.periods.map((period) => period.rate)).toEqual([1, 0.5, 0.5, 0.5]);
+          // The empty cohort reads null, not zero per cent of nobody.
+          expect(result.cohorts[3]?.periods[0]?.rate).toBeNull();
+          // Only the running week is incomplete.
+          expect(result.cohorts[0]?.periods.map((period) => period.complete)).toEqual([
+            true,
+            true,
+            true,
+            false,
+          ]);
+          expect(result.cohorts[0]?.end).toBe(dhaka('2026-08-31', 0));
+        });
+
+        it('reads the whole week a range starts in', async () => {
+          const result = await store.cohorts({
+            siteId: R,
+            from: dhaka('2026-08-26', 15),
+            to: F.NOW,
+            interval: 'week',
+          });
+          expect(result.cohorts[0]?.start).toBe(W0);
+          expect(result.cohorts[0]?.visitors).toBe(2);
+        });
+
+        it('groups by month in the site calendar', async () => {
+          const result = await store.cohorts({
+            siteId: R,
+            from: dhaka('2026-07-01', 0),
+            to: F.NOW,
+            interval: 'month',
+          });
+          expect(result.cohorts.map((cohort) => cohort.start)).toEqual([
+            dhaka('2026-07-01', 0),
+            dhaka('2026-08-01', 0),
+            dhaka('2026-09-01', 0),
+          ]);
+          expect(
+            result.cohorts.map((cohort) => [
+              cohort.visitors,
+              cohort.periods.map((period) => period.visitors),
+            ]),
+          ).toEqual([
+            [0, [0, 0, 0]],
+            [4, [4, 3]],
+            [1, [1]],
+          ]);
+        });
+
+        it('draws a week across a daylight saving change in the site zone', async () => {
+          const result = await store.cohorts({
+            siteId: LONDON,
+            from: Date.UTC(2026, 2, 16, 0, 0),
+            to: Date.UTC(2026, 3, 5, 23, 0),
+            interval: 'week',
+          });
+          expect(result.cohorts.map((cohort) => cohort.start)).toEqual([
+            Date.UTC(2026, 2, 16, 0, 0),
+            Date.UTC(2026, 2, 23, 0, 0),
+            // Midnight on Monday 30 March is 23:00 UTC on the Sunday.
+            Date.UTC(2026, 2, 29, 23, 0),
+          ]);
+          expect(
+            result.cohorts.map((cohort) => [
+              cohort.visitors,
+              cohort.periods.map((period) => period.visitors),
+            ]),
+          ).toEqual([
+            [0, [0, 0, 0]],
+            [1, [1, 1]],
+            [1, [1]],
+          ]);
+          expect(result.cohorts.every((cohort) => cohort.periods.every((period) => period.complete))).toBe(
+            true,
+          );
+        });
+
+        it('answers an empty grid for a site with no stays, and refuses a range too long', async () => {
+          const empty = await store.cohorts({ siteId: A, from: W0, to: F.NOW, interval: 'week' });
+          // Site A keeps UTC, where Dhaka's Monday midnight is still Sunday:
+          // five weeks of its own calendar, every one empty.
+          expect(empty.cohorts).toHaveLength(5);
+          expect(empty.cohorts.every((cohort) => cohort.visitors === 0)).toBe(true);
+          await expect(
+            store.cohorts({ siteId: R, from: F.NOW - 27 * 7 * DAY, to: F.NOW, interval: 'week' }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+          await expect(
+            store.cohorts({ siteId: R, from: F.NOW - 400 * DAY, to: F.NOW, interval: 'month' }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+        });
+      });
+
+      describe('activity', () => {
+        // 20 Aug to now: thirty days of Dhaka's calendar, the last one running.
+        const FROM = dhaka('2026-08-20', 0);
+        const day = (date: string): number => dhaka(date, 0);
+
+        it('counts DAU, WAU and MAU on the site calendar, the month before included', async () => {
+          const result = await store.activity({ siteId: R, from: FROM + 5 * HOUR, to: F.NOW });
+          expect(result.rawOnly).toBe(true);
+          expect(result.days).toHaveLength(30);
+          expect(result.days[0]?.start).toBe(FROM);
+          const on = (date: string) => result.days.find((each) => each.start === day(date));
+          // r_f's 10 Aug is before the range and inside its month.
+          expect(on('2026-08-20')).toMatchObject({ dau: 0, wau: 0, mau: 1 });
+          // The crawler on 24 Aug is nobody.
+          expect(on('2026-08-24')).toMatchObject({ dau: 1, wau: 1, mau: 2 });
+          expect(on('2026-08-30')).toMatchObject({ dau: 0, wau: 2 });
+          // r_c is Monday in Dhaka and Sunday in UTC.
+          expect(on('2026-08-31')).toMatchObject({ dau: 1, wau: 2 });
+          expect(on('2026-09-18')).toMatchObject({ dau: 1, mau: 5, complete: false });
+          expect(result.days.filter((each) => !each.complete)).toHaveLength(1);
+          const complete = result.days.filter((each) => each.complete);
+          expect(complete.reduce((sum, each) => sum + each.dau, 0)).toBe(9);
+          const mean = (values: number[]): number =>
+            values.reduce((sum, value) => sum + value, 0) / values.length;
+          expect(result.dau).toBeCloseTo(9 / 29, 10);
+          expect(result.mau).toBeCloseTo(mean(complete.map((each) => each.mau)), 10);
+          expect(result.stickiness).toBeCloseTo(result.dau! / result.mau!, 10);
+        });
+
+        it('counts the returning, the curve and the power users', async () => {
+          const result = await store.activity({ siteId: R, from: FROM, to: F.NOW });
+          expect(result.visitors).toBe(5);
+          // Everybody but r_c, whose one day is the day they were first seen.
+          expect(result.returning).toBe(4);
+          expect(result.returningRate).toBeCloseTo(0.8, 10);
+          expect(result.curve).toHaveLength(30);
+          expect(result.curve.slice(0, 4)).toEqual([2, 1, 2, 0]);
+          expect(result.curve.reduce((sum, count) => sum + count, 0)).toBe(result.visitors);
+          expect(result.powerMinDays).toBe(10);
+          expect(result.powerUsers).toBe(0);
+        });
+
+        it('answers nobody on a site with no stays, and refuses a range too long', async () => {
+          const empty = await store.activity({ siteId: A, from: FROM, to: F.NOW });
+          expect(empty.visitors).toBe(0);
+          expect(empty.returningRate).toBeNull();
+          expect(empty.stickiness).toBeNull();
+          expect(empty.days.every((each) => each.dau === 0 && each.mau === 0)).toBe(true);
+          await expect(
+            store.activity({ siteId: R, from: F.NOW - 91 * DAY, to: F.NOW }),
+          ).rejects.toMatchObject({ code: 'RANGE_TOO_LONG' });
+        });
+      });
+
+      describe('powerUsers', () => {
+        const FROM = dhaka('2026-08-20', 0);
+
+        it('lists the most active first, as directory rows', async () => {
+          const result = await store.powerUsers({
+            siteId: R,
+            from: FROM,
+            to: F.NOW,
+            limit: 10,
+            minDays: 2,
+          });
+          expect(result.rawOnly).toBe(true);
+          expect(result.days).toBe(30);
+          expect(result.minDays).toBe(2);
+          // r_a and r_b tie on three days and three visits; the larger id wins.
+          expect(result.people.map((row) => [row.visitorId, row.activeDays, row.visits])).toEqual([
+            ['r_b', 3, 3],
+            ['r_a', 3, 3],
+            ['r_e', 2, 2],
+          ]);
+          expect(result.people[0]).toMatchObject({ sessions: 3, pageviews: 3, ips: [] });
+        });
+
+        it('cuts at the limit and at minDays', async () => {
+          const one = await store.powerUsers({ siteId: R, from: FROM, to: F.NOW, limit: 1, minDays: 1 });
+          expect(one.people.map((row) => row.visitorId)).toEqual(['r_b']);
+          const none = await store.powerUsers({ siteId: R, from: FROM, to: F.NOW, limit: 10, minDays: 4 });
+          expect(none.people).toEqual([]);
+        });
+      });
+
+      describe('attribution', () => {
+        const SIGNUP_VALUE: GoalRead = { kind: 'event', match: 'signup', value: 5 };
+        const T0 = Date.UTC(2026, 8, 1, 10);
+
+        // at_x: came first from a paid campaign, converted twice in a direct
+        //       stay on 10 Sep, then once more from a newsletter on 12 Sep.
+        // at_y: came from a social campaign and converted in that stay.
+        // at_z: never converted.
+        // at_bot: a crawler that sent the event, never counted.
+        beforeAll(async () => {
+          const signup = { type: 'event' as const, name: 'signup' };
+          await store.ingest([
+            stay(A, 'at_x', T0, { utm: { source: 'ads', medium: 'cpc' } }),
+            stay(A, 'at_y', T0 + 4 * DAY, { utm: { source: 'fb', medium: 'social' } }),
+            stay(A, 'at_y', T0 + 4 * DAY + 60_000, signup),
+            stay(A, 'at_z', T0 + 5 * DAY),
+            stay(A, 'at_x', T0 + 9 * DAY, { path: '/pricing' }),
+            stay(A, 'at_x', T0 + 9 * DAY + 60_000, signup),
+            stay(A, 'at_x', T0 + 9 * DAY + 120_000, signup),
+            stay(A, 'at_x', T0 + 11 * DAY, {
+              path: '/welcome',
+              utm: { source: 'news', medium: 'email' },
+            }),
+            stay(A, 'at_x', T0 + 11 * DAY + 60_000, signup),
+            stay(A, 'at_bot', T0 + 2 * DAY, { bot: true }),
+            stay(A, 'at_bot', T0 + 2 * DAY + 60_000, { ...signup, bot: true }),
+          ]);
+        });
+
+        function columnSums(result: AttributionResult): [number, number, number, number] {
+          const sum = (pick: (row: AttributionRow) => number): number =>
+            result.rows.reduce((total, row) => total + pick(row), 0);
+          return [
+            sum((row) => row.first.visitors) + result.other.first.visitors,
+            sum((row) => row.first.completions) + result.other.first.completions,
+            sum((row) => row.last.visitors) + result.other.last.visitors,
+            sum((row) => row.last.completions) + result.other.last.completions,
+          ];
+        }
+
+        it('splits the converters by first touch and by the stay they converted in', async () => {
+          const result = await store.attribution({
+            siteId: A,
+            from: T0,
+            to: F.NOW,
+            goal: SIGNUP_VALUE,
+            dim: 'channel',
+          });
+          expect(result.rawOnly).toBe(true);
+          expect(result.visitors).toBe(2);
+          expect(result.completions).toBe(4);
+          expect(result.value).toBe(20);
+          const byKey = new Map(result.rows.map((row) => [row.key, row]));
+          expect(byKey.get('paid')).toMatchObject({
+            first: { visitors: 1, completions: 3 },
+            last: { visitors: 0, completions: 0 },
+          });
+          expect(byKey.get('direct')).toMatchObject({
+            first: { visitors: 0, completions: 0 },
+            last: { visitors: 1, completions: 3 },
+          });
+          expect(byKey.get('social')).toMatchObject({
+            first: { visitors: 1, completions: 1 },
+            last: { visitors: 1, completions: 1 },
+          });
+          expect(byKey.has('email')).toBe(false);
+          expect(columnSums(result)).toEqual([2, 4, 2, 4]);
+        });
+
+        it('reads the last touch inside the range and an empty value as the empty key', async () => {
+          const result = await store.attribution({
+            siteId: A,
+            from: T0 + 11 * DAY,
+            to: F.NOW,
+            goal: SIGNUP_VALUE,
+            dim: 'utm_source',
+          });
+          expect(result.visitors).toBe(1);
+          expect(result.completions).toBe(1);
+          expect(result.rows).toEqual([
+            { key: 'ads', first: { visitors: 1, completions: 1 }, last: { visitors: 0, completions: 0 } },
+            { key: 'news', first: { visitors: 0, completions: 0 }, last: { visitors: 1, completions: 1 } },
+          ]);
+          const direct = await store.attribution({
+            siteId: A,
+            from: T0,
+            to: F.NOW,
+            goal: { kind: 'event', match: 'signup' },
+            dim: 'utm_source',
+          });
+          expect(direct.value).toBeNull();
+          expect(new Map(direct.rows.map((row) => [row.key, row.last.visitors])).get('')).toBe(1);
+          expect(columnSums(direct)).toEqual([2, 4, 2, 4]);
+        });
+
+        it('answers a page goal and nobody for a goal nobody reached', async () => {
+          const pricing = await store.attribution({
+            siteId: A,
+            from: T0,
+            to: F.NOW,
+            goal: { kind: 'page', match: '/pricing' },
+            dim: 'entry',
+          });
+          expect(pricing.visitors).toBe(1);
+          expect(pricing.rows).toEqual([
+            { key: '/', first: { visitors: 1, completions: 1 }, last: { visitors: 0, completions: 0 } },
+            {
+              key: '/pricing',
+              first: { visitors: 0, completions: 0 },
+              last: { visitors: 1, completions: 1 },
+            },
+          ]);
+          const nobody = await store.attribution({
+            siteId: A,
+            from: T0,
+            to: F.NOW,
+            goal: { kind: 'event', match: 'never' },
+            dim: 'channel',
+          });
+          expect(nobody).toMatchObject({ visitors: 0, completions: 0, rows: [] });
+        });
+      });
+
+      // AN-EVT01 left this here: a row nobody gave a country to. On both
+      // adapters, raw and rolled, it is no row at all, and never one named
+      // "null" (MongoDB groups a missing field under null).
+      it('answers no row for a country nobody recorded, raw or rolled', async () => {
+        const raw = await store.breakdown({
+          siteId: R,
+          from: dhaka('2026-08-01', 0),
+          to: F.NOW,
+          dim: 'country',
+        });
+        expect(raw.rows).toEqual([]);
+        await store.rollupDay(R, '2026-08-25');
+        const rolled = await store.breakdown({
+          siteId: R,
+          from: dhaka('2026-08-25', 0),
+          to: dhaka('2026-08-26', 0),
+          dim: 'country',
+        });
+        expect(rolled.rows).toEqual([]);
       });
     });
 
