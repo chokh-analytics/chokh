@@ -62,7 +62,12 @@ const BUDGETS = [
   // page's seventy strings in the one messages file the shell carries, the
   // twelfth destination and its key, and the four API calls; the page itself
   // is the Retention chunk.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 42 * 1024 },
+  // Raised to 44 KB on 2026-11-12 by the commit that spent it, vitals, errors
+  // and coverage (AN-VIT01): measured at 44,645 B, the page's ninety strings
+  // and the error card's in the one messages file the shell carries, the
+  // thirteenth destination and its key, the vital formatter and the three API
+  // calls; the page itself is the Health chunk.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 44 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
@@ -96,7 +101,11 @@ const BUDGETS = [
   // attribution (AN-PPL01): measured at 46,465 B, Retention its own chunk at
   // 5,056 B with the cohort grid, the activity tiles, chart, curve and list,
   // and the attribution table.
-  { name: 'routes', pattern: /\.js$/, bytes: 46 * 1024 },
+  // Raised to 51 KB on 2026-11-12 by the commit that spent it, vitals, errors
+  // and coverage (AN-VIT01): measured at 51,526 B, Health its own chunk at
+  // 4,644 B with the vitals tiles, the slow pages table, the error groups and
+  // coverage, and Settings a little larger with the error capture card.
+  { name: 'routes', pattern: /\.js$/, bytes: 51 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
   // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared
@@ -107,7 +116,10 @@ const BUDGETS = [
   // Raised to 19 KB on 2026-11-12 by the commit that spent it, retention and
   // attribution (AN-PPL01): measured at 18,773 B, Retention 1,778 B with the
   // shaded grid, its sticky column, the curve and the bars.
-  { name: 'css', pattern: /\.css$/, bytes: 19 * 1024 },
+  // Raised to 21 KB on 2026-11-12 by the commit that spent it, vitals, errors
+  // and coverage (AN-VIT01): measured at 20,595 B, Health 1,822 B with the
+  // tiles, the band marks, the stacked bars, the table and the error groups.
+  { name: 'css', pattern: /\.css$/, bytes: 21 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

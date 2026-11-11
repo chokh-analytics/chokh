@@ -21,6 +21,10 @@
     "./contract": {
       "types": "./src/query.ts",
       "default": "./dist/query.js"
+    },
+    "./health": {
+      "types": "./src/health.ts",
+      "default": "./dist/health.js"
     }
   },
   "files": [

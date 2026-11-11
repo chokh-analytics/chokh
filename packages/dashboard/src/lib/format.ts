@@ -92,6 +92,28 @@ export function formatDuration(ms: number | null | undefined): string | null {
   return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
 }
 
+// A Core Web Vital in its own unit, written once here and nowhere else (AN-VIT01):
+// LCP, FCP and TTFB in seconds with two decimals, INP in whole milliseconds,
+// CLS with no unit and two decimals. The store hands milliseconds and the
+// unitless CLS, already rounded up to 10 ms or 0.01, so two decimals of a
+// second and two of CLS show every bucket exactly. Null, a figure behind too
+// few measurements, stays null and is never drawn as zero.
+export function formatVital(
+  metric: 'LCP' | 'INP' | 'CLS' | 'FCP' | 'TTFB',
+  value: number | null | undefined,
+): string | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+  if (metric === 'CLS') {
+    return value.toFixed(2);
+  }
+  if (metric === 'INP') {
+    return `${GROUPED.format(Math.round(value))} ms`;
+  }
+  return `${(value / 1000).toFixed(2)} s`;
+}
+
 // What a comparison can be. "No baseline" is its own answer and not a zero: a
 // previous window with nothing in it did not stay the same, it has no
 // percentage, and saying "no change" about it is a wrong number rather than a

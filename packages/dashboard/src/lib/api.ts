@@ -1,3 +1,4 @@
+import type { CoverageResult, ErrorsResult, VitalMetric, VitalsResult } from '@chokh/store/health';
 import type {
   ActivityResult,
   AttributionDimension,
@@ -70,6 +71,10 @@ export interface PublicSite {
     retentionDays: number;
     timezone: string;
     allowUnsignedIdentify: boolean;
+    // JavaScript error capture (AN-VIT01). Absent on a site written before it,
+    // which reads as off.
+    errorCapture?: boolean;
+    errorStacks?: boolean;
     excludeIps: string[];
     excludePaths: string[];
     excludeQueryParams: string[];
@@ -486,6 +491,30 @@ export const api = {
       goal: goalId,
       dim,
     }),
+
+  // Health (AN-VIT01). Each takes its own window and no filter, like retention.
+  vitals: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+    device: string | null,
+    sort: VitalMetric,
+  ): Promise<Answer<VitalsResult>> =>
+    client.get<VitalsResult>(`/api/sites/${siteId}/stats/vitals`, {
+      ...window,
+      sort,
+      ...(device === null ? {} : { device }),
+    }),
+
+  errors: (client: Client, siteId: string, window: RetentionWindow): Promise<Answer<ErrorsResult>> =>
+    client.get<ErrorsResult>(`/api/sites/${siteId}/stats/errors`, { ...window }),
+
+  coverage: (
+    client: Client,
+    siteId: string,
+    window: RetentionWindow,
+  ): Promise<Answer<CoverageResult>> =>
+    client.get<CoverageResult>(`/api/sites/${siteId}/stats/coverage`, { ...window }),
 
   realtime: (client: Client, siteId: string): Promise<Answer<RealtimeSnapshot>> =>
     client.get<RealtimeSnapshot>(`/api/sites/${siteId}/realtime`),

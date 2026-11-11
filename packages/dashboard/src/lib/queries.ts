@@ -1,3 +1,4 @@
+import type { VitalMetric } from '@chokh/store/health';
 import {
   QueryClient,
   useInfiniteQuery,
@@ -473,6 +474,38 @@ export function useAttribution(
     queryKey: ['attribution', siteId, goalId, dim, window.from, window.to],
     queryFn: () => api.attribution(client, siteId, window, goalId ?? '', dim),
     enabled: goalId !== null,
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+// The health reads (AN-VIT01), asked like the retention ones: once a minute at
+// most and never polled.
+export function useVitals(
+  client: Client,
+  siteId: string,
+  window: RetentionWindow,
+  device: string | null,
+  sort: VitalMetric,
+) {
+  return useQuery({
+    queryKey: ['vitals', siteId, device, sort, window.from, window.to],
+    queryFn: () => api.vitals(client, siteId, window, device, sort),
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+export function useErrors(client: Client, siteId: string, window: RetentionWindow) {
+  return useQuery({
+    queryKey: ['errors', siteId, window.from, window.to],
+    queryFn: () => api.errors(client, siteId, window),
+    staleTime: HISTORY_STALE_MS,
+  });
+}
+
+export function useCoverage(client: Client, siteId: string, window: RetentionWindow) {
+  return useQuery({
+    queryKey: ['coverage', siteId, window.from, window.to],
+    queryFn: () => api.coverage(client, siteId, window),
     staleTime: HISTORY_STALE_MS,
   });
 }

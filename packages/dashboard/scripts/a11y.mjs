@@ -50,6 +50,10 @@ const PAGES = [
   // list of the most active people.
   { name: 'retention', path: '/s_demo/retention' },
   { name: 'retention-activity', path: '/s_demo/retention?view=activity' },
+  // Health (AN-VIT01): the vitals tiles with their bands said in words and
+  // shapes as well as colours, the slow pages table, and the error groups.
+  { name: 'health', path: '/s_demo/health' },
+  { name: 'health-errors', path: '/s_demo/health?view=errors' },
   // Three forms, every control labelled, the timezone as a fact.
   { name: 'settings', path: '/s_demo/settings' },
   // The first paid feature, described on an install with no key.

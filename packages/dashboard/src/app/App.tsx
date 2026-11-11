@@ -45,6 +45,9 @@ const People = lazy(async () => ({ default: (await import('../pages/People.js'))
 const Retention = lazy(async () => ({
   default: (await import('../pages/Retention.js')).Retention,
 }));
+const Health = lazy(async () => ({
+  default: (await import('../pages/Health.js')).Health,
+}));
 const Alerts = lazy(async () => ({ default: (await import('../pages/Alerts.js')).Alerts }));
 const Settings = lazy(async () => ({
   default: (await import('../pages/Settings.js')).Settings,
@@ -110,6 +113,9 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
         </Route>
         <Route path="/:siteId/retention">
           <Retention />
+        </Route>
+        <Route path="/:siteId/health">
+          <Health />
         </Route>
         <Route path="/:siteId/alerts">
           <Alerts />

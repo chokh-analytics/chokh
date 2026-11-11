@@ -100,6 +100,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['Funnels', 'Funnels'],
     ['People', 'People'],
     ['Retention', 'Retention'],
+    ['Health', 'Health'],
     ['Alerts', 'Alerts'],
   ] as const) {
     await goTo(page, label);
@@ -198,6 +199,7 @@ test('keeps the destinations in one row at 390 and at 1024, with the current one
       ['funnels', 'Funnels'],
       ['people', 'People'],
       ['retention', 'Retention'],
+      ['health', 'Health'],
       ['events', 'Events'],
     ] as const) {
       await boot(page, `/${SITE}/${path}`);
@@ -961,7 +963,7 @@ test('shows every destination in the row or under More at 1024 and 1280, and fad
       movedThroughMore = true;
     }
   }
-  // Twelve destinations beside the mark, the site and the account do not fit
+  // Thirteen destinations beside the mark, the site and the account do not fit
   // in 1024, so this case went through More at least once.
   expect(movedThroughMore).toBe(true);
 
@@ -1134,4 +1136,68 @@ test('splits a goal by first touch and last touch', async ({ page }) => {
 
   const removed = await page.request.delete(`/api/sites/${SITE}/goals/${goalId as string}`);
   expect(removed.ok()).toBe(true);
+});
+
+// Health (AN-VIT01) against the real server: the vitals and errors the seed
+// posts as v.js and e.js would fill the page; every band is a word as well as a
+// colour; the slow pages table scrolls inside its card on a phone while the
+// page does not; an error opens to its sample with the day it was seen; and the
+// views are reachable from the keyboard and kept in the address bar.
+test('reads page speed on a phone, the bands in words and the slow pages inside their card', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/health`);
+  await expect(page.getByRole('heading', { name: 'Health', level: 1 })).toBeAttached();
+  const lcp = page.getByRole('region', { name: 'Largest Contentful Paint' });
+  await expect(lcp.getByText(/^\d+\.\d\d s$/)).toBeVisible();
+  await expect(lcp.getByText(/^(Good|Needs improvement|Poor)$/).first()).toBeVisible();
+  const inp = page.getByRole('region', { name: 'Interaction to Next Paint' });
+  await expect(inp.getByText(/^\d[\d,]* ms$/)).toBeVisible();
+  const cls = page.getByRole('region', { name: 'Cumulative Layout Shift' });
+  await expect(cls.getByText(/^\d\.\d\d$/)).toBeVisible();
+  // Phones were seeded slower than desktops, and both are measured.
+  await expect(lcp.getByRole('list', { name: 'By device' }).getByText('Mobile')).toBeVisible();
+  const table = page.getByRole('group', { name: /Pages by their 75th percentile/ });
+  await expect(table.getByRole('row').nth(1)).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'health scrolls sideways').toBeLessThanOrEqual(0);
+  const inner = await table.evaluate((box) => box.scrollWidth - box.clientWidth);
+  expect(inner, 'the slow pages lost their columns rather than scrolling them').toBeGreaterThan(0);
+});
+
+test('opens an error to its sample, on a phone, with the day it was last seen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}/health?view=errors`);
+  const list = page.getByRole('region', { name: 'JavaScript errors' });
+  const long = list.getByText(/checkoutSessionIdentifierFromTheVeryLongNamedPaymentProviderResponse/);
+  await expect(long).toBeVisible();
+  const last = await list.getByText(/^Last seen /).allTextContents();
+  expect(last.length).toBeGreaterThan(0);
+  expect(last.some((text) => /^Last seen \d{1,2} [A-Z][a-z]{2,3}, \d\d:\d\d$/.test(text)), last.join(' | ')).toBe(true);
+  await long.click();
+  await expect(list.getByText('https://progsity.io/_next/static/chunks/app.js:1:2048').first()).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow, 'a long error message widens the page').toBeLessThanOrEqual(0);
+});
+
+test('walks the health views and windows from the keyboard and keeps each in the address bar', async ({ page }) => {
+  await boot(page, `/${SITE}/health`);
+  const errorsTab = page.getByRole('tab', { name: 'Errors' });
+  await errorsTab.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/view=errors/);
+  await expect(errorsTab).toHaveAttribute('aria-selected', 'true');
+  const ninety = page.getByRole('radio', { name: 'Last 90 days' });
+  await ninety.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/window=90/);
+  await page.getByRole('tab', { name: 'Coverage' }).click();
+  await expect(page).toHaveURL(/view=coverage/);
+  // The seed's server sends no events, so the estimate says why it has none.
+  await expect(page.getByText(/this site sends no server events/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Coverage' })).toHaveAttribute('aria-selected', 'true');
 });

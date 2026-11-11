@@ -1,0 +1,534 @@
+.page {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+.stack {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+}
+
+/* The views on the left, the window on the right, wrapping under each other
+ * on a phone rather than squeezing either onto two lines. */
+.toolbar,
+.cardBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.cardBar {
+  padding: var(--s3) var(--s4) 0;
+}
+
+.views,
+.choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  padding: 2px;
+  max-width: 100%;
+}
+
+.view,
+.choiceItem {
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  border-radius: var(--r1);
+  min-height: 32px;
+  padding: 4px var(--s3);
+  font-family: var(--font-sans);
+  font-size: var(--t-body);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--fast) ease-out, color var(--fast) ease-out;
+}
+
+.choiceItem {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.04em;
+  min-height: 28px;
+}
+
+.view:hover,
+.choiceItem:hover {
+  color: var(--ink);
+}
+
+.view:focus-visible,
+.choiceItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.viewOn,
+.choiceOn {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.notice {
+  margin: var(--s3) var(--s4) 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r2);
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-size: var(--t-body);
+}
+
+.loading {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s4);
+}
+
+.note {
+  margin: 0;
+  padding: var(--s2) var(--s4) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.empty {
+  display: grid;
+  gap: var(--s2);
+  padding-bottom: var(--s4);
+  min-width: 0;
+}
+
+.code {
+  margin: 0 var(--s4);
+  padding: var(--s3);
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+}
+
+.code:focus-visible,
+.scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.link {
+  margin: 0 var(--s4);
+  color: var(--accent-ink);
+  font-size: var(--t-body);
+}
+
+.subhead {
+  margin: 0;
+  padding: var(--s3) var(--s4) 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------ the bands */
+
+/* A band is a word, a shape and a colour at once. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--t-label);
+  font-family: var(--font-sans);
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.shape {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  fill: currentcolor;
+}
+
+.good .shape {
+  color: var(--live);
+}
+
+.needs .shape {
+  color: var(--warn);
+}
+
+.poor .shape {
+  color: var(--dead);
+}
+
+/* ------------------------------------------------------------ the tiles */
+
+.vitals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s3);
+  padding: var(--s4);
+  min-width: 0;
+}
+
+.vital {
+  display: grid;
+  align-content: start;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+  min-width: 0;
+}
+
+.vitalHead {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.vitalHead abbr {
+  text-decoration: none;
+}
+
+.vitalName {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.vitalValue {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-kpi);
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.samples,
+.tooFew {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.tooFew {
+  font-style: italic;
+}
+
+.shares {
+  display: grid;
+  gap: var(--s2);
+}
+
+.bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--soft);
+  gap: 2px;
+}
+
+.segment {
+  display: block;
+  min-width: 2px;
+  flex-basis: 0;
+}
+
+.segment.good {
+  background: var(--live);
+}
+
+.segment.needs {
+  background: var(--warn);
+}
+
+.segment.poor {
+  background: var(--dead);
+}
+
+.seen {
+  background: var(--accent);
+}
+
+.unseen {
+  background: var(--dead);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.legendValue {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.devices {
+  display: grid;
+  gap: 4px;
+  margin: var(--s1) 0 0;
+  padding: var(--s2) 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.devices li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s2);
+  font-size: var(--t-label);
+}
+
+.deviceName {
+  color: var(--muted);
+}
+
+.deviceValue,
+.cellValue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+}
+
+/* ------------------------------------------------------------ the table */
+
+/* The one thing on the page allowed to be wider than a phone scrolls here,
+ * inside its card, and never takes the page with it. Positioned, so the
+ * visually hidden words in its cells are placed inside the box. */
+.scroll {
+  position: relative;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  margin-top: var(--s3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--t-body);
+}
+
+.headCell {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  background: var(--paper);
+}
+
+.headCell abbr {
+  text-decoration: none;
+}
+
+.sorted {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.num {
+  text-align: right;
+}
+
+.pageCell {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  max-width: 260px;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cellValue {
+  justify-content: flex-end;
+}
+
+.dim {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------ the errors */
+
+.groups {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  border-bottom: 1px solid var(--line);
+}
+
+.summary {
+  display: grid;
+  gap: var(--s1);
+  padding: var(--s3) var(--s4);
+  cursor: pointer;
+  list-style-position: inside;
+  min-width: 0;
+}
+
+.summary:hover {
+  background: var(--soft);
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.message {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.groupFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.detail {
+  display: grid;
+  gap: var(--s3);
+  padding: 0 0 var(--s4);
+  min-width: 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  padding: 0 var(--s4);
+  font-size: var(--t-body);
+}
+
+.facts dt {
+  color: var(--muted);
+  font-size: var(--t-label);
+  padding-top: 2px;
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ------------------------------------------------------------ coverage */
+
+.coverage {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4) 0 0;
+  min-width: 0;
+}
+
+.coverage > .bar {
+  margin: 0 var(--s4);
+}
+
+.bigNumber {
+  margin: 0;
+  padding: 0 var(--s4);
+  font-family: var(--font-mono);
+  font-size: var(--t-kpi);
+  color: var(--ink);
+}
+
+.coverageLine {
+  margin: 0;
+  padding: 0 var(--s4);
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .vitals {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--s3);
+  }
+}

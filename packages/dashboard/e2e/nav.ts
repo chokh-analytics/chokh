@@ -13,6 +13,7 @@ export const DESTINATIONS = [
   'Funnels',
   'People',
   'Retention',
+  'Health',
   'Alerts',
 ];
 

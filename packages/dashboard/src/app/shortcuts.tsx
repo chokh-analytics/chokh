@@ -27,8 +27,9 @@ export const OPEN_SHORTCUTS = 'chokh:shortcuts';
 // and "g g" for Geo is what every tool with this convention does, People is u,
 // for users, because p is Pages, and Goals is c, for conversions, because g is
 // taken twice over. Funnels and Alerts are their own first letters, and
-// Retention, whose r is Realtime's, is k, for the people a site keeps.
-const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'c', 'f', 'u', 'k', 'a'];
+// Retention, whose r is Realtime's, is k, for the people a site keeps. Health
+// is its own h.
+const DESTINATION_KEYS = ['o', 'r', 'p', 's', 'g', 'd', 'e', 'c', 'f', 'u', 'k', 'h', 'a'];
 
 // One binding, described once: what it is called, which group it belongs in,
 // and what it does. The keys run this table and the card lists it, so a card

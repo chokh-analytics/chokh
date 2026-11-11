@@ -396,6 +396,74 @@ function RouteGroups({ owner }: { owner: boolean }): JSX.Element {
   );
 }
 
+// JavaScript error capture (AN-VIT01): off until an owner turns it on, and the
+// stack only when they also say so. The collector holds the line whatever a
+// page sends; this card is where the site says which side of it it is on.
+function ErrorCapture({ owner }: { owner: boolean }): JSX.Element {
+  const { site } = useApp();
+  const save = useSaveSite();
+  const [capture, setCapture] = useState(site.settings.errorCapture === true);
+  const [stacks, setStacks] = useState(site.settings.errorStacks === true);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const origin = typeof window === 'undefined' ? '' : window.location.origin;
+
+  async function submit(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    setSaved(false);
+    setBusy(true);
+    setProblem(null);
+    try {
+      await save({ settings: { errorCapture: capture, errorStacks: capture && stacks } });
+      setSaved(true);
+    } catch (error) {
+      setProblem(problemOf(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card title={messages.settings.errors}>
+      <p className={styles.lede}>{messages.settings.errorsLede}</p>
+      <Form
+        title={messages.settings.errors}
+        owner={owner}
+        onSubmit={(event) => void submit(event)}
+        problem={problem}
+        saved={saved}
+        busy={busy}
+      >
+        <SelectField
+          label={messages.settings.errorCapture}
+          value={capture ? 'on' : 'off'}
+          options={[
+            { value: 'off', label: messages.settings.errorCaptureOff },
+            { value: 'on', label: messages.settings.errorCaptureOn },
+          ]}
+          onChange={(change) => setCapture(change.target.value === 'on')}
+        />
+        <SelectField
+          label={messages.settings.errorStacks}
+          help={messages.settings.errorStacksHelp}
+          value={capture && stacks ? 'on' : 'off'}
+          disabled={!capture}
+          options={[
+            { value: 'off', label: messages.settings.errorStacksOff },
+            { value: 'on', label: messages.settings.errorStacksOn },
+          ]}
+          onChange={(change) => setStacks(change.target.value === 'on')}
+        />
+        <Snippet
+          label={messages.settings.errorsSnippet}
+          text={`<script defer src="${origin}/e.js"></script>`}
+        />
+      </Form>
+    </Card>
+  );
+}
+
 // A line to paste somewhere, with a copy control beside it.
 function Snippet({ label, text }: { label: string; text: string }): JSX.Element {
   const [copied, setCopied] = useState(false);
@@ -581,6 +649,7 @@ export function Settings(): JSX.Element {
         <General owner={owner} />
         <Exclusions owner={owner} />
         <RouteGroups owner={owner} />
+        <ErrorCapture owner={owner} />
         <Sharing owner={owner} />
       </div>
     </div>

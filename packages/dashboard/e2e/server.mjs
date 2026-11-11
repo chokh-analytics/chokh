@@ -130,6 +130,33 @@ async function seed(store, now) {
       if (index % 11 === 0) {
         events.push({ ...pageview(store, at + 30_000, which), type: 'event', name: '404' });
       }
+      // What v.js would have sent for this page load (AN-VIT01): phones slower
+      // than desktops, and the pricing page slowest of all, so the slow pages
+      // list has an order and the device split a difference.
+      const agent = AGENTS[which % AGENTS.length];
+      const slow = (agent.device === 'mobile' ? 1.8 : 1) * (PAGES[which % PAGES.length] === '/pricing' ? 1.6 : 1);
+      for (const [name, base] of [['LCP', 1400], ['INP', 90], ['CLS', 0.04], ['FCP', 800], ['TTFB', 300]]) {
+        const spread = 0.6 + ((index * 37 + day * 11) % 100) / 100;
+        events.push({
+          ...pageview(store, at + 2_000, which),
+          type: 'vital',
+          name,
+          value: name === 'CLS' ? base * slow * spread : Math.round(base * slow * spread),
+        });
+      }
+      // A JavaScript error now and then, one with a message long enough to
+      // have to wrap on a phone.
+      if (index % 5 === 0) {
+        events.push({
+          ...pageview(store, at + 3_000, which),
+          type: 'error',
+          name:
+            index % 10 === 0
+              ? "TypeError: Cannot read properties of undefined (reading 'checkoutSessionIdentifierFromTheVeryLongNamedPaymentProviderResponse')"
+              : 'ReferenceError: gtag is not defined',
+          frame: 'https://progsity.io/_next/static/chunks/app.js:1:2048',
+        });
+      }
     }
   }
 
@@ -189,6 +216,20 @@ async function seed(store, now) {
             : {}),
         }),
       );
+      // The regulars' page loads measured too, so the slow pages list has
+      // pages past the twenty samples a number needs.
+      const agent = AGENTS[regular % AGENTS.length];
+      const path = PAGES[(regular + visit) % PAGES.length];
+      const slow = (agent.device === 'mobile' ? 1.8 : 1) * (path === '/pricing' ? 1.6 : 1);
+      for (const [name, base] of [['LCP', 1400], ['INP', 90], ['CLS', 0.04], ['FCP', 800], ['TTFB', 300]]) {
+        const spread = 0.6 + ((visit * 37 + regular * 11) % 100) / 100;
+        events.push({
+          ...pageview(store, at + 2_000, regular, { visitorId, path }),
+          type: 'vital',
+          name,
+          value: name === 'CLS' ? base * slow * spread : Math.round(base * slow * spread),
+        });
+      }
       if (visit === 3 && regular % 2 === 0) {
         events.push({ ...pageview(store, at + 30_000, regular, { visitorId }), type: 'event', name: 'signup' });
       }
@@ -250,7 +291,7 @@ await must(
       // batch whose Origin is not a domain of the site. A real install
       // measuring itself on its own host lists the same thing.
       domains: ['progsity.io', '127.0.0.1'],
-      settings: { timezone: 'Asia/Dhaka', visitorIdMode: 'persistent' },
+      settings: { timezone: 'Asia/Dhaka', visitorIdMode: 'persistent', errorCapture: true },
     }),
   }),
 );

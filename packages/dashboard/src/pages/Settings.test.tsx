@@ -234,6 +234,34 @@ describe('Settings, for an owner', () => {
     expect(await within(routes).findByText(/regrouped on the next hourly pass/)).toBeInTheDocument();
   });
 
+  it('turns error capture on with stacks kept, and never keeps stacks with capture off', async () => {
+    const calls = serve();
+    render(show());
+    const errors = card('JavaScript errors');
+    const capture = within(errors).getByLabelText('Error capture');
+    const stacks = within(errors).getByLabelText('Stack traces');
+    // Off by default, and the stack choice waits for capture.
+    expect(capture).toHaveValue('off');
+    expect(stacks).toBeDisabled();
+    expect(within(errors).getByText(/e\.js"><\/script>/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(capture, 'on');
+    expect(stacks).toBeEnabled();
+    await userEvent.selectOptions(stacks, 'on');
+    await userEvent.click(within(errors).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      const patched = calls().find((call) => call.method === 'PATCH');
+      expect(patched?.body).toEqual({ settings: { errorCapture: true, errorStacks: true } });
+    });
+
+    await userEvent.selectOptions(capture, 'off');
+    await userEvent.click(within(errors).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      const patched = calls().filter((call) => call.method === 'PATCH').at(-1);
+      expect(patched?.body).toEqual({ settings: { errorCapture: false, errorStacks: false } });
+    });
+  });
+
   it('shows the server refusal under the form', async () => {
     serve(() => refused(400, 'INVALID_BODY'));
     render(show());
