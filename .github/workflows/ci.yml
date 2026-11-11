@@ -28,9 +28,25 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      # The Postgres adapter is proved against the image people deploy, the
+      # compose default, for the reason Redis is: a stand-in would only prove
+      # the stand-in. A laptop without CHOKH_TEST_DATABASE_URL starts the
+      # PostgreSQL that embedded-postgres brought with pnpm install instead.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       REDIS_URL: redis://localhost:6379
+      CHOKH_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +87,24 @@ jobs:
       - run: pnpm build
 
       - run: pnpm test
+
+      # The command an operator runs, against a real PostgreSQL: apply, verify,
+      # and apply again to show the second run finds nothing left to create.
+      - name: The Postgres migration applies, verifies and is safe to run twice
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -e
+          node packages/store-postgres/dist/migrate.js --apply
+          report="$(node packages/store-postgres/dist/migrate.js --verify-only)"
+          echo "${report}"
+          echo "${report}" | grep -q 'missing: 0, unexpected: 0'
+          again="$(node packages/store-postgres/dist/migrate.js --apply)"
+          echo "${again}"
+          if echo "${again}" | grep -Eq '(tables|columns|indexes|partitions) created'; then
+            echo "a second apply created something"
+            exit 1
+          fi
 
       - run: pnpm size:tracker
 
@@ -132,6 +166,63 @@ jobs:
           stranger="$(node packages/ee/dist/cli/chokh-license.js keygen --out "${RUNNER_TEMP}/third" | sed -n "s/^  '\(.*\)',$/\1/p")"
           if node packages/ee/dist/cli/chokh-license.js verify "${key}" --public-key "${stranger}"; then
             echo "a key verified against an issuer that did not sign it"
+            exit 1
+          fi
+
+  postgres-floor:
+    name: the Postgres adapter on PostgreSQL 15, the oldest it supports
+    runs-on: ubuntu-latest
+
+    # The README promises PostgreSQL 15 or newer. The job above proves the
+    # version the compose file runs; this one proves the promise, with the same
+    # tests and the same migration against the oldest server it covers.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CHOKH_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The adapter and what it is written against, nothing else.
+      - run: pnpm --filter @chokh/store-postgres... build
+
+      - run: pnpm --filter @chokh/store-postgres test
+
+      - name: The migration applies, verifies and is safe to run twice
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: |
+          set -e
+          node packages/store-postgres/dist/migrate.js --apply
+          report="$(node packages/store-postgres/dist/migrate.js --verify-only)"
+          echo "${report}"
+          echo "${report}" | grep -q 'missing: 0, unexpected: 0'
+          echo "${report}" | grep -q 'PostgreSQL 15'
+          again="$(node packages/store-postgres/dist/migrate.js --apply)"
+          echo "${again}"
+          if echo "${again}" | grep -Eq '(tables|columns|indexes|partitions) created'; then
+            echo "a second apply created something"
             exit 1
           fi
 
