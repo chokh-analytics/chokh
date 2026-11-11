@@ -1545,6 +1545,8 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         expect(profile?.events).toBe(1);
         expect(profile?.sessions).toBe(5);
         expect(profile?.homeGeo?.city).toBe('Dhaka');
+        // Every one of v1's visits opened in Dhaka (AN-PPL01).
+        expect(profile?.homeVisits).toBe(5);
         expect(profile?.devices).toEqual(['Chrome on Android']);
         expect(profile?.ips).toEqual(['103.87.12.9']);
         expect(profile?.timeline.length).toBeGreaterThan(0);

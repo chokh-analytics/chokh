@@ -442,6 +442,18 @@ describe('People, one profile', () => {
     expect(within(facts).queryByText(/23\.8103456/)).toBeNull();
   });
 
+  // AN-PPL01, carried from AN-DSH01: how many of their visits opened there,
+  // out of all of them, when the server counted it.
+  it('says how many of their visits opened in the home place', async () => {
+    at('/s_test/people/v/v_abcdef123456');
+    serve(() => ok(profile({ homeVisits: 7 })));
+    render(show());
+    const facts = await screen.findByRole('region', { name: 'Profile' });
+    await waitFor(() =>
+      expect(within(facts).getByText('Dhaka, Bangladesh, 7 of 9 visits')).toBeInTheDocument(),
+    );
+  });
+
   it('has no address row when the server sent no addresses', async () => {
     at('/s_test/people/v/v_abcdef123456');
     serve();

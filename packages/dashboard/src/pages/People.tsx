@@ -68,16 +68,30 @@ function timeOnly(ts: number, timezone: string): string {
 // as a place, which is a different claim about a person. The map on Realtime
 // draws its own, from the presence set, rounded on the way in.
 //
-// There is no count beside it, because the contract carries one location per
-// profile rather than a tally of them. A ranked list of places per person is
-// AN-PPL01's, and inventing a number here would be worse than not having one.
-function homeLine(profile: { homeGeo?: { country?: string; city?: string } }): string | null {
+// With how many of their visits opened there (AN-PPL01), when the profile says:
+// the count is the visitor row's own tally of places, so it is a count of
+// visits and never of events.
+function homeLine(profile: {
+  homeGeo?: { country?: string; city?: string };
+  homeVisits?: number;
+  sessions: number;
+}): string | null {
   const geo = profile.homeGeo;
   if (geo === undefined) {
     return null;
   }
   const place = [geo.city, countryName(geo.country ?? '') ?? geo.country].filter(Boolean).join(', ');
-  return place === '' ? null : place;
+  if (place === '') {
+    return null;
+  }
+  if (profile.homeVisits === undefined || profile.sessions === 0) {
+    return place;
+  }
+  return format(messages.people.homeVisits, {
+    place,
+    count: formatExact(profile.homeVisits),
+    total: formatExact(Math.max(profile.sessions, profile.homeVisits)),
+  });
 }
 
 function Facts({

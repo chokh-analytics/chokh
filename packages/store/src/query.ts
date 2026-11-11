@@ -361,6 +361,10 @@ export interface VisitorProfile {
   sessions: number;
   // Where they usually connect from: the location seen most often.
   homeGeo?: GeoLocation;
+  // How many of their visits opened there (AN-PPL01, carried from AN-DSH01),
+  // read off the visitor row's tally of places. Absent when no row answered,
+  // because a count of events from a place is not a count of visits.
+  homeVisits?: number;
   devices: string[];
   ips: string[];
   // What first brought them here, and what brought them back last.

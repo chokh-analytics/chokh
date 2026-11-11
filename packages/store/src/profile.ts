@@ -171,6 +171,7 @@ export function profileFrom(
     undefined,
   );
   if (home !== undefined) profile.homeGeo = home.geo;
+  if (home !== undefined && row !== undefined) profile.homeVisits = home.count;
   if (row?.firstTouch !== undefined) profile.firstTouch = row.firstTouch;
   if (row?.lastTouch !== undefined) profile.lastTouch = row.lastTouch;
   return profile;
