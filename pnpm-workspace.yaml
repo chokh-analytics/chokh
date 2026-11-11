@@ -4,3 +4,10 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - mongodb-memory-server
+  # The binaries the Postgres adapter's tests start. Their install script
+  # restores the symlinks a tarball cannot carry, on Linux and macOS.
+  - '@embedded-postgres/darwin-arm64'
+  - '@embedded-postgres/darwin-x64'
+  - '@embedded-postgres/linux-arm64'
+  - '@embedded-postgres/linux-x64'
+  - '@embedded-postgres/windows-x64'

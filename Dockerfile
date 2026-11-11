@@ -21,6 +21,7 @@ COPY packages/server/package.json ./packages/server/
 COPY packages/dashboard/package.json ./packages/dashboard/
 COPY packages/store/package.json ./packages/store/
 COPY packages/store-mongo/package.json ./packages/store-mongo/
+COPY packages/store-postgres/package.json ./packages/store-postgres/
 COPY packages/geo/package.json ./packages/geo/
 COPY packages/sdk-node/package.json ./packages/sdk-node/
 COPY packages/ee/package.json ./packages/ee/
