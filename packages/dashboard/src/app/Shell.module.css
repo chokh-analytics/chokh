@@ -1,8 +1,9 @@
 /*
  * One top bar, no sidebar.
  *
- * There are ten destinations. A sidebar would take 240px from the chart,
- * which is the product, in order to show ten words that fit in a row. Plausible
+ * There are a dozen destinations. A sidebar would take 240px from the chart,
+ * which is the product, in order to show a dozen words that fit in a row, and
+ * the ones that do not fit go under More (AN-DSH03). Plausible
  * and Fathom both go without one; PostHog has one and feels like a console
  * because of it.
  */
@@ -43,16 +44,88 @@
   min-height: var(--topbar-height);
 }
 
-.spacer {
-  flex: 1;
-}
-
 .nav {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s1);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+/*
+ * A hidden copy of the row, every destination and the More trigger, read for
+ * their widths before the first paint. No width of its own and clipped, so a
+ * row wider than the window never widens the page.
+ */
+.ruler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  display: flex;
+  gap: var(--s1);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.ruler > * {
+  flex-shrink: 0;
+}
+
+/*
+ * More, drawn as one more destination: the same type, the same padding, and
+ * the current mark when the page somebody is on is behind it.
+ */
+.navLink.more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  height: auto;
+  min-height: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  padding: var(--s2) var(--s3);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.navLink.more:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.navLink.more.navLinkCurrent {
+  color: var(--ink);
+  background: var(--soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/*
+ * On a phone the row scrolls, and the edge with more past it fades, so the cut
+ * reads as "there is more this way" rather than as the end of the row.
+ */
+.fadeRight {
+  mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+}
+
+.fadeLeft {
+  mask-image: linear-gradient(to left, black calc(100% - 40px), transparent);
+}
+
+.fadeLeft.fadeRight {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 40px,
+    black calc(100% - 40px),
+    transparent
+  );
 }
 
 .nav::-webkit-scrollbar {
@@ -105,19 +178,14 @@
  * Two rows on a phone, and exactly two.
  *
  * The mark, the site switcher, the theme toggle and the account go on one row;
- * the ten destinations get their own scrolling row underneath. The flexible
- * spacer is what broke this: it took the space before the tools could wrap with
- * the switcher, so the toggle and the account name landed on a third row of
- * their own. A margin on the tools pushes them to the end of row one instead,
- * which is the same intent without a box that can be pushed to a new line.
+ * the destinations get their own scrolling row underneath. A margin on the
+ * tools pushes them to the end of row one; a flexible spacer there once took
+ * the space before the tools could wrap with the switcher and put the toggle
+ * and the account on a third row of their own.
  */
 @media (max-width: 720px) {
   .barInner {
     gap: var(--s2);
-  }
-
-  .spacer {
-    display: none;
   }
 
   .tools {
@@ -128,8 +196,8 @@
     order: 3;
     width: 100%;
     padding-bottom: var(--s1);
-    /* Edge to edge, so a scrolling row of ten looks like one rather than
-     * stopping short of the gutter. */
+    /* Edge to edge, so a scrolling row looks like one rather than stopping
+     * short of the gutter. */
     margin-inline: calc(var(--gutter) * -1);
     padding-inline: var(--gutter);
   }
@@ -138,12 +206,14 @@
 /*
  * One row on anything wider than a phone, and exactly one.
  *
- * Ten destinations beside the mark, the site and the account are wider than a
- * 1024 pixel laptop, and a wrapping bar put the theme toggle and the account on
- * a second row of their own, a bar twice the height the range bar sticks
- * under. So here the bar never wraps: everything but the destinations keeps its
- * width, and the destinations scroll inside their own row, the way they already
- * do on a phone, with the current one scrolled into view by the shell.
+ * A dozen destinations beside the mark, the site and the account are wider
+ * than a 1024 pixel laptop, and a wrapping bar put the theme toggle and the
+ * account on a second row of their own, a bar twice the height the range bar
+ * sticks under. So here the bar never wraps: everything but the destinations
+ * keeps its width, and the destinations take the rest. They once scrolled
+ * there with the scrollbar hidden, which hid the last ones with nothing on
+ * screen to say so (AN-DSH03); now the shell draws as many as fit and puts the
+ * rest under More, so the row never needs to scroll.
  */
 @media (min-width: 721px) {
   .barInner {
@@ -155,7 +225,10 @@
   }
 
   .barInner > .nav {
-    flex-shrink: 1;
+    flex: 1 1 0;
     min-width: 0;
+    /* Visible, so the More panel can hang below the bar. Nothing in the row
+     * is wider than it: the shell drew only what fits. */
+    overflow: visible;
   }
 }

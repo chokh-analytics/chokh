@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { goTo } from './nav.js';
+
 // What a first paint actually downloads.
 //
 // This is the one claim about code splitting that a unit test cannot make.
@@ -31,13 +33,13 @@ test('never downloads the world map for a page that has no map on it', async ({ 
   // Forty kilobytes of coastline, on the page every visit starts on.
   expect(seen.filter(isMap), `the map loaded on the Overview: ${seen.join(', ')}`).toEqual([]);
 
-  await page.getByRole('link', { name: 'Pages', exact: true }).click();
+  await goTo(page, 'Pages');
   await expect(page.getByRole('heading', { name: 'Pages', level: 1 })).toBeAttached();
   expect(seen.filter(isMap)).toEqual([]);
 
   // Events, Goals and Funnels are lists of names and never a picture of the world.
   for (const name of ['Events', 'Goals', 'Funnels']) {
-    await page.getByRole('link', { name, exact: true }).click();
+    await goTo(page, name);
     await expect(page.getByRole('heading', { name, level: 1 })).toBeAttached();
     await page.waitForLoadState('networkidle');
     expect(seen.filter(isMap), `the map loaded on ${name}`).toEqual([]);
@@ -53,7 +55,7 @@ test('downloads it once, on the first report that draws one', async ({ page }) =
 
   // Realtime draws the same outlines. One file, so the second report that
   // wants it pays nothing.
-  await page.getByRole('link', { name: 'Realtime', exact: true }).click();
+  await goTo(page, 'Realtime');
   await expect(page.getByRole('heading', { name: 'Realtime', level: 1 })).toBeAttached();
   await page.waitForLoadState('networkidle');
   expect(seen.filter(isMap)).toHaveLength(1);
@@ -67,7 +69,7 @@ test('loads a report as its own file, when it is opened', async ({ page }) => {
   await page.waitForLoadState('networkidle');
   const atFirstPaint = seen.length;
 
-  await page.getByRole('link', { name: 'People', exact: true }).click();
+  await goTo(page, 'People');
   await expect(page.getByRole('heading', { name: 'People', level: 1 })).toBeAttached();
 
   // A report that arrives with the entry chunk is a report everybody pays for.

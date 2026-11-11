@@ -224,9 +224,11 @@ describe('the rules a stylesheet keeps', () => {
   it('gives the phone header two rows and not three', () => {
     const rules = css('../app/Shell.module.css');
     const phone = rules.slice(rules.indexOf('@media (max-width: 720px)'));
-    // The flexible spacer took the space before the tools could wrap with the
-    // switcher, so the toggle and the account landed on a row of their own.
-    expect(phone).toMatch(/\.spacer\s*\{\s*display: none;/);
+    // A flexible spacer once took the space before the tools could wrap with
+    // the switcher, so the toggle and the account landed on a row of their
+    // own. There is no spacer now (AN-DSH03: the destinations take the free
+    // space themselves on a wide bar), and none may come back.
+    expect(rules).not.toMatch(/\.spacer\s*\{/);
     expect(phone).toMatch(/\.tools\s*\{\s*margin-left: auto;/);
     expect(phone).toMatch(/\.nav\s*\{[^}]*width: 100%/s);
   });

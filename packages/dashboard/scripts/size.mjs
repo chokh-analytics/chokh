@@ -54,7 +54,10 @@ const BUDGETS = [
   // directory (AN-PPL02): measured at 39,964 B, the directory's twenty five
   // strings in the one messages file the shell carries and the API call; the
   // page itself is in the People chunk.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 40 * 1024 },
+  // Raised to 41 KB on 2026-11-12 by the commit that spent it, the bar that
+  // never hides a destination (AN-DSH03): measured at 41,067 B, the row that
+  // measures what fits, the More menu and its three strings, in the shell.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 41 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },

@@ -7,6 +7,7 @@ import { signHs256 } from '@chokh/server/jwt';
 import { ssoClaimsFor } from '@chokh/server/sso';
 
 import { OWNER, SSO_SECRET } from './fixture-account.js';
+import { DESTINATIONS, goTo } from './nav.js';
 
 // The walk somebody takes the first time they open this thing, in a real
 // browser against the real server.
@@ -100,7 +101,7 @@ test('walks every report in the navigation', async ({ page }) => {
     ['People', 'People'],
     ['Alerts', 'Alerts'],
   ] as const) {
-    await page.getByRole('link', { name: label, exact: true }).click();
+    await goTo(page, label);
     await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeAttached();
   }
 });
@@ -170,7 +171,7 @@ test('serves its own fonts and nothing from anywhere else', async ({ page }) => 
 // that wrapped put the account on a row of its own under a range bar stuck at
 // the one row height. Either way the page somebody is on is scrolled into the
 // row rather than left past its edge, and the page itself never moves sideways.
-test('keeps eleven destinations in one row at 390 and at 1024, with the current one in view', async ({
+test('keeps the destinations in one row at 390 and at 1024, with the current one in view', async ({
   page,
 }) => {
   // A goal in the list first. The Goals page with nothing in it is one
@@ -216,7 +217,15 @@ test('keeps eleven destinations in one row at 390 and at 1024, with the current 
       }
       const nav = page.getByRole('navigation', { name: 'Report' });
       const row = await nav.boundingBox();
-      const current = await nav.getByRole('link', { name: label, exact: true }).boundingBox();
+      // The current one is a link in the row, or, when it went under More, the
+      // More trigger standing in for it with the current mark (AN-DSH03).
+      const link = nav.getByRole('link', { name: label, exact: true });
+      const current =
+        (await link.count()) > 0
+          ? await link.boundingBox()
+          : await nav
+              .getByRole('button', { name: `More destinations, including ${label}, the page you are on` })
+              .boundingBox();
       const mark = await page.getByRole('link', { name: 'Chokh', exact: true }).boundingBox();
       const bar = await page.locator('header').first().boundingBox();
       expect(row, 'the navigation has no box').not.toBeNull();
@@ -894,6 +903,77 @@ test('shares the Overview with whoever holds the link, behind a password when th
   await guest.reload();
   await expect(guest.getByText('This link does not open anything.')).toBeVisible();
   await context.close();
+});
+
+// AN-DSH03: no destination is ever hidden without a control on screen that
+// reveals it. Wider than a phone, every destination is a link in the row or an
+// item under More, in order, every row link is inside the row's box, More opens
+// from the keyboard, closes on Escape with the focus back on it, and goes to a
+// destination; the page it went to is then marked on the trigger. On a phone
+// the scrolling row fades on the side that has more.
+test('shows every destination in the row or under More at 1024 and 1280, and fades the cut on a phone', async ({
+  page,
+}) => {
+  let movedThroughMore = false;
+  for (const width of [1024, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await boot(page, `/${SITE}/realtime`);
+    const nav = page.getByRole('navigation', { name: 'Report' });
+    const row = await nav.boundingBox();
+    const links = nav.getByRole('link');
+    const inRow = await links.allTextContents();
+    for (let index = 0; index < inRow.length; index += 1) {
+      const box = await links.nth(index).boundingBox();
+      expect(box !== null && row !== null && box.x + box.width <= row.x + row.width + 1, `${inRow[index]} is cut off at ${width}`).toBe(true);
+    }
+    const more = nav.getByRole('button', { name: /^More destinations/ });
+    let under: string[] = [];
+    if ((await more.count()) > 0) {
+      await more.focus();
+      await page.keyboard.press('Enter');
+      await expect(more).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByRole('group', { name: 'More destinations' });
+      under = await panel.getByRole('link').allTextContents();
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
+      await expect(more).toBeFocused();
+    }
+    expect([...inRow, ...under], `at ${width}`).toEqual(DESTINATIONS);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `the bar widens the page at ${width}`).toBeLessThanOrEqual(0);
+
+    const last = under[under.length - 1];
+    if (last !== undefined) {
+      await more.click();
+      await page.getByRole('group', { name: 'More destinations' }).getByRole('link', { name: last, exact: true }).click();
+      await expect(page.getByRole('heading', { level: 1 })).toBeAttached();
+      const marked = nav.getByRole('button', { name: `More destinations, including ${last}, the page you are on` });
+      await expect(marked).toBeVisible();
+      await marked.click();
+      await expect(
+        page.getByRole('group', { name: 'More destinations' }).getByRole('link', { name: last, exact: true }),
+      ).toHaveAttribute('aria-current', 'page');
+      await page.keyboard.press('Escape');
+      movedThroughMore = true;
+    }
+  }
+  // Eleven destinations beside the mark, the site and the account do not fit
+  // in 1024, so this case went through More at least once.
+  expect(movedThroughMore).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await boot(page, `/${SITE}`);
+  const nav = page.getByRole('navigation', { name: 'Report' });
+  await expect(nav).toHaveClass(/fadeRight/);
+  await expect(nav).not.toHaveClass(/fadeLeft/);
+  await boot(page, `/${SITE}/alerts`);
+  await expect(nav).toHaveClass(/fadeLeft/);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
 });
 
 // The people directory (AN-PPL02) against the real server: the list is the

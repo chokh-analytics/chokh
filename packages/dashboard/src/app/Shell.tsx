@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from 'react';
 import { Link, useLocation, useRoute } from 'wouter';
 
 import { api } from '../lib/api.js';
@@ -17,10 +26,11 @@ import { LicenseLine } from '../ui/Pro.js';
 import popover from '../ui/Popover.module.css';
 import { Wordmark } from '../ui/Wordmark.js';
 import { AppContext, type AppContextValue } from './context.js';
+import { fitNav, type NavFit } from './navFit.js';
 import { OPEN_SHORTCUTS, Shortcuts } from './shortcuts.js';
 import styles from './Shell.module.css';
 
-// The frame every report is drawn in: the mark, the site being read, ten
+// The frame every report is drawn in: the mark, the site being read, the
 // destinations, and the three controls that are about the reader rather than
 // about the numbers.
 
@@ -279,28 +289,231 @@ export interface ShellProps {
   children: ReactNode;
 }
 
-export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element {
-  const nav = useRef<HTMLElement>(null);
-  const [location] = useLocation();
+// The width at and under which the bar is a phone's: two rows, the
+// destinations a scrolling row of their own. Shell.module.css draws the same
+// line.
+const PHONE_QUERY = '(max-width: 720px)';
 
-  // The destinations are one row that scrolls sideways wherever ten of them do
-  // not fit: in 390 pixels on a phone, and beside the mark and the account on a
-  // 1024 pixel laptop. The page somebody is on has to be in view, or the row
-  // says nothing about where they are: Goals, Funnels and People start past
-  // the right edge. Only the row scrolls, never the page.
+function usePhone(): boolean {
+  const [phone, setPhone] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches,
+  );
   useEffect(() => {
-    const row = nav.current;
-    const current = row?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (row === null || row === undefined || current === null || current === undefined) {
+    if (typeof window.matchMedia !== 'function') {
+      return undefined;
+    }
+    const query = window.matchMedia(PHONE_QUERY);
+    const update = (): void => setPhone(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return phone;
+}
+
+// Which destination is the page somebody is on: the same test NavLink makes,
+// as an index, so the fit can say whether it went under More.
+function currentIndex(destinations: readonly Destination[], location: string): number {
+  return destinations.findIndex(
+    (destination) =>
+      location === destination.path ||
+      (destination.path.split('/').length > 2 && location.startsWith(`${destination.path}/`)),
+  );
+}
+
+function Chevron(): JSX.Element {
+  return (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M6 9l6 6 6-6z" />
+    </svg>
+  );
+}
+
+// The destinations that did not fit, behind one control at the end of the row
+// (AN-DSH03). When the page somebody is on is one of them, the trigger carries
+// the current mark in its place and says so, so the row still says where they
+// are.
+function MoreMenu({
+  items,
+  current,
+}: {
+  items: readonly Destination[];
+  current: Destination | undefined;
+}): JSX.Element {
+  return (
+    <Popover
+      label={messages.nav.moreLabel}
+      trigger={({ open, toggle }) => (
+        <Button
+          variant="quiet"
+          className={[styles.navLink, styles.more, current === undefined ? '' : styles.navLinkCurrent]
+            .filter(Boolean)
+            .join(' ')}
+          onClick={toggle}
+          aria-expanded={open}
+          aria-haspopup="true"
+          aria-label={
+            current === undefined
+              ? messages.nav.moreLabel
+              : format(messages.nav.moreCurrent, { label: current.label })
+          }
+        >
+          {messages.nav.more}
+          <Chevron />
+        </Button>
+      )}
+    >
+      {({ close }) => (
+        <>
+          {items.map((destination) => {
+            const here = destination === current;
+            return (
+              <Link
+                key={destination.path}
+                to={destination.path}
+                className={[popover.item, here ? popover.itemCurrent : ''].filter(Boolean).join(' ')}
+                aria-current={here ? 'page' : undefined}
+                onClick={close}
+              >
+                <span>{destination.label}</span>
+              </Link>
+            );
+          })}
+        </>
+      )}
+    </Popover>
+  );
+}
+
+// The destinations, and the rule they are drawn by (AN-DSH03): no destination
+// is ever hidden without a control on screen that reveals it.
+//
+// Wider than a phone the bar is one row, and the destinations take what the
+// mark, the site and the account leave. As many as fit are drawn, measured
+// rather than guessed from a breakpoint, because the site's name and the
+// account's vary by install; the rest go under More at the end. The widths are
+// read off a hidden copy of the row before the first paint, so nothing moves
+// when the numbers arrive.
+//
+// On a phone the destinations are a row of their own that scrolls, with the
+// page somebody is on scrolled into view and a fade on whichever edge has more
+// past it, so the cut says there is more rather than looking like the end.
+function Nav({ siteId }: { siteId: string }): JSX.Element {
+  const destinations = useMemo(() => destinationsFor(siteId), [siteId]);
+  const [location] = useLocation();
+  const phone = usePhone();
+  const row = useRef<HTMLElement>(null);
+  const ruler = useRef<HTMLDivElement>(null);
+  const current = currentIndex(destinations, location);
+  const [fit, setFit] = useState<NavFit>({
+    shown: destinations.length,
+    more: false,
+    currentInMore: false,
+  });
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  useLayoutEffect(() => {
+    const box = row.current;
+    const measure = ruler.current;
+    if (phone || box === null || measure === null) {
+      return undefined;
+    }
+    const update = (): void => {
+      const parts = Array.from(measure.children) as HTMLElement[];
+      const trigger = parts.pop();
+      const widths = parts.map((part) => part.getBoundingClientRect().width);
+      const gap = Number.parseFloat(getComputedStyle(box).columnGap) || 0;
+      const next = fitNav(
+        widths,
+        box.clientWidth,
+        trigger?.getBoundingClientRect().width ?? 0,
+        gap,
+        current,
+      );
+      setFit((was) =>
+        was.shown === next.shown && was.more === next.more && was.currentInMore === next.currentInMore
+          ? was
+          : next,
+      );
+    };
+    update();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(box);
+    // The widths change once the product's own fonts arrive.
+    void document.fonts?.ready.then(update);
+    return () => observer?.disconnect();
+  }, [phone, current, destinations]);
+
+  const measureEdges = useCallback(() => {
+    const box = row.current;
+    if (box === null) {
       return;
     }
-    const left = current.offsetLeft - row.offsetLeft;
-    const right = left + current.offsetWidth;
-    if (left < row.scrollLeft || right > row.scrollLeft + row.clientWidth) {
-      row.scrollLeft = Math.max(0, left - (row.clientWidth - current.offsetWidth) / 2);
-    }
-  }, [location]);
+    const left = box.scrollLeft > 1;
+    const right = box.scrollLeft + box.clientWidth < box.scrollWidth - 1;
+    setEdges((was) => (was.left === left && was.right === right ? was : { left, right }));
+  }, []);
 
+  // On a phone the page somebody is on has to be in view, or the row says
+  // nothing about where they are. Only the row scrolls, never the page.
+  useEffect(() => {
+    const box = row.current;
+    if (!phone || box === null) {
+      return undefined;
+    }
+    const here = box.querySelector<HTMLElement>('[aria-current="page"]');
+    if (here !== null) {
+      const left = here.offsetLeft - box.offsetLeft;
+      const right = left + here.offsetWidth;
+      if (left < box.scrollLeft || right > box.scrollLeft + box.clientWidth) {
+        box.scrollLeft = Math.max(0, left - (box.clientWidth - here.offsetWidth) / 2);
+      }
+    }
+    measureEdges();
+    window.addEventListener('resize', measureEdges);
+    return () => window.removeEventListener('resize', measureEdges);
+  }, [phone, location, measureEdges]);
+
+  const shown = phone ? destinations : destinations.slice(0, fit.shown);
+  const hidden = phone ? [] : destinations.slice(fit.shown);
+
+  return (
+    <nav
+      className={[
+        styles.nav,
+        phone && edges.left ? styles.fadeLeft : '',
+        phone && edges.right ? styles.fadeRight : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      aria-label={messages.a11y.mainLandmark}
+      ref={row}
+      onScroll={phone ? measureEdges : undefined}
+    >
+      {shown.map((destination) => (
+        <NavLink key={destination.path} to={destination.path} label={destination.label} />
+      ))}
+      {hidden.length > 0 && (
+        <MoreMenu items={hidden} current={fit.currentInMore ? destinations[current] : undefined} />
+      )}
+      {!phone && (
+        <div className={styles.ruler} aria-hidden="true" ref={ruler}>
+          {destinations.map((destination) => (
+            <span key={destination.path} className={styles.navLink}>
+              {destination.label}
+            </span>
+          ))}
+          <span className={[styles.navLink, styles.more].join(' ')}>
+            {messages.nav.more}
+            <Chevron />
+          </span>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element {
   return (
     <AppContext.Provider value={value}>
       <div className={styles.shell}>
@@ -313,12 +526,7 @@ export function Shell({ value, onSignedOut, children }: ShellProps): JSX.Element
               <Wordmark />
             </Link>
             <SiteSwitcher value={value} />
-            <nav className={styles.nav} aria-label={messages.a11y.mainLandmark} ref={nav}>
-              {destinationsFor(value.site.id).map((destination) => (
-                <NavLink key={destination.path} to={destination.path} label={destination.label} />
-              ))}
-            </nav>
-            <span className={styles.spacer} />
+            <Nav siteId={value.site.id} />
             <div className={styles.tools}>
               <ThemeToggle />
               <AccountMenu value={value} onSignedOut={onSignedOut} />
