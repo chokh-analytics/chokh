@@ -325,7 +325,10 @@ describe('retention reads at 20,000 visitors', () => {
     expect(powerMinDays(30)).toBe(10);
   });
 
-  it('attribution walks event_site_ts, then reads each converter by unique key', async () => {
+  // Since AN-VIT01 the goal's rows are walked on event_site_type_ts, which
+  // holds a type's rows together, so the walk reads the custom events of the
+  // range and not every pageview beside them.
+  it('attribution walks event_site_type_ts, then reads each converter by unique key', async () => {
     const span = { from: NOW - 90 * DAY, to: NOW };
     const goal = { kind: 'event' as const, match: 'signup' };
     const pipeline = attributionConvertersPipeline(SITE, span, goal);
@@ -333,7 +336,7 @@ describe('retention reads at 20,000 visitors', () => {
     const stages = stageNames(explained);
     expect(stages).toContain('IXSCAN');
     expect(stages).not.toContain('COLLSCAN');
-    expect(indexNames(explained)).toEqual(['event_site_ts']);
+    expect(indexNames(explained)).toEqual(['event_site_type_ts']);
     const seen = examined(explained);
     const converters = await db.collection('events').aggregate(pipeline).toArray();
     const reads = attributionLookups(
