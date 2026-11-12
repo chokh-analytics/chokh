@@ -6,8 +6,53 @@ through `pg`. No extension is needed, so a managed Postgres with an ordinary
 role is enough.
 
 This package is being built in parts (`AN-STO02`). What is here today is the
-schema, the migration command and the monthly partitions of `events`; the
-adapter itself and the server's `DATABASE_URL` follow.
+schema, the migration command, the monthly partitions of `events` and the
+control plane (`AccountStore`: sites, accounts, teams, keys, goals, funnels,
+segments, annotations, alerts, digests and the audit log). The reporting half
+and the server's `DATABASE_URL` follow, and until they do nothing in the server
+can select this adapter.
+
+## Opening it
+
+```ts
+import { createPostgresStore } from '@chokh/store-postgres';
+
+const store = await createPostgresStore({ url: 'postgresql://chokh:secret@db.internal:5432/chokh' });
+```
+
+| Option | Default | What it is |
+| --- | --- | --- |
+| `url` | required | A `postgres://` or `postgresql://` connection string |
+| `poolSize` | 10 | How many connections this process may hold |
+| `statementTimeoutMs` | 30000 | How long one statement may run before the server cancels it |
+| `onIdleError` | none | Told when the server drops a connection nobody was using |
+
+Opening refuses, with the command to run, a database the migration has not
+reached, one that is not `UTF8` and a server older than PostgreSQL 15. It never
+creates a table itself.
+
+**TLS** is the URL's business: the driver reads `sslmode` from it and nothing
+else needs setting. For a managed PostgreSQL, use
+`postgresql://user:secret@host:5432/chokh?sslmode=verify-full`, which encrypts
+the connection and checks the server's certificate and name. Most managed
+services sign with a certificate authority of their own and give you its file;
+name it with `&sslrootcert=/path/to/ca.pem`. Two things to know about this
+driver (`pg` 8): it reads `sslmode=require` as `verify-full` too, with a
+warning that a later version will not, so write `verify-full` and mean it; and
+`sslmode=no-verify` encrypts without checking who answered, which is for a
+database on a network you already trust and for nothing else.
+
+**The statement timeout** is what stops one slow report from holding a
+connection for minutes while the collector waits for one. A statement that
+outlives it is cancelled by the server and the connection goes back to the pool
+fit to use. The jobs that are meant to be long lift it for themselves.
+
+**A restart of the database** closes every connection the pool was holding.
+The pool replaces them as they are next needed and the process carries on;
+`onIdleError` is there only so a host can log that it happened.
+
+`close()` ends the pool. A statement already running is allowed to finish
+first, so a shutdown in the middle of a write does not cut the write in half.
 
 ## The migration command
 
@@ -67,8 +112,8 @@ CHOKH_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres p
 
 Each test file works in a schema of its own and drops it, so the database you
 name is left as it was. The role has to be a superuser: one test creates a
-database in another encoding to prove it is refused, and one marks an index
-invalid. CI runs the suite this way against `postgres:17-alpine` and
+database in another encoding to prove it is refused, one marks an index
+invalid and one ends another connection's session. CI runs the suite this way against `postgres:17-alpine` and
 `postgres:15-alpine`.
 
 You need that variable in two cases. On Windows, a checkout deep enough that
