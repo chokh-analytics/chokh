@@ -81,9 +81,17 @@ export default async function setup(project: TestProject): Promise<() => Promise
 
   return async () => {
     await server.stop();
-    // On Windows the directory stays locked for a moment after the last server
-    // process has gone, so the removal waits for it rather than failing a run
-    // whose tests all passed.
-    rmSync(directory, { recursive: true, force: true, maxRetries: 40, retryDelay: 250 });
+    // On Windows the directory stays locked after the last server process has
+    // gone, for a moment on a quiet machine and for much longer on a busy one,
+    // so the removal waits a minute for it. A directory still locked then is
+    // said out loud and left: the server is stopped either way, and a run whose
+    // tests all passed has not failed because a temporary directory outlived it.
+    try {
+      rmSync(directory, { recursive: true, force: true, maxRetries: 240, retryDelay: 250 });
+    } catch (error) {
+      process.stderr.write(
+        `The test PostgreSQL is stopped, but its directory could not be removed (${error instanceof Error ? error.message : String(error)}). Delete it by hand: ${directory}\n`,
+      );
+    }
   };
 }
