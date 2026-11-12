@@ -1,8 +1,9 @@
 import { defaultSiteSettings, type StoredEvent } from '@chokh/store';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { apply } from './migrate.js';
-import { listPartitions } from './partitions.js';
+import { dropEmptyPartitionsBefore, listPartitions } from './partitions.js';
 import { createPostgresStore, type PostgresStore } from './postgres.store.js';
 import { createTestDatabase, type TestDatabase } from './testing/database.js';
 
@@ -104,6 +105,103 @@ describe('the months a purge leaves behind', () => {
     // The next hourly pass finds nothing to delete and the month still empty.
     expect(await store.purge('s_short', AUGUST_FIRST)).toEqual({ events: 0, sessions: 0, visitors: 0 });
     expect(await months()).not.toContain('events_p202606');
+  });
+});
+
+describe('the tidying after a purge', () => {
+  let db: TestDatabase;
+  let store: PostgresStore;
+
+  const months = async (): Promise<string[]> => (await listPartitions(db.pool)).map((row) => row.name);
+
+  beforeAll(async () => {
+    db = await createTestDatabase('tidying');
+    await apply(db.pool, { now: () => NOW });
+    // A statement limit shorter than the half second a drop waits for events.
+    store = await createPostgresStore({ url: db.url, now: () => NOW, statementTimeoutMs: 150 });
+    for (const id of ['s_short', 's_long']) {
+      await store.createSite({
+        id,
+        name: id,
+        domains: [`${id}.example`],
+        settings: defaultSiteSettings({ visitorIdMode: 'persistent' }),
+      });
+    }
+    await store.ingest([
+      pageview('s_short', 'v1', JUNE, '/june'),
+      pageview('s_short', 'v1', JULY, '/july'),
+      pageview('s_long', 'v9', JUNE + 1000, '/june'),
+      pageview('s_long', 'v9', JULY + 1000, '/july'),
+    ]);
+  });
+
+  afterAll(async () => {
+    await store.close();
+    await db.drop();
+  });
+
+  it('never asks for events to itself while every old month still holds a row', async () => {
+    // The usual hour: one site's rows are past its retention, and another
+    // site that keeps its rows longer still has some in the same months.
+    expect((await store.purge('s_short', AUGUST_FIRST)).events).toBe(2);
+
+    const sent = vi.spyOn(pg.Client.prototype, 'query');
+    try {
+      expect(await dropEmptyPartitionsBefore(db.pool, AUGUST_FIRST)).toEqual([]);
+      const statements = sent.mock.calls.map(([first]) =>
+        typeof first === 'string' ? first : String((first as { text?: unknown }).text),
+      );
+      // It looked at both old months, and took no lock to do it.
+      expect(statements.filter((text) => /^SELECT 1 FROM events_p2026\d\d LIMIT 1$/.test(text))).toHaveLength(2);
+      expect(statements.filter((text) => /LOCK|BEGIN|DROP/.test(text))).toEqual([]);
+    } finally {
+      sent.mockRestore();
+    }
+    expect(await months()).toEqual(['events_p202606', 'events_p202607', 'events_p202609', 'events_p202610']);
+  });
+
+  it('is not an error when the statement limit ends the wait for events before the lock timeout does', async () => {
+    const reader = await db.pool.connect();
+    try {
+      await reader.query('BEGIN');
+      await reader.query('SELECT count(*) FROM events');
+      // Both old months are emptied by this purge, so the drop does ask for
+      // events, behind a report that is reading. At 150 ms the statement limit
+      // cancels the wait, long before the lock timeout would have: the purge
+      // answers what it deleted all the same, and nothing is dropped.
+      const purged = await store.purge('s_long', AUGUST_FIRST);
+      expect(purged).toEqual({ events: 2, sessions: 2, visitors: 1 });
+      expect(await months()).toEqual(['events_p202606', 'events_p202607', 'events_p202609', 'events_p202610']);
+      await reader.query('COMMIT');
+    } finally {
+      await reader.query('ROLLBACK').catch(() => undefined);
+      reader.release();
+    }
+    // The next hourly pass has the table to itself for the instant it needs.
+    expect(await store.purge('s_long', AUGUST_FIRST)).toEqual({ events: 0, sessions: 0, visitors: 0 });
+    expect(await months()).toEqual(['events_p202609', 'events_p202610']);
+  });
+
+  it('passes over a month another process dropped first', async () => {
+    await store.ingest([pageview('s_short', 'v1', JUNE + 9000, '/june/again')]);
+    // Two processes run the hourly purge. This one listed the months, and
+    // then the other dropped June: stand in for that by answering the list as
+    // it was, once, after the table has gone.
+    const listed = await listPartitions(db.pool);
+    expect(listed.map((row) => row.name)).toContain('events_p202606');
+    await db.pool.query('DROP TABLE events_p202606');
+    const stale = vi.spyOn(db.pool, 'query');
+    stale.mockImplementationOnce((() =>
+      Promise.resolve({
+        rows: listed.map((row) => ({ name: row.name, bound: `FOR VALUES FROM ('${row.from}') TO ('${row.to}')` })),
+        rowCount: listed.length,
+      })) as never);
+    try {
+      expect(await dropEmptyPartitionsBefore(db.pool, AUGUST_FIRST)).toEqual([]);
+    } finally {
+      stale.mockRestore();
+    }
+    expect(await months()).toEqual(['events_p202609', 'events_p202610']);
   });
 });
 

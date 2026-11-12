@@ -114,10 +114,13 @@ most 122 of them whatever it is sent.
 Retention is per site, so it is a delete and not a partition drop: the hourly
 purge removes a site's rows past its retention, in one transaction, and a month
 wholly older than that is dropped once it holds no row of any site, which gives
-its disk back at once. A drop needs `events` to itself for an instant, so it
-waits at most half a second for a report that is reading and otherwise leaves
-the month for the next hourly pass. A month that was dropped is made again the
-first time a row needs it.
+its disk back at once. A drop needs `events` to itself for an instant, so the
+purge first looks, with no lock held, whether any old month is empty, and asks
+for the table only when one is. Then it waits at most half a second for a
+report that is reading (or the statement timeout, where that is shorter) and
+otherwise leaves the month for the next hourly pass: the tidying never fails
+the purge it follows. A month that was dropped is made again the first time a
+row needs it.
 
 The daily rollups are an ordinary table, `rollups_daily`, and not a
 materialised view: a view is recomputed from the raw rows, and the raw rows are

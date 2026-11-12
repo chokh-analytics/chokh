@@ -177,17 +177,49 @@ export async function createPartition(db: Queryable, month: Month): Promise<bool
 // hourly pass tries again.
 export const DROP_LOCK_TIMEOUT_MS = 500;
 
+// What the database says when a statement waited too long for a lock, when it
+// ran past the statement limit, and when the table it names is not there.
+const LOCK_NOT_AVAILABLE = '55P03';
+const QUERY_CANCELED = '57014';
+const UNDEFINED_TABLE = '42P01';
+
+function codeOf(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null ? (error as { code?: string }).code : undefined;
+}
+
 // Drop the months wholly older than an instant that hold no rows: what the
 // retention purge leaves behind once every site's rows of a month are gone.
 // Answers the names it dropped. A month that still holds a row of any site is
 // never touched, and nothing here deletes a row.
+//
+// It never fails the purge it follows. Whatever stops it (a report that is
+// reading, a look that outlived the statement limit, a month another process
+// dropped first) leaves the month for the next hourly pass.
 export async function dropEmptyPartitionsBefore(pool: Pool, before: number): Promise<string[]> {
   const old = (await listPartitions(pool)).filter(
     // By name as well as by age: a table somebody attached to events under a
     // name of their own is theirs, and is not dropped here.
     (row) => row.to <= before && PARTITION_NAME.test(row.name),
   );
-  if (old.length === 0) {
+  // A first look with no lock held. Most hours no old month is empty, because
+  // a site that keeps its rows longer still has some there, and then events is
+  // never asked for at all: asking for it queues behind every report that is
+  // reading and holds up every batch that arrives meanwhile.
+  const empty: typeof old = [];
+  for (const month of old) {
+    try {
+      const any = await pool.query(`SELECT 1 FROM ${month.name} LIMIT 1`);
+      if (any.rowCount === 0) {
+        empty.push(month);
+      }
+    } catch (error) {
+      const code = codeOf(error);
+      if (code !== QUERY_CANCELED && code !== UNDEFINED_TABLE) {
+        throw error;
+      }
+    }
+  }
+  if (empty.length === 0) {
     return [];
   }
   const dropped: string[] = [];
@@ -201,7 +233,9 @@ export async function dropEmptyPartitionsBefore(pool: Pool, before: number): Pro
     // it; and held from before the look, so no row can land in a month between
     // finding it empty and dropping it.
     await client.query(`LOCK TABLE ${EVENTS} IN ACCESS EXCLUSIVE MODE`);
-    for (const month of old) {
+    // The look again, now that nothing can be written: a row may have landed
+    // since the first one.
+    for (const month of empty) {
       const any = await client.query(`SELECT 1 FROM ${month.name} LIMIT 1`);
       if (any.rowCount === 0) {
         await client.query(`DROP TABLE ${month.name}`);
@@ -212,8 +246,12 @@ export async function dropEmptyPartitionsBefore(pool: Pool, before: number): Pro
     return dropped;
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
-    // Somebody is reading: not an error, and nothing was dropped.
-    if (typeof error === 'object' && error !== null && (error as { code?: string }).code === '55P03') {
+    // Somebody is reading: not an error, and nothing was dropped. The wait
+    // for the table ends at the lock timeout above or at the pool's statement
+    // limit, whichever is shorter, and either way the answer is the same. So
+    // is it when another process dropped the month between the two looks.
+    const code = codeOf(error);
+    if (code === LOCK_NOT_AVAILABLE || code === QUERY_CANCELED || code === UNDEFINED_TABLE) {
       return [];
     }
     throw error;
