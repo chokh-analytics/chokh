@@ -22,9 +22,34 @@ export const envSchema = z.object({
   // Where the built dashboard lives. Unset means "the sibling package's dist",
   // which is what a workspace checkout wants; the image sets it explicitly.
   DASHBOARD_DIR: optional,
-  // Where the rows go. Unset means the in-memory adapter, which keeps nothing
-  // across a restart and is never a deployment.
+  // Where the rows go: MONGODB_URI is MongoDB and DATABASE_URL is PostgreSQL.
+  // One of them, never both, because a deployment has one database and a
+  // process that quietly picked one would be writing to the wrong place for as
+  // long as nobody looked. With neither, the in-memory adapter, which keeps
+  // nothing across a restart and is refused in production by the check below.
   MONGODB_URI: optional,
+  DATABASE_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z
+      .string()
+      .regex(
+        /^postgres(ql)?:\/\//,
+        'DATABASE_URL is a PostgreSQL connection string, starting postgres:// or postgresql://',
+      )
+      .optional(),
+  ),
+  // How many connections to PostgreSQL this process may hold, and how long one
+  // statement may run before the server cancels it. Unset means the adapter's
+  // own defaults (ten, and thirty seconds). Lower the first behind a pooler or
+  // on a database with a small connection limit.
+  DATABASE_POOL_SIZE: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.coerce.number().int().min(1).max(200).optional(),
+  ),
+  DATABASE_STATEMENT_TIMEOUT_MS: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.coerce.number().int().min(100).max(3_600_000).optional(),
+  ),
   // Where "who is here now" is kept. Unset means a map in this process, which
   // is a complete install on one container; set it and every process of an
   // install counts the same visitors. Losing Redis costs a minute of the
@@ -126,6 +151,26 @@ export const envSchema = z.object({
       path: ['CHOKH_PROXY_SECRET'],
       message:
         'CHOKH_PROXY_SECRET is required for REAL_IP_HEADER=X-Chokh-Forwarded-For: without it the header is one anybody can set, so every visitor could claim any address',
+    });
+  }
+  // One database. The message names both variables and says what was found,
+  // because whoever reads it is looking at an environment they did not write.
+  const mongo = parsed.MONGODB_URI !== undefined;
+  const postgres = parsed.DATABASE_URL !== undefined;
+  if (mongo && postgres) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message:
+        'MONGODB_URI and DATABASE_URL are both set, and Chokh runs on one database: MONGODB_URI chooses MongoDB, DATABASE_URL chooses PostgreSQL. Unset the one this install does not use',
+    });
+  }
+  if (parsed.NODE_ENV === 'production' && !mongo && !postgres) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message:
+        'Neither MONGODB_URI nor DATABASE_URL is set. In production that would run on memory and lose every row at the next restart: set DATABASE_URL for PostgreSQL or MONGODB_URI for MongoDB',
     });
   }
   if (parsed.NODE_ENV === 'production' && parsed.SESSION_SECRET === undefined) {

@@ -191,6 +191,9 @@ importers:
       '@chokh/store-mongo':
         specifier: workspace:*
         version: link:../store-mongo
+      '@chokh/store-postgres':
+        specifier: workspace:*
+        version: link:../store-postgres
       '@fastify/cookie':
         specifier: ^11.0.2
         version: 11.1.2

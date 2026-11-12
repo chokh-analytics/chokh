@@ -50,6 +50,11 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   RANGE_TOO_LONG: 400,
   UNSUPPORTED_DIMENSION: 400,
   MISSING_DIMENSION: 400,
+  // Raised by the PostgreSQL adapter for a name no route lets through: an
+  // operator, an interval or a goal kind that is not one of the declared few.
+  UNSUPPORTED_FILTER: 400,
+  UNSUPPORTED_INTERVAL: 400,
+  INVALID_GOAL: 400,
   UNSUPPORTED_GOAL: 400,
   INVALID_FUNNEL: 400,
   INVALID_BRANCHES: 400,

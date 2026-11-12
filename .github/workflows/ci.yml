@@ -106,6 +106,99 @@ jobs:
             exit 1
           fi
 
+      # The built server as a process, against the PostgreSQL the step above
+      # migrated: what it refuses to boot on, a pageview in and out again, and
+      # how it stops. A process and not a test, because the signal, the exit
+      # status and the first lines it writes are the things being proved, and
+      # none of them exists inside a test runner. Last of the steps that need
+      # the database, because it ends by taking the database away.
+      - name: The server boots on PostgreSQL, refuses what it should, and stops when told
+        env:
+          NODE_ENV: production
+          SESSION_SECRET: a-secret-long-enough-for-a-ci-run-0000
+          COOKIE_SECURE: 'false'
+          LOG_LEVEL: info
+          PORT: '4190'
+        run: |
+          set -e
+          url=postgresql://postgres:postgres@localhost:5432/postgres
+          server=packages/server/dist/server.js
+          postgres="$(docker ps -q --filter ancestor=postgres:17-alpine)"
+
+          # Each of these must exit by itself, not zero, and say why. The limit
+          # is there so a server that boots after all fails the step in twenty
+          # seconds instead of holding the job.
+          refused() {
+            local name="$1" expected="$2"
+            shift 2
+            if out="$(env "$@" timeout 20 node "${server}" 2>&1)"; then
+              echo "the server booted with ${name}"
+              exit 1
+            fi
+            echo "${name}: $(grep -m1 "${expected}" <<< "${out}" || tail -n 5 <<< "${out}")"
+            grep -q "${expected}" <<< "${out}"
+          }
+          refused 'both databases named' 'MONGODB_URI and DATABASE_URL are both set' \
+            MONGODB_URI=mongodb://localhost:1/chokh DATABASE_URL="${url}"
+          refused 'no database named' 'Neither MONGODB_URI nor DATABASE_URL is set'
+          docker exec "${postgres}" psql -U postgres -q -c 'CREATE DATABASE chokh_empty'
+          refused 'a database nobody migrated' 'migrate.js --apply' \
+            DATABASE_URL="${url%/postgres}/chokh_empty"
+          refused 'a database that is not there' 'could not open its database' \
+            DATABASE_URL=postgresql://postgres:postgres@localhost:1/postgres
+
+          boot() {
+            DATABASE_URL="${url}" node "${server}" > server.log 2>&1 &
+            pid=$!
+            for attempt in $(seq 1 60); do
+              if curl -fs http://localhost:4190/health > /dev/null; then return 0; fi
+              sleep 1
+            done
+            cat server.log
+            return 1
+          }
+          boot
+          grep -q '"store":"postgres"' server.log
+
+          curl -fs -c jar -X POST http://localhost:4190/api/auth/register \
+            -H 'content-type: application/json' \
+            -d '{"email":"ci@example.com","password":"a-long-enough-password"}' > /dev/null
+          curl -fs -b jar -X POST http://localhost:4190/api/sites \
+            -H 'content-type: application/json' \
+            -d '{"id":"ci_site","name":"CI","domains":["example.com"],"settings":{"timezone":"Asia/Dhaka"}}' > /dev/null
+          now="$(($(date +%s) * 1000))"
+          curl -fs -X POST http://localhost:4190/api/collect \
+            -H 'content-type: text/plain' -H 'origin: https://example.com' \
+            -d "{\"siteId\":\"ci_site\",\"sentAt\":${now},\"hostname\":\"example.com\",\"visitorId\":\"v_ci\",\"lang\":\"en\",\"screen\":\"1440x900\",\"events\":[{\"type\":\"pageview\",\"ts\":$((now - 1000)),\"path\":\"/pricing\"}]}"
+          read_back() {
+            curl -fs -b jar "http://localhost:4190/api/sites/ci_site/stats/aggregate?from=$((now - 3600000))&to=$((now + 60000))"
+          }
+          answer="$(read_back)"
+          echo "${answer}"
+          grep -q '"pageviews":1' <<< "${answer}"
+
+          # Told to stop with the database there. It exits by itself and with
+          # zero: killed by the signal instead, the status would be 143.
+          kill -TERM "${pid}"
+          wait "${pid}"
+          echo "stopped cleanly with the database present"
+
+          # What it wrote is there for the next process.
+          boot
+          answer="$(read_back)"
+          grep -q '"pageviews":1' <<< "${answer}"
+
+          # Told to stop with the database gone. It still exits, and with zero.
+          docker stop "${postgres}" > /dev/null
+          kill -TERM "${pid}"
+          if ! timeout 30 tail --pid="${pid}" -f /dev/null; then
+            echo "still running thirty seconds after SIGTERM with the database gone"
+            cat server.log
+            exit 1
+          fi
+          wait "${pid}"
+          echo "stopped cleanly with the database gone"
+
       - run: pnpm size:tracker
 
       # The dashboard is the first screenshot a developer sees and the first
@@ -144,6 +237,30 @@ jobs:
           rm packages/server/src/crossing-probe.ts
 
           node scripts/ee-boundary.mjs
+
+      # Rule 3 again, for the driver: only packages/store-postgres imports pg.
+      # Injected the same way and for the same reason, in the server, in the
+      # paid half and in a script, and then the adapter itself is linted to
+      # show the rule lets through the one place it should.
+      - name: The lint rule refuses the PostgreSQL driver outside its adapter
+        run: |
+          set -e
+          for file in packages/server/src/pg-probe.ts packages/ee/src/pg-probe.ts scripts/pg-probe.mjs; do
+            printf "import pg from 'pg';\nexport const probe = pg;\n" > "${file}"
+            if said="$(pnpm exec eslint "${file}" 2>&1)"; then
+              echo "lint passed ${file} importing pg"
+              exit 1
+            fi
+            rm "${file}"
+            # Refused, and by this rule: a file lint cannot parse fails too.
+            if ! grep -q 'no-restricted-imports' <<< "${said}"; then
+              echo "lint failed ${file} for another reason:"
+              echo "${said}"
+              exit 1
+            fi
+            echo "refused: ${file}"
+          done
+          pnpm exec eslint packages/store-postgres/src/db.ts
 
       # The same, for the CLA. It runs here on every push rather than only on
       # the day a stranger opens a pull request, so the check is known to work
@@ -398,6 +515,20 @@ jobs:
           body="$(curl -fs http://localhost:4100/health)"
           echo "${body}"
           echo "${body}" | grep -q '"success":true'
+
+      # The image can run on PostgreSQL, so it carries the driver. It must not
+      # carry a PostgreSQL server: the adapter's tests bring one of their own
+      # (embedded-postgres, sixty megabytes of binaries), and a dev dependency
+      # that reached the runtime stage would ship in every install.
+      - name: The image carries the driver and no PostgreSQL server
+        run: |
+          set -e
+          found="$(docker compose exec -T server sh -c "find / -xdev \\( -name '*embedded-postgres*' -o -type f \\( -name initdb -o -name pg_ctl -o -name postgres \\) \\) 2>/dev/null" || true)"
+          echo "PostgreSQL server files in the image: ${found:-none}"
+          [ -z "${found}" ]
+          docker compose exec -T server sh -c "ls node_modules/.pnpm | grep -E '^pg@'"
+          docker compose exec -T server sh -c "test -f packages/store-postgres/dist/index.js"
+          docker image inspect "$(docker compose images -q server)" --format 'image size: {{.Size}} bytes'
 
       - name: Apply the index migration against the real MongoDB
         run: docker compose exec -T server node packages/store-mongo/dist/migrate.js --apply

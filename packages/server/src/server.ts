@@ -5,19 +5,31 @@ import { DATABASE_FILE, openReader, startGeoRefresh } from '@chokh/geo';
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
 import { loadExtensions } from './lib/load-extensions.js';
+import { shutdown } from './lib/shutdown.js';
 import { openBus, openOnce } from './plugins/bus.js';
 import { createSwappableGeoReader } from './plugins/geo.js';
 import { openPresence } from './plugins/presence.js';
-import { openStore } from './plugins/store.js';
+import { createLateLog, openStore } from './plugins/store.js';
 import { startJobs } from './services/jobs.js';
 
 const geo = createSwappableGeoReader(await openReader(join(env.GEOIP_DIR, DATABASE_FILE)));
 const { presence, kind: presenceKind } = openPresence();
-const { store, kind, version } = await openStore(presence);
+// Opened before the app, which is built around it, so what it has to say goes
+// to a log that is attached once there is one.
+const storeLog = createLateLog();
+const { store, kind, version } = await openStore(presence, storeLog).catch((error: unknown) => {
+  // A database that is not there, not migrated or not one this product runs
+  // on. One line that says which, without a stack, and a status a supervisor
+  // can read: nothing has been started that needs stopping.
+  const reason = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`Chokh could not open its database: ${reason}\n`);
+  process.exit(1);
+});
 const { bus, kind: busKind } = openBus();
 const { once } = openOnce(() => Date.now());
 const loaded = await loadExtensions();
 const app = await buildApp({ geo: geo.reader, store, bus, once, extensions: loaded.extensions });
+storeLog.use(app.log);
 app.log.info(
   { store: kind, ...(version === undefined ? {} : { version }), presence: presenceKind, bus: busKind },
   'storage adapter opened',
@@ -58,17 +70,26 @@ const stopGeoRefresh = startGeoRefresh({
   },
 });
 
+// Stopping, in the order things depend on one another: no new requests first
+// (the listener closes and the requests in flight finish), then the store they
+// were writing to, then what the store was using. A step that fails is said
+// and passed over: a database that has already gone away must not be the
+// reason this process never exits, and a supervisor that asked it to stop is
+// owed an exit either way.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
     stopJobs();
     stopGeoRefresh();
-    void app
-      .close()
-      .then(() => store.close())
-      .then(() => presence.close())
-      .then(() => bus.close())
-      .then(() => once.close())
-      .then(() => process.exit(0));
+    void shutdown(
+      [
+        ['the listener', () => app.close()],
+        ['the store', () => store.close()],
+        ['presence', () => presence.close()],
+        ['the bus', () => bus.close()],
+        ['the replay set', () => once.close()],
+      ],
+      (details, message) => app.log.warn(details, message),
+    ).then(() => process.exit(0));
   });
 }
 

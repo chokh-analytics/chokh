@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { envSchema } from './env.js';
 
+const MONGO = 'mongodb://mongo:27017/chokh';
+const POSTGRES = 'postgresql://chokh:secret@postgres:5432/chokh';
+const SECRET = 'c'.repeat(32);
+
 // A compose file writing GEOIP_LICENSE_KEY: ${GEOIP_LICENSE_KEY:-} hands over an
 // empty string, and an empty string has to mean unset or the server refuses to
 // start for a variable nobody was asked to set.
@@ -163,9 +167,15 @@ describe('envSchema', () => {
     // one container that signs everybody out on a deploy, and on two it signs half
     // the requests out all the time.
     it('refuses to run in production without a session secret', () => {
-      expect(() => envSchema.parse({ NODE_ENV: 'production' })).toThrow(/SESSION_SECRET/);
+      expect(() => envSchema.parse({ NODE_ENV: 'production', MONGODB_URI: MONGO })).toThrow(
+        /SESSION_SECRET/,
+      );
       expect(
-        envSchema.parse({ NODE_ENV: 'production', SESSION_SECRET: 'c'.repeat(32) }).NODE_ENV,
+        envSchema.parse({
+          NODE_ENV: 'production',
+          SESSION_SECRET: 'c'.repeat(32),
+          MONGODB_URI: MONGO,
+        }).NODE_ENV,
       ).toBe('production');
     });
 
@@ -173,5 +183,94 @@ describe('envSchema', () => {
       expect(envSchema.parse({ NODE_ENV: 'development' }).SESSION_SECRET).toBeUndefined();
       expect(envSchema.parse({ NODE_ENV: 'test' }).SESSION_SECRET).toBeUndefined();
     });
+  });
+});
+
+// One deployment, one database. MONGODB_URI is MongoDB and DATABASE_URL is
+// PostgreSQL; a process handed both would have to guess, and one handed
+// neither would keep every row in memory until its next restart.
+describe('which database', () => {
+  const production = { NODE_ENV: 'production', SESSION_SECRET: SECRET };
+
+  it('takes either one', () => {
+    expect(envSchema.parse({ ...production, MONGODB_URI: MONGO }).MONGODB_URI).toBe(MONGO);
+    expect(envSchema.parse({ ...production, DATABASE_URL: POSTGRES }).DATABASE_URL).toBe(POSTGRES);
+    expect(
+      envSchema.parse({ ...production, DATABASE_URL: 'postgres://u:p@h/db?sslmode=verify-full' })
+        .DATABASE_URL,
+    ).toContain('sslmode=verify-full');
+  });
+
+  it('refuses both, in every mode, and names the two and what it found', () => {
+    for (const mode of ['production', 'development', 'test']) {
+      const refused = envSchema.safeParse({
+        NODE_ENV: mode,
+        SESSION_SECRET: SECRET,
+        MONGODB_URI: MONGO,
+        DATABASE_URL: POSTGRES,
+      });
+      expect(refused.success).toBe(false);
+      const said = refused.error?.issues.map((issue) => issue.message).join(' ') ?? '';
+      expect(said).toContain('MONGODB_URI and DATABASE_URL are both set');
+      // Never the values: a connection string carries a password.
+      expect(said).not.toContain('secret');
+      expect(said).not.toContain('mongo:27017');
+    }
+  });
+
+  it('refuses neither in production, and names the two and what it found', () => {
+    const refused = envSchema.safeParse(production);
+    expect(refused.success).toBe(false);
+    const said = refused.error?.issues.map((issue) => issue.message).join(' ') ?? '';
+    expect(said).toContain('Neither MONGODB_URI nor DATABASE_URL is set');
+    expect(said).toContain('lose every row at the next restart');
+  });
+
+  it('runs on memory with neither outside production, which is what a laptop wants', () => {
+    for (const mode of ['development', 'test']) {
+      const parsed = envSchema.parse({ NODE_ENV: mode });
+      expect(parsed.MONGODB_URI).toBeUndefined();
+      expect(parsed.DATABASE_URL).toBeUndefined();
+    }
+  });
+
+  it('reads an empty one as unset, the way a compose file hands it over', () => {
+    const parsed = envSchema.parse({ ...production, MONGODB_URI: '', DATABASE_URL: POSTGRES });
+    expect(parsed.MONGODB_URI).toBeUndefined();
+    expect(envSchema.safeParse({ ...production, MONGODB_URI: '', DATABASE_URL: '' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a DATABASE_URL that is not a PostgreSQL URL', () => {
+    for (const url of ['mongodb://mongo/chokh', 'mysql://h/db', 'localhost:5432', 'postgres']) {
+      expect(() => envSchema.parse({ ...production, DATABASE_URL: url })).toThrow(
+        /PostgreSQL connection string/,
+      );
+    }
+  });
+
+  it('takes a pool size and a statement limit, and refuses ones that cannot work', () => {
+    const parsed = envSchema.parse({
+      ...production,
+      DATABASE_URL: POSTGRES,
+      DATABASE_POOL_SIZE: '4',
+      DATABASE_STATEMENT_TIMEOUT_MS: '5000',
+    });
+    expect(parsed.DATABASE_POOL_SIZE).toBe(4);
+    expect(parsed.DATABASE_STATEMENT_TIMEOUT_MS).toBe(5000);
+    const unset = envSchema.parse({ ...production, DATABASE_URL: POSTGRES, DATABASE_POOL_SIZE: '' });
+    expect(unset.DATABASE_POOL_SIZE).toBeUndefined();
+    expect(unset.DATABASE_STATEMENT_TIMEOUT_MS).toBeUndefined();
+    for (const bad of [
+      { DATABASE_POOL_SIZE: '0' },
+      { DATABASE_POOL_SIZE: '2.5' },
+      { DATABASE_POOL_SIZE: 'ten' },
+      { DATABASE_STATEMENT_TIMEOUT_MS: '5' },
+    ]) {
+      expect(envSchema.safeParse({ ...production, DATABASE_URL: POSTGRES, ...bad }).success).toBe(
+        false,
+      );
+    }
   });
 });

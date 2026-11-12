@@ -38,6 +38,7 @@ COPY packages/ee/LICENSE ./packages/ee/LICENSE
 COPY --from=build /app/packages/geo/dist ./packages/geo/dist
 COPY --from=build /app/packages/store/dist ./packages/store/dist
 COPY --from=build /app/packages/store-mongo/dist ./packages/store-mongo/dist
+COPY --from=build /app/packages/store-postgres/dist ./packages/store-postgres/dist
 COPY --from=build /app/packages/dashboard/dist ./public
 # The tracker is served from that same root, so a page can point at
 # https://<install>/a.js. Without this the image carries a dashboard and no

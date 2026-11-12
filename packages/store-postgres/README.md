@@ -6,8 +6,8 @@ through `pg`. No extension is needed, so a managed Postgres with an ordinary
 role is enough.
 
 It implements both contracts in full and passes the one conformance suite every
-adapter passes, against a real PostgreSQL. The server does not select it yet:
-`DATABASE_URL` arrives with the next part of `AN-STO02`.
+adapter passes, against a real PostgreSQL. The server opens it when
+`DATABASE_URL` is set; `packages/server/README.md` has the variables.
 
 ## Opening it
 

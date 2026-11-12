@@ -848,7 +848,10 @@ empty and events are still collected.
 | `GEOIP_LICENSE_KEY` | none | Chooses GeoLite2-City over the keyless fallback |
 | `COLLECT_RATE_LIMIT_IP` | `3000` | Batches a minute from one address |
 | `COLLECT_RATE_LIMIT_SITE` | `60000` | Batches a minute for one site |
-| `MONGODB_URI` | none | Set it and the server runs on MongoDB, unset and it runs on memory |
+| `DATABASE_URL` | none | A `postgres://` or `postgresql://` URL: the server runs on PostgreSQL |
+| `DATABASE_POOL_SIZE` | `10` | Connections to PostgreSQL this process may hold |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | `30000` | How long one PostgreSQL statement may run before the server cancels it |
+| `MONGODB_URI` | none | The server runs on MongoDB. Set this or `DATABASE_URL`, never both |
 | `REDIS_URL` | none | Presence, the realtime nudge and the SSO replay set in Redis rather than in this process |
 | `SESSION_SECRET` | none | Signs the dashboard session cookie. Required in production |
 | `SESSION_TTL_HOURS` | `12` | How long a session lasts |
@@ -894,13 +897,53 @@ site whose visitors are known to arrive one address each.
 The server talks to one interface, `AnalyticsStore`, and never to a database
 driver. Which adapter it opens is decided once at boot:
 
+- **`DATABASE_URL` set:** `@chokh/store-postgres`, on PostgreSQL 15 or newer.
 - **`MONGODB_URI` set:** `@chokh/store-mongo`. The database name comes from the
   connection string.
-- **`MONGODB_URI` unset:** the in-memory adapter. It answers every read, so the
+- **Neither set:** the in-memory adapter. It answers every read, so the
   tracker and the dashboard work on a laptop with nothing installed, and it
   keeps nothing across a restart. It is not a deployment.
 
-Both adapters pass the same conformance suite in `@chokh/store`.
+All three pass the same conformance suite in `@chokh/store`.
+
+**One database, and in production one is required.** The server refuses to
+start when both variables are set, in any mode, because a process that quietly
+picked one would write to the wrong place for as long as nobody looked; the
+message names the two and never prints either value. With `NODE_ENV=production`
+it also refuses to start with neither, because memory loses every row at the
+next restart. The published image sets `NODE_ENV=production`, so a bare
+`docker run` of it with no database stops with that message: use
+`docker compose up`, which brings a database with it, to try the product.
+
+### PostgreSQL
+
+Create the tables before you collect anything, and run the same command again
+after every upgrade:
+
+```
+node packages/store-postgres/dist/migrate.js --apply
+node packages/store-postgres/dist/migrate.js --verify-only
+```
+
+A server pointed at a database this command has not reached does not start: it
+writes one line naming what is missing and the command to run, and exits. The
+database has to be `UTF8`, which every official image and managed service
+creates. The boot log line that names the storage adapter carries the server's
+version (`"store":"postgres","version":"17.11"`).
+
+A managed PostgreSQL that requires TLS is reached by its own URL with
+`?sslmode=verify-full`, and `&sslrootcert=/path/to/ca.pem` when the provider
+signs with its own authority. `packages/store-postgres/README.md` has the rest:
+how `events` is partitioned by month, what retention does, and the two things to
+know about how the driver reads `sslmode`.
+
+One statement may run for `DATABASE_STATEMENT_TIMEOUT_MS` before the database
+cancels it, so one slow report cannot hold a connection while the collector
+waits for one. A report that is cancelled answers `500` with the same envelope
+any fault of the database does, on either database. The rollup, the route
+regroup and the retention purge are allowed to run longer.
+
+### MongoDB
 
 **MongoDB 5.0 or newer.** A property value is read with `$getField`, which 5.0
 introduced, so that a property name with a dot or a dollar in it stays a name,
