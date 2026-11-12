@@ -6,11 +6,14 @@ through `pg`. No extension is needed, so a managed Postgres with an ordinary
 role is enough.
 
 This package is being built in parts (`AN-STO02`). What is here today is the
-schema, the migration command, the monthly partitions of `events` and the
-control plane (`AccountStore`: sites, accounts, teams, keys, goals, funnels,
-segments, annotations, alerts, digests and the audit log). The reporting half
-and the server's `DATABASE_URL` follow, and until they do nothing in the server
-can select this adapter.
+schema, the migration command, the monthly partitions of `events`, the control
+plane (`AccountStore`) and, of the reporting side, the write path (`ingest`),
+the totals, series, breakdowns, time on page, conversions, custom events and
+their properties, profiles, the people directory, realtime and the daily
+rollup. Funnels, journeys, retention, health, the route regroup and the purge
+follow, and the one conformance suite is wired with them: its reporting half
+seeds one world and cannot pass by halves. Until then nothing in the server can
+select this adapter.
 
 ## Opening it
 
@@ -26,6 +29,9 @@ const store = await createPostgresStore({ url: 'postgresql://chokh:secret@db.int
 | `poolSize` | 10 | How many connections this process may hold |
 | `statementTimeoutMs` | 30000 | How long one statement may run before the server cancels it |
 | `onIdleError` | none | Told when the server drops a connection nobody was using |
+| `onOutsideWindow` | none | Told how many rows of a batch were outside the window a partition may exist for |
+| `presence` | a map in this process | Where who is live is kept: Redis when a deployment has one |
+| `now` | the clock | Injected so a test can say what today is |
 
 Opening refuses, with the command to run, a database the migration has not
 reached, one that is not `UTF8` and a server older than PostgreSQL 15. It never
@@ -52,7 +58,22 @@ The pool replaces them as they are next needed and the process carries on;
 `onIdleError` is there only so a host can log that it happened.
 
 `close()` ends the pool. A statement already running is allowed to finish
-first, so a shutdown in the middle of a write does not cut the write in half.
+first, and so is a caller that was still waiting for a connection, so a
+shutdown in the middle of a write does not cut the write in half or leave a
+request unanswered. A batch is written by one statement: it is stored whole or
+not at all.
+
+## Reads and the day
+
+No statement draws a day or a bucket. The contract does, in the site's own
+time zone, and hands SQL the boundaries as a parameter; SQL groups by them
+(`width_bucket`). So a report means the same day on any server, whatever its
+`TimeZone` setting and however old its time zone data, and the same day the
+other adapters mean.
+
+A row whose instant no partition may exist for (see below) is not stored and
+does not fail the rows beside it; `onOutsideWindow` is told how many, and
+`store.outsideWindow` keeps the running count.
 
 ## The migration command
 

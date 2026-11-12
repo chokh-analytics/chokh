@@ -323,6 +323,25 @@ describe('two processes at once', () => {
 });
 
 describe('closing the adapter', () => {
+  it('serves a caller already waiting for a connection before it ends the pool', async () => {
+    const db = await createTestDatabase('close_queue');
+    try {
+      await apply(db.pool);
+      // One connection, so the second statement has to queue behind the first.
+      const store = await createPostgresStore({ url: db.url, poolSize: 1 });
+      const first = store.pool.query('SELECT pg_sleep(0.3)');
+      const queued = store.userCount();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(store.pool.waitingCount).toBe(1);
+      await store.close();
+      await first;
+      // Without the wait in close this promise is never settled at all.
+      expect(await queued).toBe(0);
+    } finally {
+      await db.drop();
+    }
+  });
+
   it('lets a statement in flight finish, then refuses the next call', async () => {
     const db = await createTestDatabase('close');
     try {
