@@ -5,15 +5,9 @@ The PostgreSQL storage adapter for Chokh: the `AnalyticsStore` and
 through `pg`. No extension is needed, so a managed Postgres with an ordinary
 role is enough.
 
-This package is being built in parts (`AN-STO02`). What is here today is the
-schema, the migration command, the monthly partitions of `events`, the control
-plane (`AccountStore`) and, of the reporting side, the write path (`ingest`),
-the totals, series, breakdowns, time on page, conversions, custom events and
-their properties, profiles, the people directory, realtime and the daily
-rollup. Funnels, journeys, retention, health, the route regroup and the purge
-follow, and the one conformance suite is wired with them: its reporting half
-seeds one world and cannot pass by halves. Until then nothing in the server can
-select this adapter.
+It implements both contracts in full and passes the one conformance suite every
+adapter passes, against a real PostgreSQL. The server does not select it yet:
+`DATABASE_URL` arrives with the next part of `AN-STO02`.
 
 ## Opening it
 
@@ -110,8 +104,24 @@ can have (ten years back) and the month after this one, so an install holds at
 most 122 of them whatever it is sent.
 
 Retention is per site, so it is a delete and not a partition drop: the hourly
-purge removes a site's rows past its retention, and a month is dropped once it
-is empty.
+purge removes a site's rows past its retention, in one transaction, and a month
+wholly older than that is dropped once it holds no row of any site, which gives
+its disk back at once. A drop needs `events` to itself for an instant, so it
+waits at most half a second for a report that is reading and otherwise leaves
+the month for the next hourly pass. A month that was dropped is made again the
+first time a row needs it.
+
+The daily rollups are an ordinary table, `rollups_daily`, and not a
+materialised view: a view is recomputed from the raw rows, and the raw rows are
+what retention takes away. A day is replaced in one transaction, so no report
+finds it missing while it is being rewritten.
+
+## The long jobs
+
+A rollup, a route regroup and the retention purge are allowed to run past the
+statement timeout: each lifts it for its own transaction and for nothing else.
+A route regroup rewrites only the rows whose route changes, not every row of
+the site.
 
 ## Running the tests
 

@@ -9,10 +9,12 @@ import type { Pool } from 'pg';
 
 import { createAccounts } from './accounts.js';
 import { DEFAULT_STATEMENT_TIMEOUT_MS, openPool } from './db.js';
+import { createDepth } from './depth.js';
 import { createIngest } from './ingest.js';
 import { verify } from './migrate.js';
 import { createPartitionManager } from './partitions.js';
 import { createPeople } from './people.js';
+import { createPurge } from './purge.js';
 import { createReports } from './reports.js';
 import { createRollup } from './rollup.js';
 import { PostgresSetupError, assertSupported } from './server.js';
@@ -20,12 +22,12 @@ import { createSites } from './sites.js';
 
 // The PostgreSQL adapter.
 //
-// It is being built in parts (AN-STO02). What is here is the whole of
-// AccountStore and, of AnalyticsStore, the write path and the reads named in
-// PostgresStore below. Funnels, journeys, retention, health, the route regroup
-// and the purge follow, and the one conformance suite is wired with them: its
-// reporting half seeds one world and cannot pass by halves. Until then nothing
-// in the server can select this adapter.
+// Both contracts on one object, because one deployment has one database:
+// AnalyticsStore answers questions about visitors and AccountStore about the
+// people reading them. Every statement is built in a file of its own
+// (reads.sql.ts, depth.sql.ts, people.ts) so a test can hold the plan of the
+// very text that runs; nothing here creates a table or an index, because only
+// `migrate --apply` does that.
 
 export interface PostgresStoreOptions extends StoreOptions {
   // postgres:// or postgresql://. TLS is the URL's business (sslmode).
@@ -47,28 +49,7 @@ export interface PostgresStoreOptions extends StoreOptions {
   onOutsideWindow?: (count: number) => void;
 }
 
-export interface PostgresStore
-  extends AccountStore,
-    Pick<
-      AnalyticsStore,
-      | 'site'
-      | 'sites'
-      | 'ingest'
-      | 'aggregate'
-      | 'timeseries'
-      | 'breakdown'
-      | 'engagement'
-      | 'events'
-      | 'properties'
-      | 'goalStats'
-      | 'realtime'
-      | 'visitor'
-      | 'user'
-      | 'visitorIdForUser'
-      | 'people'
-      | 'rollupDay'
-      | 'close'
-    > {
+export interface PostgresStore extends AnalyticsStore, AccountStore {
   // The adapter's own pool, for the tests that prove a plan and for a host
   // that wants to check the connection it was given.
   pool: Pool;
@@ -117,10 +98,11 @@ export async function createPostgresStore(options: PostgresStoreOptions): Promis
   const sites = createSites(pool, now);
   const accounts = createAccounts(pool, sites);
   let outsideWindow = 0;
+  const partitions = createPartitionManager(pool, now);
   const ingest = createIngest({
     pool,
     sites,
-    partitions: createPartitionManager(pool, now),
+    partitions,
     presence,
     now,
     onOutsideWindow: (count) => {
@@ -138,7 +120,9 @@ export async function createPostgresStore(options: PostgresStoreOptions): Promis
     ...accounts,
     ...createReports({ pool, sites, now }),
     ...createPeople({ pool, sites, presence, now }),
-    ...createRollup({ pool, sites }),
+    ...createDepth({ pool, sites, now }),
+    ...createRollup({ pool, sites, now }),
+    ...createPurge({ pool, partitions }),
     ingest,
 
     site: (siteId) => sites.site(siteId),

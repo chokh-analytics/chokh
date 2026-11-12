@@ -162,7 +162,9 @@ interface PlanNode {
 }
 
 function collect(node: PlanNode, into: Scan[]): void {
-  if (node['Relation Name'] !== undefined) {
+  // Only the nodes that read a table. A DELETE or an UPDATE names the table it
+  // writes on a node of its own, which reads nothing.
+  if (node['Relation Name'] !== undefined && node['Node Type'].includes('Scan')) {
     const scan: Scan = { relation: node['Relation Name'], node: node['Node Type'] };
     // A bitmap heap scan names its index on the node below it.
     const index = node['Index Name'] ?? bitmapIndex(node);

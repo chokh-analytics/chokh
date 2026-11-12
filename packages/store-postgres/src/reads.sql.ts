@@ -136,13 +136,13 @@ function condition(column: string, filter: Filter, params: Params): string {
   return `strpos(${column}, ${value}) > 0`;
 }
 
-interface Span {
+export interface Span {
   site: string;
   from: string;
   to: string;
 }
 
-function spanOf(siteId: string, span: Range, params: Params): Span {
+export function spanOf(siteId: string, span: Range, params: Params): Span {
   return { site: params.add(siteId), from: params.add(span.from), to: params.add(span.to) };
 }
 
@@ -156,7 +156,7 @@ function spanOf(siteId: string, span: Range, params: Params): Span {
 // past midnight is in the stay that began before it, whichever day that was.
 // A row written before stays were stamped has no stay and is out of the
 // report, the rule every adapter keeps.
-function eventWhere(
+export function eventWhere(
   at: Span,
   wantsBots: boolean,
   filters: Filter[] | undefined,
@@ -210,7 +210,7 @@ function eventWhere(
 // A visit belongs to the day the stay began on, so every read of the session
 // side cuts by started_at and never by last_seen_at: a stay that crosses
 // midnight is one visit, on the day it started.
-function sessionWhere(
+export function sessionWhere(
   at: Span,
   wantsBots: boolean,
   filters: Filter[] | undefined,
@@ -553,7 +553,7 @@ SELECT ${eventKey(dim) ?? 'NULL'} AS key,
 // Whether a row reaches a goal. A page goal is reached by a pageview of a
 // matching path and by nothing else; a star is one segment of the path, and
 // the pattern is the very string the contract builds for the other adapters.
-function goalReached(goal: GoalMatch, params: Params, alias: string): string {
+export function goalReached(goal: GoalMatch, params: Params, alias: string): string {
   if (goal.kind === 'event') {
     return `${alias}.type = 'event' AND ${alias}.name = ${params.add(goal.match)}`;
   }
@@ -566,7 +566,7 @@ function goalReached(goal: GoalMatch, params: Params, alias: string): string {
 // The rows that reach a goal: the site, the span, the bot side and the goal,
 // and none of the query's other filters. Those narrow the people a conversion
 // is counted against, never the goal.
-function goalWhere(at: Span, wantsBots: boolean, goal: GoalMatch, params: Params): string {
+export function goalWhere(at: Span, wantsBots: boolean, goal: GoalMatch, params: Params): string {
   return [
     `g.site_id = ${at.site}`,
     `g.ts >= ${at.from}`,

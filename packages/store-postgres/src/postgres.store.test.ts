@@ -1,6 +1,7 @@
 import {
   alertIdFor,
   annotationIdFor,
+  createMemoryPresence,
   defaultSiteSettings,
   digestIdFor,
   goalIdFor,
@@ -8,7 +9,7 @@ import {
   type Alert,
   type Site,
 } from '@chokh/store';
-import { fixture, runAccountConformance } from '@chokh/store/conformance';
+import { fixture, runAccountConformance, runStoreConformance } from '@chokh/store/conformance';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -21,10 +22,32 @@ import { createTestDatabase, databaseUrl, type TestDatabase } from './testing/da
 // runs against a real PostgreSQL, the schema applied by the migration and
 // never by the adapter, so the suite runs against the database an operator
 // would actually have.
-//
-// The account half only, for now: the reporting half is wired when the whole
-// of AnalyticsStore is here, because its suite seeds one world and cannot pass
-// by halves.
+runStoreConformance('postgres', async () => {
+  const db = await createTestDatabase('conformance');
+  await apply(db.pool, { now: () => fixture.NOW });
+  // Presence is not storage, so it is handed in rather than found in the
+  // database. The suite runs it on the map, because which backend holds the
+  // live set is the one thing an adapter has no say in.
+  const presence = createMemoryPresence();
+  const store = await createPostgresStore({ url: db.url, presence, now: () => fixture.NOW });
+  return {
+    store,
+    addSite: (site) => store.createSite(site),
+    updateSite: (siteId, patch) => store.updateSite(siteId, patch),
+    reset: async () => {
+      await db.pool.query('TRUNCATE events, sessions, visitors, rollups_daily, sites, site_domains');
+      presence.clear();
+    },
+    close: async () => {
+      await store.close();
+      await db.drop();
+    },
+  };
+});
+
+// The same for the control plane, against the same real PostgreSQL: the keys
+// on a site's domains, an account's address and a key's hash are half of what
+// these answers depend on, so they are proved where those constraints exist.
 const ACCOUNT_TABLES = [
   'sites',
   'site_domains',

@@ -5,10 +5,14 @@ import {
   SESSION_PATH_BY_DIMENSION,
   addTotals,
   dayBounds,
+  dayKey,
+  dayKeysBetween,
+  routePattern,
   zeroTotals,
   type AnalyticsStore,
   type Dimension,
   type Range,
+  type RegroupSummary,
   type RollupDim,
   type RollupRecord,
   type RollupSummary,
@@ -25,7 +29,7 @@ import {
   sessionTotalsSql,
   type Statement,
 } from './reads.sql.js';
-import { ROLLUPS_DAILY } from './schema.js';
+import { EVENTS, ROLLUPS_DAILY, SITES } from './schema.js';
 import type { Sites } from './sites.js';
 
 // The daily rollups: one row per site, day, dimension and value, in an
@@ -34,11 +38,23 @@ import type { Sites } from './sites.js';
 // rows are exactly what the retention purge takes away, so the first refresh
 // after a purge would delete the history these rows exist to keep.
 
-export type Rollup = Pick<AnalyticsStore, 'rollupDay'>;
+export type Rollup = Pick<AnalyticsStore, 'rollupDay' | 'regroupRoutes'>;
 
 export interface RollupDeps {
   pool: Pool;
   sites: Sites;
+  now(): number;
+}
+
+// The route of a row from a site's rules: the first rule the path matches,
+// else the path itself, and no route at all on a row with no path. The same
+// patterns routeOf compiles for the other adapters, handed to ~ as they are.
+export function routeSql(rules: readonly string[], add: (value: unknown) => string): string {
+  if (rules.length === 0) {
+    return 'path';
+  }
+  const cases = rules.map((rule) => `WHEN path ~ ${add(routePattern(rule))} THEN ${add(rule)}`);
+  return `CASE WHEN path IS NULL THEN NULL ${cases.join(' ')} ELSE path END`;
 }
 
 // The jobs that are meant to be long lift the statement timeout for their own
@@ -61,8 +77,17 @@ const FROM_STAYS: readonly Dimension[] = ROLLED_DIMENSIONS.filter((dim) =>
   SESSION_DIMENSIONS.includes(dim),
 );
 
+const INSERT_ROLLUPS = `
+  INSERT INTO ${ROLLUPS_DAILY}
+    (site_id, date, dim, key, visitors, pageviews, visits, bounces, duration_sum)
+  SELECT $1, $2::date, given.dim, given.key, given.visitors, given.pageviews,
+         given.visits, given.bounces, given."durationSum"
+    FROM jsonb_to_recordset($3::jsonb) AS given(
+           dim text, key text, visitors bigint, pageviews bigint,
+           visits bigint, bounces bigint, "durationSum" bigint)`;
+
 export function createRollup(deps: RollupDeps): Rollup {
-  const { pool, sites } = deps;
+  const { pool, sites, now } = deps;
 
   async function ask(statement: Statement): Promise<Counts[]> {
     const result = await pool.query<Counts>(statement.text, statement.values);
@@ -145,16 +170,7 @@ export function createRollup(deps: RollupDeps): Rollup {
           siteId,
           date,
         ]);
-        await db.query(
-          `INSERT INTO ${ROLLUPS_DAILY}
-             (site_id, date, dim, key, visitors, pageviews, visits, bounces, duration_sum)
-           SELECT $1, $2::date, given.dim, given.key, given.visitors, given.pageviews,
-                  given.visits, given.bounces, given."durationSum"
-             FROM jsonb_to_recordset($3::jsonb) AS given(
-                    dim text, key text, visitors bigint, pageviews bigint,
-                    visits bigint, bounces bigint, "durationSum" bigint)`,
-          [siteId, date, json(records)],
-        );
+        await db.query(INSERT_ROLLUPS, [siteId, date, json(records)]);
       });
       return {
         siteId,
@@ -163,6 +179,78 @@ export function createRollup(deps: RollupDeps): Rollup {
         visitors: total.visitors,
         pageviews: total.pageviews,
       };
+    },
+
+    async regroupRoutes(siteId: string): Promise<RegroupSummary> {
+      const site = await sites.siteOrThrow(siteId);
+      const timezone = site.settings.timezone;
+
+      // Every row of the site takes the route the rules give it now. Only the
+      // rows whose route changes are written: an UPDATE writes a new version
+      // of every row it names, changed or not, so naming them all would
+      // rewrite the site's whole history to change a handful of pages.
+      const params: unknown[] = [siteId];
+      const route = routeSql(site.settings.routeGroups, (value) => {
+        params.push(value);
+        return `$${params.length}`;
+      });
+      const considered = await transaction(pool, async (db) => {
+        await db.query(NO_STATEMENT_TIMEOUT);
+        const counted = await db.query<{ n: number; first: number | null; last: number | null }>(
+          `SELECT count(*) AS n, min(ts) AS first, max(ts) AS last FROM ${EVENTS} WHERE site_id = $1`,
+          [siteId],
+        );
+        await db.query(
+          `UPDATE ${EVENTS} SET route = ${route}
+            WHERE site_id = $1 AND route IS DISTINCT FROM (${route})`,
+          params,
+        );
+        const span = counted.rows[0] ?? { n: 0, first: null, last: null };
+        // Which days of the site's calendar still have rows: the same walk of
+        // the whole site, so it rides in the transaction that is allowed to be
+        // long rather than under the limit a report has.
+        let held: string[] = [];
+        if (span.first !== null && span.last !== null) {
+          const keys = dayKeysBetween(Number(span.first), Number(span.last) + 1, timezone);
+          const starts = keys.map((key) => dayBounds(key, timezone).start);
+          const found = await db.query<{ day: number }>(
+            `SELECT DISTINCT width_bucket(ts, $2::bigint[]) AS day FROM ${EVENTS} WHERE site_id = $1`,
+            [siteId, starts],
+          );
+          held = found.rows
+            .map((row) => keys[Number(row.day) - 1])
+            .filter((key): key is string => key !== undefined);
+        }
+        return { n: Number(span.n), held };
+      });
+
+      // Then the route rollups of every past day that still has rows, and only
+      // those: a day whose rows have expired keeps the rollup it had.
+      const today = dayKey(now(), timezone);
+      const days = considered.held.filter((key) => key !== today).sort();
+      for (const date of days) {
+        const bounds = dayBounds(date, timezone);
+        const span: Range = { from: bounds.start, to: bounds.end };
+        const found = await ask(rawBreakdownSql(siteId, span, timezone, ['route'], false, undefined));
+        const records = found.map((row): RollupRecord => {
+          const totals = zeroTotals();
+          addTotals(totals, row as Partial<Totals>);
+          return { siteId, date, dim: 'route', key: String(row.key), ...totals };
+        });
+        await transaction(pool, async (db) => {
+          await db.query(
+            `DELETE FROM ${ROLLUPS_DAILY} WHERE site_id = $1 AND date = $2::date AND dim = 'route'`,
+            [siteId, date],
+          );
+          if (records.length > 0) {
+            await db.query(INSERT_ROLLUPS, [siteId, date, json(records)]);
+          }
+        });
+      }
+
+      await pool.query(`UPDATE ${SITES} SET routes_changed_at = NULL WHERE id = $1`, [siteId]);
+      sites.forget(siteId);
+      return { siteId, events: considered.n, days: days.length };
     },
   };
 }

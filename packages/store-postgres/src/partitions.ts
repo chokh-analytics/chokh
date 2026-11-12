@@ -154,6 +154,54 @@ export async function createPartition(db: Queryable, month: Month): Promise<bool
   return true;
 }
 
+// How long a drop may wait for the table. Dropping a partition needs events
+// to itself for an instant, so it queues behind any report that is reading,
+// and everything that arrives while it waits queues behind it. A drop is only
+// tidying (the month is already empty), so it gives up quickly and the next
+// hourly pass tries again.
+export const DROP_LOCK_TIMEOUT_MS = 500;
+
+// Drop the months wholly older than an instant that hold no rows: what the
+// retention purge leaves behind once every site's rows of a month are gone.
+// Answers the names it dropped. A month that still holds a row of any site is
+// never touched, and nothing here deletes a row.
+export async function dropEmptyPartitionsBefore(pool: Pool, before: number): Promise<string[]> {
+  const old = (await listPartitions(pool)).filter((row) => row.to <= before);
+  if (old.length === 0) {
+    return [];
+  }
+  const dropped: string[] = [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL lock_timeout = '${DROP_LOCK_TIMEOUT_MS}ms'`);
+    await client.query(advisoryLockSql(LOCK_PARTITIONS));
+    // The parent first and its months with it, the order an insert takes them
+    // in, so a batch arriving now waits for this rather than deadlocking with
+    // it; and held from before the look, so no row can land in a month between
+    // finding it empty and dropping it.
+    await client.query(`LOCK TABLE ${EVENTS} IN ACCESS EXCLUSIVE MODE`);
+    for (const month of old) {
+      const any = await client.query(`SELECT 1 FROM ${month.name} LIMIT 1`);
+      if (any.rowCount === 0) {
+        await client.query(`DROP TABLE ${month.name}`);
+        dropped.push(month.name);
+      }
+    }
+    await client.query('COMMIT');
+    return dropped;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    // Somebody is reading: not an error, and nothing was dropped.
+    if (typeof error === 'object' && error !== null && (error as { code?: string }).code === '55P03') {
+      return [];
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export interface PartitionManager {
   // Make sure every month these instants fall in has a partition. Instants
   // outside the window are passed over. Answers the names it created.
