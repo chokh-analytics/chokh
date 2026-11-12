@@ -490,33 +490,57 @@ describe('the plans of the deeper reads, at a busy quarter', () => {
   });
 
   it('lets the long jobs run past the limit that cancels a report', async () => {
-    // A store whose statements may run a fifth of a second. The limit is real,
-    // and the jobs that are meant to be long lift it for their own
-    // transaction: a regroup that rewrites every row of a site, and a purge of
-    // well over half the quarter, which on its own takes far longer than the
-    // limit and finishes.
-    const LIMIT = 200;
+    // A store whose statements may run 150 ms, and a database in which the
+    // statement each long job is made of takes 400 ms whatever the machine: a
+    // trigger sleeps once per statement. Not timed against real work, because
+    // how long real work takes is the machine's business (a purge of 180,000
+    // rows took 168 ms on a CI runner).
+    const LIMIT = 150;
+    await db.pool.query(
+      `CREATE FUNCTION slow_statement() RETURNS trigger LANGUAGE plpgsql
+         AS $$ BEGIN PERFORM pg_sleep(0.4); RETURN NULL; END $$`,
+    );
+    const slow = (name: string, action: string, table: string): Promise<unknown> =>
+      db.pool.query(
+        `CREATE TRIGGER ${name} AFTER ${action} ON ${table}
+           FOR EACH STATEMENT EXECUTE FUNCTION slow_statement()`,
+      );
     const store = await createPostgresStore({
       url: db.url,
       statementTimeoutMs: LIMIT,
       now: () => SEED_NOW,
     });
+    // The same statement, sent on its own, is cancelled: the limit is real and
+    // the trigger is what it says.
+    const cancelled = async (statement: string): Promise<void> => {
+      const refused = await store.pool.query(statement).catch((error: unknown) => error);
+      expect((refused as { code?: string }).code, statement).toBe('57014');
+    };
     try {
-      const cancelled = await store.pool.query('SELECT pg_sleep(2)').catch((error: unknown) => error);
-      expect((cancelled as { code?: string }).code).toBe('57014');
-
+      // A route regroup rewrites every row of a site whose route changes.
       await store.updateSite('s_mid', { settings: { routeGroups: ['/:page'] } });
+      await slow('slow_regroup', 'UPDATE', 'events');
+      await cancelled(`UPDATE events SET route = route WHERE FALSE`);
       const regrouped = await store.regroupRoutes('s_mid');
       expect(regrouped.events).toBe(90_000);
       const changed = await db.pool.query(
         `SELECT count(*)::int AS n FROM events WHERE site_id = 's_mid' AND route = '/:page'`,
       );
       expect(changed.rows[0]?.n).toBe(90_000);
+      await db.pool.query('DROP TRIGGER slow_regroup ON events');
 
-      const started = Date.now();
+      // A rollup replaces a day.
+      await slow('slow_rollup', 'INSERT', 'rollups_daily');
+      await cancelled(`INSERT INTO rollups_daily SELECT * FROM rollups_daily WHERE FALSE`);
+      const rolled = await store.rollupDay(SEED_SITE, '2026-09-10');
+      expect(rolled.rows).toBeGreaterThan(0);
+      await db.pool.query('DROP TRIGGER slow_rollup ON rollups_daily');
+
+      // And a purge deletes a site's detail.
+      await slow('slow_purge', 'DELETE', 'sessions');
+      await cancelled(`DELETE FROM sessions WHERE FALSE`);
       const purged = await store.purge('s_big', SEED_NOW + DAY);
       expect(purged).toEqual({ events: 180_000, sessions: 24_000, visitors: 12_000 });
-      expect(Date.now() - started).toBeGreaterThan(LIMIT);
     } finally {
       await store.close();
     }

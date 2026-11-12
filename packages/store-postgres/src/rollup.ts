@@ -238,6 +238,7 @@ export function createRollup(deps: RollupDeps): Rollup {
           return { siteId, date, dim: 'route', key: String(row.key), ...totals };
         });
         await transaction(pool, async (db) => {
+          await db.query(NO_STATEMENT_TIMEOUT);
           await db.query(
             `DELETE FROM ${ROLLUPS_DAILY} WHERE site_id = $1 AND date = $2::date AND dim = 'route'`,
             [siteId, date],
