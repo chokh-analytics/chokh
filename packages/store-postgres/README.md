@@ -9,6 +9,14 @@ It implements both contracts in full and passes the one conformance suite every
 adapter passes, against a real PostgreSQL. The server opens it when
 `DATABASE_URL` is set; `packages/server/README.md` has the variables.
 
+**This is the default adapter**: `docker compose up` at the root of the
+repository runs the product on it. PostgreSQL is the default because it is the
+database most people who host their own software already run, back up and can
+rent from any provider, because its licence asks nothing of whoever hosts it,
+and because a month of `events` that retention has emptied gives its disk back
+at once (below). `@chokh/store-mongo` is the other supported adapter and is not
+going away.
+
 ## Opening it
 
 ```ts

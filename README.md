@@ -265,7 +265,7 @@ pnpm --filter @chokh/dashboard run test:e2e
 ```
 
 The browser suite and the audit run against the real server on an in-memory
-store, so neither needs MongoDB or Redis and both see the envelope, the session
+store, so neither needs a database or Redis and both see the envelope, the session
 cookie and the stream a person gets. The screenshots run against a fixture with
 a frozen clock instead, so the same command produces the same pictures.
 
@@ -278,9 +278,9 @@ git clone https://github.com/chokh-analytics/chokh.git && cd chokh && docker com
 ```
 
 The dashboard and the collector are then on `http://localhost:4100`, with
-MongoDB and Redis beside them. Chokh needs MongoDB 5.0 or newer; the compose
-file runs 7. Register the first account, which owns the install,
-and create a site:
+PostgreSQL and Redis beside them and the tables already created. Nothing needs
+setting first. Register the first account, which owns the install, and create a
+site:
 
 ```bash
 curl -c jar -X POST localhost:4100/api/auth/register \
@@ -304,12 +304,97 @@ Then drop the script into any page you want counted:
 The API, its scopes and its SSO exchange are documented in
 [packages/server/README.md](packages/server/README.md).
 
+## Which database
+
+Chokh runs on PostgreSQL 15 or newer, or on MongoDB 5.0 or newer. Storage sits
+behind one interface, both adapters pass the same conformance suite, and every
+report means the same thing on either.
+
+**PostgreSQL is the default.** `docker compose up` starts PostgreSQL 17 and
+creates the tables before the server starts. It is the default for three
+reasons: it is the database most people who host their own software already
+run, back up and can rent from any provider; its licence asks nothing of
+whoever hosts it, where MongoDB's server is under the SSPL; and `events` is
+kept in one partition per month, so a month that retention has emptied gives
+its disk back at once.
+
+**MongoDB is the other supported path, and not a lesser one.** Its adapter is
+the older of the two and the one that has run in production the longest. Start
+it with its own file, then create the indexes once:
+
+```bash
+docker compose -f docker-compose.mongodb.yml up -d
+```
+
+```bash
+docker compose -f docker-compose.mongodb.yml exec server node packages/store-mongo/dist/migrate.js --apply
+```
+
+Without compose, the server chooses by what it is given: `DATABASE_URL` for
+PostgreSQL, `MONGODB_URI` for MongoDB. It refuses to start with both, and in
+production with neither.
+[packages/server/README.md](packages/server/README.md#storage) has the rest.
+
+### Before anybody else can reach it
+
+As they ship, both compose files are for one machine: every port is published
+on `127.0.0.1` only, PostgreSQL is not published at all, and the session secret
+and the database password are development values that anybody reading this
+repository has. Before the install is reachable from anywhere else, put your
+own values in a `.env` file beside the compose file (git ignores it), then put
+a proxy that terminates TLS in front of `127.0.0.1:4100`:
+
+```
+SESSION_SECRET=<32 or more random characters>
+POSTGRES_PASSWORD=<letters and digits, set before the first docker compose up>
+```
+
+`SESSION_SECRET` signs every session cookie, so with the shipped value anybody
+can forge one. `POSTGRES_PASSWORD` is written into the volume the first time
+PostgreSQL starts and into the server's connection URL every time; to change it
+on an install that has already started, change the role's password in the
+database as well. To publish the server without a proxy, set `CHOKH_PUBLISH`,
+for example to `0.0.0.0:4100`.
+
+### If you ran the default before it was PostgreSQL
+
+Until this change, `docker compose up` ran MongoDB. Nothing is migrated for
+you, and there is no tool that copies rows from MongoDB into PostgreSQL. Your
+rows are where they were, in the `mongo-data` volume (Docker lists it as
+`chokh_mongo-data`), and `docker-compose.mongodb.yml` is the file that reads
+it. To carry on exactly as before:
+
+```bash
+docker compose down
+```
+
+```bash
+docker compose -f docker-compose.mongodb.yml up -d
+```
+
+Never add `-v` to `down`: that deletes the volumes. Two things to know:
+
+- Running plain `docker compose up` on such an install starts an empty
+  PostgreSQL beside your volume. It deletes nothing, but the dashboard is then
+  a new install with no account and no history, and the collector is writing
+  to the new database. Stop it and start the MongoDB file to get back.
+- The server is now published on `127.0.0.1:4100`, where it used to be on
+  every address. If something on another machine reached port 4100 directly,
+  set `CHOKH_PUBLISH=0.0.0.0:4100` to have that back.
+
+MongoDB stays supported, so there is no deadline to move. Moving means starting
+a new install on PostgreSQL and letting it collect from that day.
+
 ## The published image
 
 Every green CI run on `main` publishes one image, `ghcr.io/chokh-analytics/chokh`,
 tagged `sha-<commit>` and `latest`. A deployment pins the digest that run prints
 rather than a tag, because a tag is a pointer somebody can move and a digest is
 the image itself.
+
+The image is the server alone and runs in production mode, so it wants a
+database: `DATABASE_URL` or `MONGODB_URI`. Started with neither, it says so and
+stops.
 
 ## Layout
 
@@ -319,6 +404,7 @@ the image itself.
 | `packages/server` | Collector, stats API, realtime stream, dashboard hosting |
 | `packages/dashboard` | The dashboard UI, built static and served by the server |
 | `packages/store` | The `AnalyticsStore` contract and the conformance suite every adapter passes |
+| `packages/store-postgres` | The PostgreSQL storage adapter, the default |
 | `packages/store-mongo` | The MongoDB storage adapter |
 | `packages/geo` | IP to location and user agent parsing, offline |
 | `packages/sdk-node` | Server-side `track` and `identify`, and the identify signature |

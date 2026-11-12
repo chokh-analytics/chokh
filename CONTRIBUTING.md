@@ -88,9 +88,15 @@ pnpm size:tracker && pnpm size:dashboard
 pnpm --filter @chokh/dashboard run test:e2e
 ```
 
-`docker compose up` runs the whole product locally with MongoDB and Redis
-beside it. The store conformance suite runs on `mongodb-memory-server`, so you
-do not need Docker to prove an adapter.
+`docker compose up` runs the whole product locally with PostgreSQL and Redis
+beside it, and `docker compose -f docker-compose.mongodb.yml up` does the same
+on MongoDB. You do not need Docker to prove an adapter: each conformance suite
+brings its own database, `mongodb-memory-server` for MongoDB and
+`embedded-postgres` for PostgreSQL, starts it for the run and leaves nothing
+behind. If the bundled PostgreSQL cannot start on your machine (a checkout on a
+very long Windows path, or a platform it has no binaries for),
+`packages/store-postgres/README.md` says how to point the tests at one of your
+own.
 
 ## Commits and pull requests
 

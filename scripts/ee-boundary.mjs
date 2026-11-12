@@ -50,6 +50,7 @@ const DOCS = new Set([
   'eslint.config.js',
   'Dockerfile',
   'docker-compose.yml',
+  'docker-compose.mongodb.yml',
   '.github/workflows/ci.yml',
 ]);
 

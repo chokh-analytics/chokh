@@ -103,6 +103,11 @@ If a ticket and this file disagree, stop and report. Do not pick one.
 - `packages/store`: the `AnalyticsStore` contract and the one conformance suite;
   `packages/server/src/store/AnalyticsStore.ts` re-exports it, so an adapter
   package depends on the contract and never on the server
+- `packages/store-postgres`: the PostgreSQL adapter and the default, on `pg`,
+  PostgreSQL 15 or newer and no extension. Tables and indexes are declared in
+  the schema and created by a `migrate` command, never at boot; `events` is one
+  partition per UTC month. It is the only package that imports `pg`, and lint
+  refuses the import anywhere else
 - `packages/store-mongo`: the MongoDB adapter, indexes declared in the schema
   and applied by a `migrate` command, never `autoIndex`
 - `packages/geo`: MaxMind GeoLite2-City through `maxmind`, DB-IP Lite as the
@@ -186,31 +191,46 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `node scripts/ee-boundary.mjs` | Assert the line between the MIT core and `packages/ee` |
 | `node scripts/cla-check.mjs --dry-run` | Assert the CLA check accepts a signed author and refuses an unsigned one |
 | `node packages/ee/dist/cli/chokh-license.js` | Mint and read a licence key. `keygen` is run once, by the founder, on their own machine |
-| `node packages/store-mongo/dist/migrate.js --apply` | Create the declared collections and indexes |
+| `node packages/store-postgres/dist/migrate.js --apply` | Create the declared tables and indexes on PostgreSQL, from `DATABASE_URL` |
+| `node packages/store-postgres/dist/migrate.js --verify-only` | Report them, exit 1 unless `missing: 0` |
+| `node packages/store-mongo/dist/migrate.js --apply` | Create the declared collections and indexes on MongoDB |
 | `node packages/store-mongo/dist/migrate.js --verify-only` | Report them, exit 1 unless `missing: 0` |
-| `docker compose up` | Server, MongoDB and Redis for local development |
+| `docker compose up` | Server, PostgreSQL and Redis: the default install |
+| `docker compose -f docker-compose.mongodb.yml up` | The same on MongoDB |
 
-CI runs five jobs on every push: build, typecheck, lint, test and the tracker
-size gate, with a `redis` service beside it so the Redis presence backend is
-proved against a real Redis; a browser job that loads the fixture page in
-Chromium and asserts the collect payloads; and a job that brings the stack up
-with `docker compose up --build -d`, asserts `GET /health` answers with
-`"success":true` and runs both migrate commands against the real MongoDB, so the
-image, the compose file and the index migration are never unproven. A fifth job
-deletes `packages/ee`, installs, builds, runs the server suite and boots the
-result, so "the core is free to self-host in full" is checked rather than
-claimed; and on a pull request a sixth reads `CLA-SIGNATURES.md` and refuses a
-contributor who has not signed. That one runs on `pull_request` and never on
-`pull_request_target`: a fork's pull request has to run with a read-only token
-and no secrets.
+CI runs these jobs on every push. *Build, typecheck, lint, test and the tracker
+size gate*, with a `redis` and a `postgres:17-alpine` service beside it, so the
+Redis presence backend and the PostgreSQL adapter are proved against the real
+things; the same job runs the PostgreSQL migration twice and then runs the built
+server as a process against that database: what it refuses to boot on, a
+pageview in and out, and SIGTERM with the database present and gone. *The
+PostgreSQL adapter again on `postgres:15-alpine`*, the oldest it supports. *Two
+browser jobs*, the tracker's fixture page and the dashboard with its
+accessibility audit. *`docker compose up` once per database*, the default file
+and the MongoDB file: up from nothing with no variable set, `GET /health`, no
+port published beyond the machine, the migration verified, the README's first
+steps (an account, a site, a pageview collected and read back), down and up
+again with the rows still there, and the server told to stop with the database
+present and gone. So the image, both compose files and both migrations are
+never unproven. *A job that deletes `packages/ee`*, installs, builds, runs the
+server suite and boots the result, so "the core is free to self-host in full"
+is checked rather than claimed. And on a pull request one more reads
+`CLA-SIGNATURES.md` and refuses a contributor who has not signed. That one runs
+on `pull_request` and never on `pull_request_target`: a fork's pull request has
+to run with a read-only token and no secrets.
 
 The gates run in CI's order on CI's state. `pnpm typecheck` comes before
 `pnpm build`, and `packages/ee` is written against `packages/server`, so a stale
 `dist` on a laptop hides a break that a fresh clone finds. Delete every `dist`
 before a run that is meant to prove anything.
 
-The store conformance suite runs on `mongodb-memory-server`, a downloaded
-`mongod`, locally and in CI. No machine needs Docker to prove an adapter;
-`docker compose` stays the way a person runs the product. The presence suite is
+The store conformance suite runs on a real database for each adapter, locally
+and in CI: `mongodb-memory-server`, a downloaded `mongod`, for MongoDB, and for
+PostgreSQL the server `embedded-postgres` carries, started in a temporary
+directory for the run (CI names its service container with
+`CHOKH_TEST_DATABASE_URL` instead, and so can a laptop). No machine needs Docker
+to prove an adapter; `docker compose` stays the way a person runs the product.
+A check that posts to the collector has to say it is a browser: sent as curl,
+a pageview is stored and marked as a bot, and no report counts it. The presence suite is
 the one thing a laptop cannot finish: without `REDIS_URL` the Redis half skips
 and says so, and CI's service container runs it.

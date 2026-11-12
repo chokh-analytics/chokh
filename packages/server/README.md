@@ -906,6 +906,13 @@ driver. Which adapter it opens is decided once at boot:
 
 All three pass the same conformance suite in `@chokh/store`.
 
+**PostgreSQL is the default**: it is what `docker compose up` starts, with the
+tables created by a one-shot `migrate` service before the server is allowed to
+start. MongoDB is the other supported database and has its own file,
+`docker-compose.mongodb.yml`. The repository's `README.md` says why the default
+is what it is, what to change before either stack is reachable by anybody else,
+and what an install that ran the old MongoDB default does now.
+
 **One database, and in production one is required.** The server refuses to
 start when both variables are set, in any mode, because a process that quietly
 picked one would write to the wrong place for as long as nobody looked; the
