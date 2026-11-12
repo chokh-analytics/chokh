@@ -35,6 +35,11 @@ export interface Month {
   to: number;
 }
 
+// What a partition is called: the parent's name, a p and six digits. A name is
+// written into DDL as text, so nothing that is not exactly this is ever
+// created, emptied or dropped, whatever a catalog holds.
+const PARTITION_NAME = new RegExp(`^${EVENTS}_p[0-9]{6}$`);
+
 function monthAt(year: number, month: number): Month {
   const from = Date.UTC(year, month, 1);
   const to = Date.UTC(year, month + 1, 1);
@@ -141,6 +146,17 @@ export async function listPartitions(db: Queryable): Promise<PartitionRow[]> {
 //
 // The caller holds LOCK_PARTITIONS, so nothing else is creating it.
 export async function createPartition(db: Queryable, month: Month): Promise<boolean> {
+  // The name and the two bounds are written into the statement: DDL takes no
+  // parameters. They are this file's own arithmetic, and are checked as if
+  // they were not.
+  if (
+    !PARTITION_NAME.test(month.name) ||
+    !Number.isSafeInteger(month.from) ||
+    !Number.isSafeInteger(month.to) ||
+    month.to <= month.from
+  ) {
+    throw new Error('A partition is a month: a name of six digits and two whole instants');
+  }
   const existing = await db.query('SELECT to_regclass($1) AS found', [month.name]);
   if (existing.rows[0]?.found !== null && existing.rows[0]?.found !== undefined) {
     return false;
@@ -166,7 +182,11 @@ export const DROP_LOCK_TIMEOUT_MS = 500;
 // Answers the names it dropped. A month that still holds a row of any site is
 // never touched, and nothing here deletes a row.
 export async function dropEmptyPartitionsBefore(pool: Pool, before: number): Promise<string[]> {
-  const old = (await listPartitions(pool)).filter((row) => row.to <= before);
+  const old = (await listPartitions(pool)).filter(
+    // By name as well as by age: a table somebody attached to events under a
+    // name of their own is theirs, and is not dropped here.
+    (row) => row.to <= before && PARTITION_NAME.test(row.name),
+  );
   if (old.length === 0) {
     return [];
   }

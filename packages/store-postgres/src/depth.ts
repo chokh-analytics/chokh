@@ -1,6 +1,9 @@
 import {
   ACTIVITY_WINDOWS,
+  ATTRIBUTION_DIMENSIONS,
+  COHORT_INTERVALS,
   ERROR_GROUP_DEFAULT_LIMIT,
+  StoreQueryError,
   activityPlan,
   addCohortCell,
   assertFunnelSteps,
@@ -75,7 +78,7 @@ import {
   powerUsersSql,
   vitalsSql,
 } from './depth.sql.js';
-import type { Statement } from './reads.sql.js';
+import { knownGoal, knownQuery, type Statement } from './reads.sql.js';
 import { visitorOf } from './rows.js';
 import type { Sites } from './sites.js';
 
@@ -160,6 +163,8 @@ export function createDepth(deps: DepthDeps): Depth {
 
   return {
     async funnelStats(query: Query, funnel: FunnelRead): Promise<FunnelResult> {
+      knownQuery(query);
+      if (Array.isArray(funnel?.steps)) funnel.steps.forEach(knownGoal);
       const site = await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'funnel');
       assertFunnelSteps(funnel);
@@ -179,6 +184,7 @@ export function createDepth(deps: DepthDeps): Depth {
     },
 
     async journeys(query: JourneyQuery): Promise<JourneyResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'journeys');
       const branches = journeyBranches(query);
@@ -206,6 +212,9 @@ export function createDepth(deps: DepthDeps): Depth {
     },
 
     async cohorts(query: CohortQuery): Promise<CohortResult> {
+      if (!(COHORT_INTERVALS as readonly unknown[]).includes(query.interval)) {
+        throw new StoreQueryError('UNSUPPORTED_INTERVAL', 'Cohorts are by week or by month');
+      }
       const site = await sites.siteOrThrow(query.siteId);
       const plan = cohortPlan(query, site.settings.timezone);
       const counts: CohortCounts = new Map();
@@ -259,6 +268,13 @@ export function createDepth(deps: DepthDeps): Depth {
     },
 
     async attribution(query: AttributionQuery): Promise<AttributionResult> {
+      if (!(ATTRIBUTION_DIMENSIONS as readonly unknown[]).includes(query.dim)) {
+        throw new StoreQueryError(
+          'UNSUPPORTED_DIMENSION',
+          'A conversion is attributed by a field a touch and a stay both carry',
+        );
+      }
+      knownGoal(query.goal);
       const site = await sites.siteOrThrow(query.siteId);
       const range: Range = { from: query.from, to: query.to };
       const first = new Map<string, AttributionCount>();

@@ -3,6 +3,8 @@ import {
   JOURNEY_ROWS_PER_VISIT,
   JOURNEY_STEPS,
   MAX_FUNNEL_ROWS_PER_VISITOR,
+  MAX_FUNNEL_STEPS,
+  MIN_FUNNEL_STEPS,
   VITAL_METRICS,
   VITAL_SCALES,
   type Filter,
@@ -22,6 +24,34 @@ import {
 } from './reads.sql.js';
 import { EVENTS, SESSIONS, VISITORS } from './schema.js';
 import { VISITOR_COLUMNS } from './rows.js';
+
+// A whole number in a range, for the few numbers written into a statement
+// rather than bound to it: how many steps a fold has, how wide a window is.
+// They come from the contract's own constants and from a list's length, and
+// are checked here anyway, because a number that is not one is text.
+function whole(value: number, least: number, most: number, what: string): number {
+  if (!Number.isSafeInteger(value) || value < least || value > most) {
+    throw new Error(`${what} is not a whole number between ${least} and ${most}`);
+  }
+  return value;
+}
+
+// A name of a relation a fold reads, and a placeholder it compares with. Both
+// are written by this package's own callers and its tests, never by a query,
+// and are held to their shape for the reason the numbers are.
+function relation(name: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
+    throw new Error('A fold reads a relation by a plain name');
+  }
+  return name;
+}
+
+function placeholder(text: string, type: 'bigint' | 'int'): string {
+  if (!new RegExp(`^\\$[1-9][0-9]*::${type}$`).test(text)) {
+    throw new Error(`A fold compares with a numbered ${type} parameter`);
+  }
+  return text;
+}
 
 // The reads that follow people rather than count rows: funnels, journeys,
 // retention and health. Each folds inside the database, so what crosses the
@@ -50,7 +80,15 @@ import { VISITOR_COLUMNS } from './rows.js';
 // then every step reached as one number), the first MAX_FUNNEL_ROWS_PER_VISITOR
 // of each visitor only, and by visit when the window is one visit: one fold
 // per stay, the deepest kept.
-export function funnelFoldSql(source: string, steps: number, window: string, byVisit: boolean): string {
+export function funnelFoldSql(
+  from: string,
+  count: number,
+  within: string,
+  byVisit: boolean,
+): string {
+  const source = relation(from);
+  const steps = whole(count, MIN_FUNNEL_STEPS, MAX_FUNNEL_STEPS, 'The number of steps');
+  const window = placeholder(within, 'bigint');
   const indexes = Array.from({ length: steps }, (_, index) => index);
   const first = `CASE ${indexes.map((index) => `WHEN h${index} THEN ${index}`).join(' ')} ELSE ${steps} END`;
   const mask = indexes.map((index) => `(h${index}::int * ${2 ** index})`).join(' + ');
@@ -240,7 +278,14 @@ SELECT began.cohort, seen.bucket, count(*) AS visitors
 // with whether a stay of that day was their first. `source` reads it; the
 // activity fold below is written over that relation so a test can run exactly
 // the fold over seeded visitors.
-export function activityFoldSql(source: string, offset: string, widths: readonly number[]): string {
+export function activityFoldSql(
+  from: string,
+  first: string,
+  days: readonly number[],
+): string {
+  const source = relation(from);
+  const offset = placeholder(first, 'int');
+  const widths = days.map((width) => whole(width, 1, 366, 'A window'));
   // windowIntervals of retention.ts by gaps and islands: a visitor counts in
   // a window of w days on every day from one of theirs to w - 1 days after
   // it, so consecutive days no more than w apart are one run from its first

@@ -60,6 +60,8 @@ import {
   engagementSql,
   eventsSql,
   goalStatsSql,
+  knownGoal,
+  knownQuery,
   propertyKeysSql,
   propertyValuesSql,
   rawBreakdownSql,
@@ -288,6 +290,7 @@ export function createReports(deps: ReportDeps): Reports {
 
   return {
     async aggregate(query: Query): Promise<AggregateResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       const range: Range = { from: query.from, to: query.to };
       const result: AggregateResult = {
@@ -331,6 +334,7 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async timeseries(query: Query): Promise<TimeseriesResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'timeseries');
       const interval: Interval = query.interval ?? 'day';
@@ -416,6 +420,7 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async breakdown(query: Query): Promise<BreakdownResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       if (query.dim === undefined) {
         throw new StoreQueryError('MISSING_DIMENSION', 'A breakdown needs a dim');
@@ -425,6 +430,7 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async engagement(query: Query): Promise<EngagementResult> {
+      knownQuery(query);
       await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'engagement');
       const dim = assertEngageable(query.dim);
@@ -457,6 +463,7 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async events(query: Query): Promise<EventsResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'events');
       const [base, found] = await Promise.all([
@@ -488,6 +495,7 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async properties(query: PropertyQuery): Promise<PropertyResult> {
+      knownQuery(query);
       const site = await sites.siteOrThrow(query.siteId);
       assertNoGoal(query, 'properties');
       const span: Range = { from: query.from, to: query.to };
@@ -534,6 +542,8 @@ export function createReports(deps: ReportDeps): Reports {
     },
 
     async goalStats(query: Query, goals: Goal[]): Promise<GoalStatsResult> {
+      knownQuery(query);
+      goals.forEach(knownGoal);
       const site = await sites.siteOrThrow(query.siteId);
       const span: Range = { from: query.from, to: query.to };
       const [base, found] = await Promise.all([

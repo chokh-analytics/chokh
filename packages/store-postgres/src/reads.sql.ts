@@ -1,9 +1,12 @@
 import {
   BOT_DIMENSION,
+  DIMENSIONS,
   EVENT_PATH_BY_DIMENSION,
   EVENT_TYPE_BY_DIMENSION,
+  GOAL_KINDS,
   MAX_PROPERTY_KEYS,
   SESSION_PATH_BY_DIMENSION,
+  StoreQueryError,
   dayBounds,
   dayKeysBetween,
   goalIsPattern,
@@ -12,6 +15,7 @@ import {
   type Dimension,
   type Filter,
   type GoalMatch,
+  type Interval,
   type Range,
   type RollupDim,
 } from '@chokh/store';
@@ -47,11 +51,103 @@ export class Params {
   }
 }
 
+// What may become SQL text.
+//
+// A value never does: it is a numbered parameter. But a dimension chooses a
+// column, an operator chooses a comparison and a dimension's name is written
+// into a breakdown as a literal, and those are text. The types say a
+// dimension is one of twenty two words, and a type is a promise the compiler
+// keeps for this repository only: the adapter is a public package, and a
+// caller who hands it `constructor`, or a name with a quote in it, has made
+// no such promise. So nothing below trusts the type. Every name is looked up
+// as an own entry of a Map or a Set built from the contract's declared lists
+// (a plain object would answer `constructor` with a function), and a name
+// that is not there is refused before any statement exists.
+const DIMENSION_NAMES: ReadonlySet<string> = new Set<string>(DIMENSIONS);
+const EVENT_PATHS: ReadonlyMap<string, string> = new Map(Object.entries(EVENT_PATH_BY_DIMENSION));
+const SESSION_PATHS: ReadonlyMap<string, string> = new Map(
+  Object.entries(SESSION_PATH_BY_DIMENSION),
+);
+const EVENT_TYPES: ReadonlyMap<string, string> = new Map(Object.entries(EVENT_TYPE_BY_DIMENSION));
+const OPERATORS: ReadonlySet<string> = new Set(['is', 'is_not', 'contains']);
+const INTERVALS: ReadonlySet<string> = new Set(['minute', 'hour', 'day', 'week', 'month']);
+const KINDS: ReadonlySet<string> = new Set<string>(GOAL_KINDS);
+
+// A dimension the contract declares, or a refusal. The message does not repeat
+// what was sent: it may be anything.
+export function knownDimension(dim: unknown): Dimension {
+  if (typeof dim !== 'string' || !DIMENSION_NAMES.has(dim)) {
+    throw new StoreQueryError('UNSUPPORTED_DIMENSION', 'That is not a dimension this store has');
+  }
+  return dim as Dimension;
+}
+
+function knownOperator(op: unknown): Filter['op'] {
+  if (typeof op !== 'string' || !OPERATORS.has(op)) {
+    throw new StoreQueryError('UNSUPPORTED_FILTER', 'A filter is one of is, is_not and contains');
+  }
+  return op as Filter['op'];
+}
+
+export function knownInterval(interval: unknown): Interval {
+  if (typeof interval !== 'string' || !INTERVALS.has(interval)) {
+    throw new StoreQueryError(
+      'UNSUPPORTED_INTERVAL',
+      'An interval is one of minute, hour, day, week and month',
+    );
+  }
+  return interval as Interval;
+}
+
+export function knownGoal(goal: GoalMatch): void {
+  if (typeof goal?.kind !== 'string' || !KINDS.has(goal.kind) || typeof goal.match !== 'string') {
+    throw new StoreQueryError('INVALID_GOAL', 'A goal is a page or an event, with what it matches');
+  }
+}
+
+// Everything a read was handed that could choose a piece of a statement,
+// checked at the door, so a refusal costs no round trip. The builders check
+// again for themselves: they are exported too.
+export function knownQuery(query: {
+  dim?: unknown;
+  filters?: readonly { dim?: unknown; op?: unknown; value?: unknown }[] | undefined;
+  interval?: unknown;
+  goal?: GoalMatch | undefined;
+}): void {
+  if (query.dim !== undefined) knownDimension(query.dim);
+  if (query.interval !== undefined) knownInterval(query.interval);
+  if (query.goal !== undefined) knownGoal(query.goal);
+  if (query.filters !== undefined && !Array.isArray(query.filters)) {
+    throw new StoreQueryError('UNSUPPORTED_FILTER', 'Filters are a list');
+  }
+  for (const filter of query.filters ?? []) {
+    if (filter === null || typeof filter !== 'object') {
+      throw new StoreQueryError('UNSUPPORTED_FILTER', 'A filter names a dimension and a value');
+    }
+    knownDimension(filter.dim);
+    knownOperator(filter.op);
+    if (typeof filter.value !== 'string') {
+      throw new StoreQueryError('UNSUPPORTED_FILTER', 'A filter compares with a piece of text');
+    }
+  }
+}
+
+// A word written into a statement between quotes: a dimension's name, or the
+// type of row a dimension belongs to. Both come out of the lists above, and
+// this is the belt to those braces: lower case letters and underscores, or
+// nothing is written at all.
+function literal(word: string): string {
+  if (!/^[a-z_]+$/.test(word)) {
+    throw new StoreQueryError('UNSUPPORTED_DIMENSION', 'That is not a dimension this store has');
+  }
+  return `'${word}'`;
+}
+
 // Where a dimension lives on an event row and on a stay row: the contract's
 // own maps of field paths, turned into this schema's columns. One table, so a
 // dimension the contract grows without a column here fails loudly (a test
 // walks every dimension) rather than reading nothing.
-const COLUMN_BY_PATH: Readonly<Record<string, string>> = {
+const COLUMN_BY_PATH: ReadonlyMap<string, string> = new Map(Object.entries({
   path: 'path',
   route: 'route',
   referrer: 'referrer',
@@ -74,10 +170,10 @@ const COLUMN_BY_PATH: Readonly<Record<string, string>> = {
   entryPath: 'entry_path',
   exitPath: 'exit_path',
   channel: 'channel',
-};
+}));
 
 function columnAt(path: string): string {
-  const found = COLUMN_BY_PATH[path];
+  const found = COLUMN_BY_PATH.get(path);
   if (found === undefined) {
     throw new Error(`No column holds ${path}`);
   }
@@ -85,12 +181,12 @@ function columnAt(path: string): string {
 }
 
 export function eventColumn(dim: Dimension): string | undefined {
-  const path = EVENT_PATH_BY_DIMENSION[dim];
+  const path = EVENT_PATHS.get(knownDimension(dim));
   return path === undefined ? undefined : columnAt(path);
 }
 
 export function sessionColumn(dim: Dimension): string | undefined {
-  const path = SESSION_PATH_BY_DIMENSION[dim];
+  const path = SESSION_PATHS.get(knownDimension(dim));
   return path === undefined ? undefined : columnAt(path);
 }
 
@@ -98,21 +194,21 @@ export function sessionColumn(dim: Dimension): string | undefined {
 // The event dimension is the custom events and nothing else: a page timing
 // carries a name too and must not be listed beside signup.
 export function eventKey(dim: Dimension, alias = 'e'): string | null {
-  if (dim === BOT_DIMENSION) {
+  if (knownDimension(dim) === BOT_DIMENSION) {
     return `${alias}.bot::text`;
   }
   const found = eventColumn(dim);
   if (found === undefined) {
     return null;
   }
-  const type = EVENT_TYPE_BY_DIMENSION[dim];
+  const type = EVENT_TYPES.get(dim);
   return type === undefined
     ? `${alias}.${found}`
-    : `CASE WHEN ${alias}.type = '${type}' THEN ${alias}.${found} END`;
+    : `CASE WHEN ${alias}.type = ${literal(type)} THEN ${alias}.${found} END`;
 }
 
 export function sessionKey(dim: Dimension, alias = 's'): string | null {
-  if (dim === BOT_DIMENSION) {
+  if (knownDimension(dim) === BOT_DIMENSION) {
     return `${alias}.bot::text`;
   }
   const found = sessionColumn(dim);
@@ -126,11 +222,12 @@ export function sessionKey(dim: Dimension, alias = 's'): string | null {
 // piece of text and never a pattern: strpos, not LIKE, so a percent sign typed
 // into a filter means a percent sign.
 function condition(column: string, filter: Filter, params: Params): string {
+  const op = knownOperator(filter.op);
   const value = params.add(filter.value);
-  if (filter.op === 'is') {
+  if (op === 'is') {
     return `${column} = ${value}`;
   }
-  if (filter.op === 'is_not') {
+  if (op === 'is_not') {
     return `${column} IS DISTINCT FROM ${value}`;
   }
   return `strpos(${column}, ${value}) > 0`;
@@ -178,14 +275,14 @@ export function eventWhere(
       return 'FALSE';
     }
     const column = `${alias}.${found}`;
-    const type = EVENT_TYPE_BY_DIMENSION[filter.dim];
+    const type = EVENT_TYPES.get(filter.dim);
     if (type === undefined) {
       parts.push(condition(column, filter, params));
     } else if (filter.op === 'is_not') {
       // A row of another type has no value here, and "not signup" is true of it.
-      parts.push(`(${alias}.type <> '${type}' OR ${condition(column, filter, params)})`);
+      parts.push(`(${alias}.type <> ${literal(type)} OR ${condition(column, filter, params)})`);
     } else {
-      parts.push(`${alias}.type = '${type}'`, condition(column, filter, params));
+      parts.push(`${alias}.type = ${literal(type)}`, condition(column, filter, params));
     }
   }
   if (split.stay.length > 0) {
@@ -289,7 +386,7 @@ function keyList(dims: readonly Dimension[], pick: (dim: Dimension) => string | 
   for (const dim of dims) {
     const key = pick(dim);
     if (key !== null) {
-      rows.push(`('${dim}', ${key})`);
+      rows.push(`(${literal(dim)}, ${key})`);
     }
   }
   return rows.join(', ');
@@ -554,6 +651,7 @@ SELECT ${eventKey(dim) ?? 'NULL'} AS key,
 // matching path and by nothing else; a star is one segment of the path, and
 // the pattern is the very string the contract builds for the other adapters.
 export function goalReached(goal: GoalMatch, params: Params, alias: string): string {
+  knownGoal(goal);
   if (goal.kind === 'event') {
     return `${alias}.type = 'event' AND ${alias}.name = ${params.add(goal.match)}`;
   }
