@@ -6,7 +6,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { signHs256 } from '@chokh/server/jwt';
 import { ssoClaimsFor } from '@chokh/server/sso';
 
-import { OWNER, SSO_SECRET } from './fixture-account.js';
+import { DATED_ERROR, OWNER, RECENT_ERROR, SSO_SECRET } from './fixture-account.js';
 import { DESTINATIONS, goTo } from './nav.js';
 
 // The walk somebody takes the first time they open this thing, in a real
@@ -792,7 +792,9 @@ test('draws a deploy posted through the API as a mark, and adds and deletes one 
   });
   expect(again.status()).toBe(409);
 
-  await boot(page, `/${SITE}?range=today`);
+  // Seven days and not today: the mark is two hours old, and for the first two
+  // hours of the site's day that is yesterday.
+  await boot(page, `/${SITE}?range=7d`);
   await expect(page.getByRole('button', { name: 'Annotations (1)' })).toBeVisible();
   await expect(page.locator('[class*="markGlyph"]')).toHaveCount(1);
   await expect(page.getByText('The marks on the chart above.')).toBeAttached();
@@ -992,8 +994,10 @@ test('lists everybody on People, finds a named person and opens them', async ({ 
   const first = await table.getByRole('row').count();
   // The fixture runs back a week, so the column carries days and not a clock
   // time that wraps (AN-PPL02's review): some row is from another day.
+  // A short month is three letters or four (Sept), and a row from the other
+  // side of a new year carries its year as well.
   const seen = await table.locator('tbody tr td:nth-child(2)').allTextContents();
-  expect(seen.some((text) => /^\d{1,2} [A-Z][a-z]{2}, \d\d:\d\d$/.test(text))).toBe(true);
+  expect(seen.some((text) => /^\d{1,2} [A-Z][a-z]{2,3}( \d{4})?, \d\d:\d\d$/.test(text))).toBe(true);
 
   const more = list.getByRole('button', { name: 'Show more' });
   if (await more.isVisible()) {
@@ -1168,13 +1172,33 @@ test('reads page speed on a phone, the bands in words and the slow pages inside 
 
 test('opens an error to its sample, on a phone, with the day it was last seen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  // What the page prints for a last sighting depends on the day it is read
+  // on, so the case fixes the day rather than hoping for one: the page's clock
+  // is pinned on the minute the fixture seeded its newest error at, whenever
+  // that was. On it and not after it, because the page rounds its own clock up
+  // to the minute. Timers still run; only "now" stands still.
+  const week = 7 * 24 * 60 * 60_000;
+  const answer = await page.request.get(
+    `/api/sites/${SITE}/stats/errors?from=${Date.now() - week}&to=${Date.now()}`,
+  );
+  expect(answer.ok(), await answer.text()).toBe(true);
+  const read = (await answer.json()) as { data: { groups: { message: string; lastSeen: number }[] } };
+  const recent = read.data.groups.find((group) => group.message === RECENT_ERROR);
+  expect(recent, 'the fixture did not seed the recent error').toBeDefined();
+  await page.clock.setFixedTime(new Date(recent?.lastSeen ?? 0));
+
   await boot(page, `/${SITE}/health?view=errors`);
   const list = page.getByRole('region', { name: 'JavaScript errors' });
   const long = list.getByText(/checkoutSessionIdentifierFromTheVeryLongNamedPaymentProviderResponse/);
   await expect(long).toBeVisible();
-  const last = await list.getByText(/^Last seen /).allTextContents();
-  expect(last.length).toBeGreaterThan(0);
-  expect(last.some((text) => /^Last seen \d{1,2} [A-Z][a-z]{2,3}, \d\d:\d\d$/.test(text)), last.join(' | ')).toBe(true);
+  const lastSeen = (message: string) =>
+    list.locator('details', { hasText: message }).getByText(/^Last seen /);
+  // Last seen at noon two days ago by the site's calendar: its day, and its
+  // year too in the two days after a new year.
+  await expect(lastSeen(DATED_ERROR)).toHaveText(/^Last seen \d{1,2} [A-Z][a-z]{2,3}( \d{4})?, 12:00$/);
+  // And the other side, so this cannot pass by printing a day on everything:
+  // an error seen a moment ago carries none.
+  await expect(lastSeen(RECENT_ERROR)).toHaveText('Last seen now');
   await long.click();
   await expect(list.getByText('https://progsity.io/_next/static/chunks/app.js:1:2048').first()).toBeVisible();
   const overflow = await page.evaluate(

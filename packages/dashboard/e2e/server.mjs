@@ -32,11 +32,18 @@ process.env.LOG_LEVEL ??= 'error';
 process.env.PORT = String(port);
 
 const { buildApp } = await import('@chokh/server/app');
-const { dayKey } = await import('@chokh/store/time');
+const { addDays, dayBounds, dayKey } = await import('@chokh/store/time');
 const { createMemoryStore } = await import('@chokh/server/store/memory');
 
 export const OWNER = { email: 'owner@chokh.test', password: 'a-long-enough-password' };
 export const SITE_ID = 's_demo';
+
+// The two errors the health case reads by name. The same strings
+// fixture-account.ts exports, written twice because that file is a .ts and
+// this one cannot import it.
+const DATED_ERROR = 'RangeError: Maximum call stack size exceeded';
+const RECENT_ERROR = "SyntaxError: Unexpected token '<'";
+const TIMEZONE = 'Asia/Dhaka';
 
 const DAY_MS = 86_400_000;
 
@@ -237,6 +244,25 @@ async function seed(store, now) {
     }
   }
 
+  // Two errors whose last sighting does not move with the hour this server
+  // was started. Every row above is so many minutes from `now`, so which day of
+  // the site's calendar it falls on depends on the clock: the health case once
+  // looked among them for an error last seen on an earlier day, and found one
+  // only when the run began between midnight and 07:50 in Dhaka.
+  //
+  // The first was last seen at noon two days ago by the site's own calendar,
+  // an earlier day at every hour, so the page has to print its day. The second
+  // was last seen two to three minutes ago, on the minute; the case pins the
+  // page's clock on that same minute, so the page has to print no day at all
+  // whenever the run began, a second before midnight included.
+  const dated = dayBounds(addDays(dayKey(now, TIMEZONE), -2), TIMEZONE).start + 12 * 60 * 60_000;
+  const recent = Math.floor((now - 2 * 60_000) / 60_000) * 60_000;
+  const frame = 'https://progsity.io/_next/static/chunks/app.js:1:2048';
+  events.push(
+    { ...pageview(store, dated, 901), type: 'error', name: DATED_ERROR, frame },
+    { ...pageview(store, recent, 902), type: 'error', name: RECENT_ERROR, frame },
+  );
+
   await store.ingest(events);
 
   // Every finished day rolled up, because that is where a past day's numbers
@@ -244,9 +270,8 @@ async function seed(store, now) {
   // events and everything before it from rollups_daily, so a seed that only
   // writes events leaves a dashboard that says a week of nothing. The job that
   // does this on a real install runs nightly.
-  const timezone = 'Asia/Dhaka';
   for (let day = 8; day >= 1; day -= 1) {
-    await store.rollupDay(SITE_ID, dayKey(now - day * DAY_MS, timezone));
+    await store.rollupDay(SITE_ID, dayKey(now - day * DAY_MS, TIMEZONE));
   }
 }
 
@@ -291,7 +316,7 @@ await must(
       // batch whose Origin is not a domain of the site. A real install
       // measuring itself on its own host lists the same thing.
       domains: ['progsity.io', '127.0.0.1'],
-      settings: { timezone: 'Asia/Dhaka', visitorIdMode: 'persistent', errorCapture: true },
+      settings: { timezone: TIMEZONE, visitorIdMode: 'persistent', errorCapture: true },
     }),
   }),
 );

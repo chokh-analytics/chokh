@@ -13,3 +13,9 @@ export const STATE = 'e2e/.auth/owner.json';
 // signs a token with it and the server verifies against it, which is the whole
 // exchange.
 export const SSO_SECRET = 'chokh-e2e-sso-secret-not-for-production';
+
+// The two errors server.mjs seeds for the health case, written twice for the
+// same reason. One was last seen at noon two days ago by the site's calendar,
+// the other a moment before the server started: see seed() there.
+export const DATED_ERROR = 'RangeError: Maximum call stack size exceeded';
+export const RECENT_ERROR = "SyntaxError: Unexpected token '<'";

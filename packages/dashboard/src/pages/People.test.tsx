@@ -185,6 +185,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -294,6 +295,10 @@ describe('People, the directory', () => {
   // The list is ordered by last seen and runs back over days, so a row that is
   // not from today carries its day, and its year once that differs.
   it('writes the day on every last sighting that was not today', async () => {
+    // The page reads the clock, so the clock is set: at nine in the morning
+    // five minutes ago is today, which it is not in the first five minutes of
+    // a day.
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
     const wall = Date.now();
     serve(undefined, undefined, () =>
       directory([
@@ -311,7 +316,8 @@ describe('People, the directory', () => {
       .slice(1)
       .map((row) => within(row).getAllByRole('cell')[1]?.textContent);
     expect(seen[0]).toBe('5m');
-    expect(seen[1]).toMatch(/^\d{1,2} [A-Z][a-z]{2}, \d\d:\d\d$/);
+    // Three letters or four: a short month is Sept in September.
+    expect(seen[1]).toMatch(/^\d{1,2} [A-Z][a-z]{2,3}, \d\d:\d\d$/);
     expect(seen[2]).toBe('5 Mar 2024, 08:00');
   });
 
