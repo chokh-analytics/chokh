@@ -1,19 +1,60 @@
-# Local development: the server, MongoDB and Redis. Redis is optional for the
-# product; it is here so presence and the live feed behave the way they will in
-# a deployment that has it.
+# The whole product on one machine: the server, PostgreSQL and Redis. This is
+# the default install. To run on MongoDB instead, use docker-compose.mongodb.yml
+# (README.md, "Which database"). Redis is optional for the product; it is here
+# so presence and the live feed behave the way they will in a deployment that
+# has it.
+#
+# As it ships, nothing here is reachable from another machine: the server and
+# Redis are published on this machine's loopback address only, and PostgreSQL
+# is not published at all. The password and the session secret below are
+# development values that anybody reading this repository has. README.md,
+# "Before anybody else can reach it", says what to change first.
 name: chokh
 
+# The server and the one-shot migration are the same image, so the tables a
+# release declares and the code that reads them cannot be of different
+# versions.
+x-chokh-image: &chokh-image
+  build: .
+  image: chokh:local
+
+# The password is a development value: set POSTGRES_PASSWORD in your
+# environment before the first `docker compose up`. It is written into a URL,
+# so keep it to letters, digits, `-` and `_`, or percent-encode it. The image
+# sets it when it first creates the volume and never again; to change it later,
+# change the role's password in the database as well.
+x-database-url: &database-url 'postgresql://chokh:${POSTGRES_PASSWORD:-chokh-development-only}@postgres:5432/chokh'
+
 services:
+  # Creates the tables and indexes this release declares, then exits. It runs
+  # on every `up`, creates nothing the second time, and the server does not
+  # start until it has exited with success: a server pointed at a database the
+  # migration has not reached refuses to boot.
+  migrate:
+    <<: *chokh-image
+    restart: 'no'
+    command: ['node', 'packages/store-postgres/dist/migrate.js', '--apply']
+    environment:
+      DATABASE_URL: *database-url
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   server:
-    build: .
+    <<: *chokh-image
     restart: unless-stopped
+    # On this machine only. Put a TLS-terminating proxy in front and leave this
+    # as it is, or set CHOKH_PUBLISH (for example to 0.0.0.0:4100) once the
+    # secrets below are your own.
     ports:
-      - '4100:4100'
+      - '${CHOKH_PUBLISH:-127.0.0.1:4100}:4100'
     environment:
       HOST: 0.0.0.0
       PORT: '4100'
       LOG_LEVEL: info
-      MONGODB_URI: mongodb://mongo:27017/chokh
+      DATABASE_URL: *database-url
       REDIS_URL: redis://redis:6379
       # What the dashboard session cookie is signed with. The image runs with
       # NODE_ENV=production, which refuses to start without one, and the value below
@@ -40,24 +81,34 @@ services:
     volumes:
       - geo-data:/app/data/geo
     depends_on:
-      mongo:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
 
-  mongo:
-    image: mongo:7
+  # Not published, on purpose: only the two services above reach it, over the
+  # network compose makes for them. To look inside:
+  #   docker compose exec postgres psql -U chokh chokh
+  postgres:
+    image: postgres:17-alpine
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:27017:27017'
+    environment:
+      POSTGRES_USER: chokh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chokh-development-only}
+      POSTGRES_DB: chokh
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand("ping")']
-      interval: 10s
+      # Over TCP, not the socket: while the image is creating a new volume it
+      # runs a server that answers on the socket alone, and a check that
+      # believed it would let the migration start a moment too early.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U chokh -d chokh']
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 20
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
@@ -73,6 +124,6 @@ services:
       retries: 10
 
 volumes:
-  mongo-data:
+  postgres-data:
   redis-data:
   geo-data:
