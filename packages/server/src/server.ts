@@ -4,6 +4,7 @@ import { DATABASE_FILE, openReader, startGeoRefresh } from '@chokh/geo';
 
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
+import { failureReason } from './lib/failure-reason.js';
 import { loadExtensions } from './lib/load-extensions.js';
 import { shutdown } from './lib/shutdown.js';
 import { openBus, openOnce } from './plugins/bus.js';
@@ -21,8 +22,7 @@ const { store, kind, version } = await openStore(presence, storeLog).catch((erro
   // A database that is not there, not migrated or not one this product runs
   // on. One line that says which, without a stack, and a status a supervisor
   // can read: nothing has been started that needs stopping.
-  const reason = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`Chokh could not open its database: ${reason}\n`);
+  process.stderr.write(`Chokh could not open its database: ${failureReason(error)}\n`);
   process.exit(1);
 });
 const { bus, kind: busKind } = openBus();

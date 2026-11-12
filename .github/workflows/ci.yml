@@ -144,7 +144,7 @@ jobs:
           docker exec "${postgres}" psql -U postgres -q -c 'CREATE DATABASE chokh_empty'
           refused 'a database nobody migrated' 'migrate.js --apply' \
             DATABASE_URL="${url%/postgres}/chokh_empty"
-          refused 'a database that is not there' 'could not open its database' \
+          refused 'a database that is not there' 'could not open its database: .*ECONNREFUSED' \
             DATABASE_URL=postgresql://postgres:postgres@localhost:1/postgres
 
           boot() {
@@ -167,7 +167,10 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"id":"ci_site","name":"CI","domains":["example.com"],"settings":{"timezone":"Asia/Dhaka"}}' > /dev/null
           now="$(($(date +%s) * 1000))"
+          # As a browser says it is. Sent as curl, the pageview is stored and
+          # marked as a bot, which is right, and no report counts it.
           curl -fs -X POST http://localhost:4190/api/collect \
+            -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' \
             -H 'content-type: text/plain' -H 'origin: https://example.com' \
             -d "{\"siteId\":\"ci_site\",\"sentAt\":${now},\"hostname\":\"example.com\",\"visitorId\":\"v_ci\",\"lang\":\"en\",\"screen\":\"1440x900\",\"events\":[{\"type\":\"pageview\",\"ts\":$((now - 1000)),\"path\":\"/pricing\"}]}"
           read_back() {
