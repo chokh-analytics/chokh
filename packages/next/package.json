@@ -1,0 +1,125 @@
+{
+  "name": "@chokh/next",
+  "version": "0.1.0",
+  "description": "Chokh analytics in a Next.js App Router app, first-party: <Analytics />, the script rewrites and the signed collect route.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "analytics",
+    "chokh",
+    "nextjs",
+    "next",
+    "web-analytics",
+    "privacy"
+  ],
+  "homepage": "https://github.com/chokh-analytics/chokh/tree/main/packages/next#readme",
+  "bugs": "https://github.com/chokh-analytics/chokh/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chokh-analytics/chokh.git",
+    "directory": "packages/next"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "//exports": [
+    "The repository's map reads types from src, so a fresh clone typechecks",
+    "before anything is built. publishConfig replaces it in the packed copy:",
+    "ES modules or CommonJS by condition, each with its own .d.ts. Three entry",
+    "points, so next.config imports no React and a route handler no component."
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/esm/index.js"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "default": "./dist/esm/config.js"
+    },
+    "./collect": {
+      "types": "./src/collect.ts",
+      "default": "./dist/esm/collect.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/cjs/index.js",
+    "module": "./dist/esm/index.js",
+    "types": "./dist/cjs/index.d.ts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./config": {
+        "import": {
+          "types": "./dist/esm/config.d.ts",
+          "default": "./dist/esm/config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/config.d.ts",
+          "default": "./dist/cjs/config.js"
+        }
+      },
+      "./collect": {
+        "import": {
+          "types": "./dist/esm/collect.d.ts",
+          "default": "./dist/esm/collect.js"
+        },
+        "require": {
+          "types": "./dist/cjs/collect.d.ts",
+          "default": "./dist/cjs/collect.js"
+        }
+      },
+      "./package.json": "./package.json"
+    },
+    "typesVersions": {
+      "*": {
+        "config": [
+          "./dist/cjs/config.d.ts"
+        ],
+        "collect": [
+          "./dist/cjs/collect.d.ts"
+        ]
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server-tests.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chokh/react": "workspace:^"
+  },
+  "peerDependencies": {
+    "next": "^15.0.0 || ^16.0.0",
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@chokh/sdk-node": "workspace:*",
+    "@chokh/server": "workspace:*",
+    "@types/node": "^22.20.3",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "next": "^16.4.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.7"
+  }
+}
