@@ -176,7 +176,8 @@ if (await collect.signForwardedAddress('chokh-forwarded-test-vector-secret', '10
 for (const [name, value] of [['createClient', sdk.createClient], ['ChokhProvider', react.ChokhProvider], ['withChokh', config.withChokh], ['createCollectRoute', collect.createCollectRoute]]) {
   if (typeof value !== 'function') throw new Error(name + ' did not load');
 }
-say('ES modules load: @chokh/sdk-node, @chokh/react, @chokh/next/config, @chokh/next/collect');
+// Written by a separate process, which has no say() of its own.
+console.log('ES modules load: @chokh/sdk-node, @chokh/react, @chokh/next/config, @chokh/next/collect');
 `;
 const cjs = `
 const sdk = require('@chokh/sdk-node');
@@ -188,7 +189,7 @@ if (sdk.signUserId('chokh-identify-test-vector-secret', 'ps_web', 'u_42') !== 'P
 for (const [name, value] of [['createClient', sdk.createClient], ['useTrack', react.useTrack], ['Analytics', next.Analytics], ['withChokh', config.withChokh], ['createCollectRoute', collect.createCollectRoute]]) {
   if (typeof value !== 'function') throw new Error(name + ' did not load');
 }
-say('CommonJS loads: @chokh/sdk-node, @chokh/react, @chokh/next, @chokh/next/config, @chokh/next/collect');
+console.log('CommonJS loads: @chokh/sdk-node, @chokh/react, @chokh/next, @chokh/next/config, @chokh/next/collect');
 `;
 writeFileSync(join(consumer, 'load.mjs'), esm);
 writeFileSync(join(consumer, 'load.cjs'), cjs);
