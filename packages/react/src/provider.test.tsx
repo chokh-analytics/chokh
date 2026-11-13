@@ -258,3 +258,15 @@ describe('useTrack and useChokh', () => {
     expect(calls).toEqual([['event', 'clicked', undefined]]);
   });
 });
+
+describe('a Content-Security-Policy nonce', () => {
+  it('is set on every script the provider adds', () => {
+    render(<ChokhProvider site="my_site" src={SRC} vitals errors nonce="n0nce-abc" />);
+    expect(tags().map((tag) => tag.nonce)).toEqual(['n0nce-abc', 'n0nce-abc', 'n0nce-abc']);
+  });
+
+  it('is not set when none is given', () => {
+    render(<ChokhProvider site="my_site" src={SRC} />);
+    expect(tags()[0]?.nonce).toBe('');
+  });
+});

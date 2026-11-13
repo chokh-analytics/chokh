@@ -11,6 +11,7 @@ import { ChokhConsent } from './consent.js';
 interface Tag {
   id?: string;
   src?: string;
+  nonce?: string;
   data: Record<string, string>;
 }
 
@@ -24,6 +25,7 @@ function tags(element: ReactElement): Tag[] {
     return {
       ...(typeof props.id === 'string' ? { id: props.id } : {}),
       ...(typeof props.src === 'string' ? { src: props.src } : {}),
+      ...(typeof props.nonce === 'string' ? { nonce: props.nonce } : {}),
       data,
     };
   });
@@ -60,5 +62,11 @@ describe('<Analytics />', () => {
     expect(children.some((child) => child.type === ChokhConsent)).toBe(true);
     const ungated = (Analytics({ site: 's' }).props as { children: unknown[] }).children.filter(isValidElement);
     expect(ungated.some((child) => child.type === ChokhConsent)).toBe(false);
+  });
+
+  it('gives a nonce to the inline stub and to every script', () => {
+    const nonced = tags(Analytics({ site: 's', vitals: true, errors: true, nonce: 'n0nce-abc' }));
+    expect(nonced.map((tag) => tag.nonce)).toEqual(['n0nce-abc', 'n0nce-abc', 'n0nce-abc', 'n0nce-abc']);
+    expect(tags(Analytics({ site: 's' })).every((tag) => tag.nonce === undefined)).toBe(true);
   });
 });

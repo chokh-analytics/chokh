@@ -26,6 +26,9 @@ export interface AnalyticsProps extends ChokhTagOptions {
   // string for a URL of their own.
   vitals?: boolean | string;
   errors?: boolean | string;
+  // A Content-Security-Policy nonce, given to the inline stub and to every
+  // script, for a site whose policy allows scripts by nonce.
+  nonce?: string;
 }
 
 // The tracker in an App Router layout, in one line:
@@ -44,7 +47,7 @@ export interface AnalyticsProps extends ChokhTagOptions {
 // data-consent on the tag, holds every event until it is true, and a later
 // false withdraws.
 export function Analytics(props: AnalyticsProps): ReactElement {
-  const { path, src, vitals, errors, api, ...tag } = props;
+  const { path, src, vitals, errors, api, nonce, ...tag } = props;
   const firstParty = src === undefined;
   const base = normalisePath(path);
   const trackerSrc = src ?? `${base}/a.js`;
@@ -57,10 +60,10 @@ export function Analytics(props: AnalyticsProps): ReactElement {
 
   return (
     <>
-      <script id="chokh-stub" dangerouslySetInnerHTML={{ __html: CHOKH_QUEUE_STUB }} />
-      <Script id={TRACKER_ID} src={trackerSrc} strategy="afterInteractive" {...attributes} />
-      {vitalsSrc === undefined ? null : <Script id={VITALS_ID} src={vitalsSrc} strategy="afterInteractive" />}
-      {errorsSrc === undefined ? null : <Script id={ERRORS_ID} src={errorsSrc} strategy="afterInteractive" />}
+      <script id="chokh-stub" nonce={nonce} dangerouslySetInnerHTML={{ __html: CHOKH_QUEUE_STUB }} />
+      <Script id={TRACKER_ID} src={trackerSrc} strategy="afterInteractive" nonce={nonce} {...attributes} />
+      {vitalsSrc === undefined ? null : <Script id={VITALS_ID} src={vitalsSrc} strategy="afterInteractive" nonce={nonce} />}
+      {errorsSrc === undefined ? null : <Script id={ERRORS_ID} src={errorsSrc} strategy="afterInteractive" nonce={nonce} />}
       {tag.consent === undefined ? null : <ChokhConsent consent={tag.consent} />}
     </>
   );

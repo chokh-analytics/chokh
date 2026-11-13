@@ -18,7 +18,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const PACKAGES = [
   { name: '@chokh/sdk-node', entry: 'packages/sdk-node/dist/esm/index.js', budget: 4096, platform: 'node' },
-  { name: '@chokh/react', entry: 'packages/react/dist/esm/index.js', budget: 1024, platform: 'browser' },
+  // 1,280: 998 B at first, 1,018 B with the nonce prop, which left 6 B under 1,024.
+  { name: '@chokh/react', entry: 'packages/react/dist/esm/index.js', budget: 1280, platform: 'browser' },
   { name: '@chokh/next', entry: 'packages/next/dist/esm/index.js', budget: 1536, platform: 'browser' },
   { name: '@chokh/next/config', entry: 'packages/next/dist/esm/config.js', budget: 1024, platform: 'node' },
   { name: '@chokh/next/collect', entry: 'packages/next/dist/esm/collect.js', budget: 1536, platform: 'node' },

@@ -21,10 +21,13 @@ export interface ChokhProviderProps extends ChokhTagOptions {
   // share its consent gate and its batch.
   vitals?: boolean | string;
   errors?: boolean | string;
+  // A Content-Security-Policy nonce, set on every script the provider adds,
+  // for a site whose policy allows scripts by nonce.
+  nonce?: string;
   children?: ReactNode;
 }
 
-function addScript(id: string, src: string, attributes: Record<string, string> = {}): void {
+function addScript(id: string, src: string, nonce: string | undefined, attributes: Record<string, string> = {}): void {
   // Found again by id, so a second effect (React strict mode runs every effect
   // twice in development), a second provider or a tag the server already
   // rendered adds nothing. A second a.js would boot a second tracker and count
@@ -34,6 +37,7 @@ function addScript(id: string, src: string, attributes: Record<string, string> =
   script.id = id;
   script.src = src;
   script.async = true;
+  if (nonce !== undefined) script.nonce = nonce;
   for (const [name, value] of Object.entries(attributes)) {
     script.setAttribute(name, value);
   }
@@ -49,20 +53,20 @@ function addScript(id: string, src: string, attributes: Record<string, string> =
 // navigation itself. And it never removes the tag on unmount, because removing
 // a script does not stop what it started.
 export function ChokhProvider(props: ChokhProviderProps): ReactElement {
-  const { src, vitals, errors, children, consent, ...rest } = props;
+  const { src, vitals, errors, children, consent, nonce, ...rest } = props;
   const attributes = trackerAttributes({ ...rest, ...(consent === undefined ? {} : { consent }) });
   // The attributes are read when the tag is first added and never again: the
   // tracker reads them once, when it boots. The effect is keyed on their text,
   // so a parent that passes a new object on every render does not rerun it.
-  const key = JSON.stringify([src, attributes, vitals, errors]);
+  const key = JSON.stringify([src, attributes, vitals, errors, nonce]);
 
   useEffect(() => {
     ensureStub();
-    addScript(TRACKER_ID, src, attributes);
+    addScript(TRACKER_ID, src, nonce, attributes);
     const vitalsSrc = siblingScript(src, vitals, 'v.js');
-    if (vitalsSrc !== undefined) addScript(VITALS_ID, vitalsSrc);
+    if (vitalsSrc !== undefined) addScript(VITALS_ID, vitalsSrc, nonce);
     const errorsSrc = siblingScript(src, errors, 'e.js');
-    if (errorsSrc !== undefined) addScript(ERRORS_ID, errorsSrc);
+    if (errorsSrc !== undefined) addScript(ERRORS_ID, errorsSrc, nonce);
   }, [key]);
 
   useConsent(consent);

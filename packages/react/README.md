@@ -51,6 +51,7 @@ document, found again by id, however many times its effect runs.
 | `hashRouting` | `data-hash` | Count a change of `#hash` as a page. |
 | `respectDnt` | `data-dnt` | Honour Do Not Track. |
 | `consent` | `data-consent` | Left out: no consent gate. A boolean: nothing is sent until it is `true`, and setting it back to `false` throws away anything held. |
+| `nonce` | | A Content-Security-Policy nonce, set on every script the provider adds. |
 | `vitals`, `errors` | | Load `v.js` (Core Web Vitals) and `e.js` (JavaScript errors): `true` for the file beside `src`, a string for its own URL. |
 
 The provider renders its children and nothing else. On a server it renders
