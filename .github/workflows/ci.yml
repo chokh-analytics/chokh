@@ -687,6 +687,46 @@ jobs:
           echo "${answer}"
           grep -q '"pageviews":1' <<< "${answer}"
 
+      # The importers as a process, with the image's own command, against the
+      # real database of this leg (PostgreSQL or MongoDB): the dry run writes
+      # nothing, --apply writes, a second --apply writes nothing, the stats API
+      # reads the two imported days (Dhaka's 1 and 2 January 2025, from
+      # 2024-12-31T18:00Z), and --remove takes them back out. The site has data
+      # of its own from today only, so both days are importable.
+      - name: chokh-import against the real database
+        run: |
+          set -e
+          docker compose cp packages/server/src/import/fixtures/plausible server:/tmp/plausible
+          run() { docker compose exec -T server node packages/server/dist/cli/import.js "$@"; }
+          stats() { curl -fs -H "cookie: ${SESSION}" "http://localhost:4100/api/sites/ci_site/stats/aggregate?from=1735668000000&to=1735840800000"; }
+          dry="$(run plausible --site ci_site /tmp/plausible)"
+          echo "${dry}"
+          grep -q 'new       2 days, 42 rows' <<< "${dry}"
+          grep -q 'Dry run: nothing was written' <<< "${dry}"
+          before="$(stats)"
+          echo "${before}"
+          grep -q '"visitors":0' <<< "${before}"
+          applied="$(run plausible --site ci_site --apply /tmp/plausible)"
+          echo "${applied}"
+          grep -q 'Wrote 2 days, 42 rows, as import "plausible"' <<< "${applied}"
+          again="$(run plausible --site ci_site --apply /tmp/plausible)"
+          echo "${again}"
+          grep -q 'unchanged 2 days, 42 rows' <<< "${again}"
+          grep -q 'Nothing to write' <<< "${again}"
+          imported="$(stats)"
+          echo "${imported}"
+          grep -q '"visitors":18' <<< "${imported}"
+          grep -q '"pageviews":45' <<< "${imported}"
+          listed="$(run --list --site ci_site)"
+          echo "${listed}"
+          grep -q 'plausible: 2025-01-01 to 2025-01-02, 2 days, 42 rows' <<< "${listed}"
+          removed="$(run --remove plausible --site ci_site --apply)"
+          echo "${removed}"
+          grep -q 'Removed import "plausible" from ci_site: 2 days, 42 rows.' <<< "${removed}"
+          after="$(stats)"
+          echo "${after}"
+          grep -q '"visitors":0' <<< "${after}"
+
       # Down and up again, without -v: the containers go and the volumes stay,
       # which is every upgrade and every reboot. The account, its session, the
       # site and the pageview are all still there, and on PostgreSQL the

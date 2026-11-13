@@ -396,6 +396,61 @@ The image is the server alone and runs in production mode, so it wants a
 database: `DATABASE_URL` or `MONGODB_URI`. Started with neither, it says so and
 stops.
 
+## Importing history
+
+Moving from Plausible, Umami or Google Analytics 4? One command brings your old
+numbers in as history, day by day, from the image itself:
+
+```bash
+docker compose cp ./my-export server:/tmp/my-export
+docker compose exec server node packages/server/dist/cli/import.js plausible --site my_site /tmp/my-export
+```
+
+That is a dry run: it prints, day by day, what it would write and why it would
+leave any day out, and writes nothing. Run it again with `--apply` to write.
+Running the same files again writes nothing; a file that changed rewrites only
+the days that changed. `--list --site my_site` shows your imports, and
+`--remove plausible --site my_site --apply` takes one back out without touching
+anything else. Outside Docker the command is `chokh-import` from
+`packages/server`, with `DATABASE_URL` or `MONGODB_URI` set as the server has it.
+
+| Source | What to give it |
+| --- | --- |
+| `plausible` | The CSV files Plausible's **Export to CSV** writes (`imported_visitors_..._....csv` and the rest), unzipped. `imported_visitors` is required. |
+| `umami` | Umami's data export: `website_event` and `session` as CSV (or `.csv.gz`). Name the website with `--website <uuid>` if the export holds several. |
+| `ga4` | GA4 reports as the Data API's `runReport` JSON (Google's Query Explorer downloads it): one report with only the `date` dimension, which is required, and any of `date` plus one of `pagePath`, `landingPage`, `pageReferrer`, `sessionDefaultChannelGroup`, `sessionManualSource`, `sessionManualMedium`, `sessionManualCampaignName`, `sessionManualTerm`, `sessionManualAdContent`, `countryId`, `region`, `city`, `browser`, `operatingSystem`, `deviceCategory`, `languageCode`, `eventName`. |
+
+**What imported history can show.** Imported days are written as daily totals,
+the same rows Chokh keeps for its own past days, and never as visits or events.
+So for those days the dashboard shows visitors, pageviews, visits, bounce rate
+and visit duration, as a total and day by day, week by week or month by month,
+and a breakdown by any one thing the export had: pages, entry and exit pages,
+referrers, UTM tags, channels, countries, browsers, systems, devices, custom
+events (people, not counts). Visitors over several days are each day's visitors
+added up, which is how Chokh counts any past day.
+
+**What it cannot show.** Anything that needs individual visits: an hourly
+chart, any filter or segment (a filtered report shows nothing for imported
+days), two breakdowns at once, goals and conversions, funnels, journeys,
+retention, People and profiles, page speed, errors, realtime. Nobody who appears
+only in an import is a person in Chokh.
+
+**Where the sources differ.** Plausible gives regions as codes and cities as
+GeoNames ids, so neither is imported, and it has no channel column, so Chokh
+works the channel out from the referrer and UTM as it does for a live visit.
+GA4 counts a bounce as a session that was not "engaged", which is not Chokh's
+bounce (a visit of one page), so the two bounce rates do not compare. Umami
+gives raw rows, so Chokh counts them itself, in your site's time zone; its
+regions are codes too and are left out. Browser and system names are kept as the
+source wrote them. Plausible's and GA4's days are days in that tool's time zone,
+taken as they are.
+
+**Which days it writes.** Only days before your site has any data of its own,
+and never today or yesterday, so an imported day and a counted day can never
+overlap and nothing is counted twice; two imports cannot share a day either.
+Imported days are kept for as long as Chokh keeps history, which is for good:
+the retention setting removes raw visits, never daily totals.
+
 ## Layout
 
 | Package | What it is |
@@ -407,7 +462,10 @@ stops.
 | `packages/store-postgres` | The PostgreSQL storage adapter, the default |
 | `packages/store-mongo` | The MongoDB storage adapter |
 | `packages/geo` | IP to location and user agent parsing, offline |
-| `packages/sdk-node` | Server-side `track` and `identify`, and the identify signature |
+| `packages/sdk-node` | `@chokh/sdk-node`: server-side `track` and `identify`, queued, batched and retried, and the identify signature |
+| `packages/react` | `@chokh/react`: `<ChokhProvider>` and `useTrack` |
+| `packages/next` | `@chokh/next`: `<Analytics />`, the first-party script rewrites and the signed collect route |
+| `examples/next-app` | An App Router app wired with `@chokh/next`, driven by a browser case against the real server |
 | `packages/ee` | Chokh Pro. Not MIT: see [its own licence](packages/ee/LICENSE) |
 
 Storage sits behind one `AnalyticsStore` interface, so an adapter can be
