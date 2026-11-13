@@ -1,0 +1,103 @@
+# Publishes @chokh/sdk-node, @chokh/react and @chokh/next to npm.
+#
+# Two ways in, and no other: a tag packages-v<version> (the three packages'
+# versions must all equal it), or a manual run from the Actions tab. A manual
+# run is a dry run unless its "dry_run" box is unticked: it builds, tests,
+# packs and checks everything and shows what npm would get, and uploads
+# nothing. A push to main never publishes.
+#
+# Publishing needs the repository secret NPM_TOKEN, an npm granular access
+# token that may publish under the @chokh scope. Each package is published
+# with provenance (the id-token permission below), so npm shows which commit
+# and which run built it. A version already on npm is passed over, so a run
+# that failed halfway can simply be run again.
+name: Release packages
+
+on:
+  push:
+    tags: ['packages-v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: build, test, pack and check, and publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-packages
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build, test, pack and publish the three packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: The packages carry the tag's version
+        if: github.event_name == 'push'
+        run: |
+          set -e
+          want="${GITHUB_REF_NAME#packages-v}"
+          for dir in packages/sdk-node packages/react packages/next; do
+            have="$(node -p "require('./${dir}/package.json').version")"
+            if [ "${have}" != "${want}" ]; then
+              echo "::error::${dir} is ${have}, the tag says ${want}"
+              exit 1
+            fi
+          done
+
+      # The real server is what the SDK and the collect route are tested
+      # against, so everything is built.
+      - run: pnpm build
+
+      - run: >-
+          pnpm --filter @chokh/sdk-node --filter @chokh/react
+          --filter @chokh/react-on-react-18 --filter @chokh/next test
+
+      - run: pnpm size:packages
+
+      # Packs each package, checks each tarball and loads it from a throwaway
+      # consumer. --keep leaves the tarballs for the step below, so what is
+      # published is exactly what was checked.
+      - run: node scripts/pack-check.mjs --keep
+
+      - name: Publish, or show what would be published
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -e
+          if [ "${DRY_RUN}" != "true" ] && [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::The repository secret NPM_TOKEN is not set, so nothing can be published"
+            exit 1
+          fi
+          # @chokh/react before @chokh/next, which depends on it.
+          for name in sdk-node react next; do
+            tarball="$(ls .pack-check/tarballs/chokh-${name}-*.tgz)"
+            version="$(tar -xOzf "${tarball}" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+            if npm view "@chokh/${name}@${version}" version > /dev/null 2>&1; then
+              echo "@chokh/${name}@${version} is already on npm, passed over"
+              continue
+            fi
+            if [ "${DRY_RUN}" = "true" ]; then
+              npm publish "${tarball}" --access public --dry-run
+            else
+              npm publish "${tarball}" --access public --provenance
+            fi
+          done

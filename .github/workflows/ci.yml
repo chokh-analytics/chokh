@@ -212,6 +212,10 @@ jobs:
       # about carrying them.
       - run: pnpm size:dashboard
 
+      # What each published package adds to a consumer bundle, gzipped, against
+      # its budget (scripts/package-size.mjs).
+      - run: pnpm size:packages
+
       # The line between the MIT core and packages/ee. ESLint already refuses a
       # core file that imports the paid half; this also covers the licence key
       # and the dependency direction, and runs even when lint did not.
@@ -421,6 +425,29 @@ jobs:
       - run: node scripts/cla-check.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  packages:
+    name: the npm packages packed, checked and loaded from a consumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @chokh/sdk-node --filter @chokh/react --filter @chokh/next build
+
+      # Each tarball's files and manifest, then a throwaway consumer that
+      # installs the three with their peers and type-checks and loads every
+      # entry as ES modules and as CommonJS (scripts/pack-check.mjs). The
+      # release workflow runs the same check on the tarballs it publishes.
+      - run: node scripts/pack-check.mjs
 
   tracker-e2e:
     name: tracker smoke in a real browser

@@ -112,10 +112,20 @@ If a ticket and this file disagree, stop and report. Do not pick one.
   and applied by a `migrate` command, never `autoIndex`
 - `packages/geo`: MaxMind GeoLite2-City through `maxmind`, DB-IP Lite as the
   keyless fallback, `ua-parser-js` 1.x for user agents
-- `packages/sdk-node`: server-side `track` and `identify`, and the one line that
-  signs an identify. It is not imported by the server: a product does not depend on
+- `packages/sdk-node`: `@chokh/sdk-node`, server-side `track` and `identify`
+  (queued, batched per person, retried on a network error or a 5xx, never a 4xx),
+  and the one line that signs an identify. Node's standard library and nothing
+  else. It is not imported by the server: a product does not depend on
   its own client SDK, so the collector keeps its own copy of that line and a shared
   test vector in both packages is what stops the two drifting
+- `packages/react` and `packages/next`: `@chokh/react` (`<ChokhProvider>`,
+  `useTrack`) and `@chokh/next` (`<Analytics />`, the script rewrites, the signed
+  collect route). Neither carries tracker code or sends a pageview: `a.js` counts
+  pages. These three are the packages published to npm, ES modules and CommonJS
+  both, built by `scripts/build-package.mjs`, released by
+  `.github/workflows/release-packages.yml` on a `packages-v<version>` tag or a
+  manual run, and nowhere else. `examples/next-app` is the App Router app that
+  proves `@chokh/next` and is never published
 - `packages/ee`: Chokh Pro. Not MIT. It depends on `packages/server` and nothing
   in the core depends on it, so deleting the directory leaves a product that
   builds and boots; CI proves that on every push rather than asserting it
@@ -187,6 +197,11 @@ reopens the box, and no ticket in the next wave starts while one is open.
 | `pnpm lint` | ESLint across the repository |
 | `pnpm test` | Vitest in every package that has tests |
 | `pnpm size:tracker` | Assert the built tracker is at most 3 KB gzipped |
+| `pnpm size:packages` | Assert what each npm package adds to a bundle against its budget |
+| `node scripts/pack-check.mjs` | Pack the three npm packages, check each tarball and load it from a throwaway consumer |
+| `pnpm --filter @chokh/react test:e2e` | The real `a.js` under `<ChokhProvider>` in strict mode, in a real browser |
+| `pnpm --filter @chokh/example-next e2e` | The App Router example against the real server: one pageview per load and per navigation |
+| `node packages/server/dist/cli/import.js` | `chokh-import`: Plausible, Umami or GA4 history as rollup rows. Dry run unless `--apply` |
 | `pnpm --filter @chokh/tracker test:e2e` | The Playwright smoke against a fixture page |
 | `node scripts/ee-boundary.mjs` | Assert the line between the MIT core and `packages/ee` |
 | `node scripts/cla-check.mjs --dry-run` | Assert the CLA check accepts a signed author and refuses an unsigned one |
@@ -204,12 +219,14 @@ Redis presence backend and the PostgreSQL adapter are proved against the real
 things; the same job runs the PostgreSQL migration twice and then runs the built
 server as a process against that database: what it refuses to boot on, a
 pageview in and out, and SIGTERM with the database present and gone. *The
-PostgreSQL adapter again on `postgres:15-alpine`*, the oldest it supports. *Two
-browser jobs*, the tracker's fixture page and the dashboard with its
-accessibility audit. *`docker compose up` once per database*, the default file
+PostgreSQL adapter again on `postgres:15-alpine`*, the oldest it supports. *Four
+browser jobs*, the tracker's fixture page, the dashboard with its
+accessibility audit, `@chokh/react` with the real tracker, and the `@chokh/next`
+example app on Next 15 and on Next 16 against the real server. *The npm
+packages* packed, checked and loaded from a consumer. *`docker compose up` once per database*, the default file
 and the MongoDB file: up from nothing with no variable set, `GET /health`, no
 port published beyond the machine, the migration verified, the README's first
-steps (an account, a site, a pageview collected and read back), down and up
+steps (an account, a site, a pageview collected and read back), `chokh-import` run in the image against that database (a dry run, an apply, a second apply that writes nothing, the imported days read back, a removal), down and up
 again with the rows still there, and the server told to stop with the database
 present and gone. So the image, both compose files and both migrations are
 never unproven. *A job that deletes `packages/ee`*, installs, builds, runs the

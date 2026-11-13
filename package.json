@@ -16,11 +16,14 @@
     "test": "pnpm -r run test",
     "size:tracker": "node scripts/tracker-size.mjs",
     "size:dashboard": "pnpm --filter @chokh/dashboard run size",
-    "load:collect": "node scripts/load-collect.mjs"
+    "load:collect": "node scripts/load-collect.mjs",
+    "size:packages": "node scripts/package-size.mjs",
+    "pack:check": "node scripts/pack-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "autocannon": "^8.0.0",
+    "esbuild": "^0.25.0",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "typescript": "^5.7.3",

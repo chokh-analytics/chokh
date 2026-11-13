@@ -40,3 +40,6 @@ packages/dashboard/lighthouse/
 
 # The session the browser suite signs in with once.
 packages/dashboard/e2e/.auth/
+
+# scripts/pack-check.mjs packs and installs here, and deletes it after.
+.pack-check/
