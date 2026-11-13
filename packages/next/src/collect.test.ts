@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { signForwardedAddress as signWithNodeCrypto } from '@chokh/sdk-node';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createCollectRoute, signForwardedAddress, visitorAddress } from './collect.js';
+import { addressFrom, createCollectRoute, signForwardedAddress, visitorAddress } from './collect.js';
 
 // The collect route, forwarding to the real Chokh collector: packages/server's
 // buildApp on its memory store, booted in the X-Chokh-Forwarded-For mode with a
@@ -189,5 +189,69 @@ describe('createCollectRoute, into the real collector', () => {
   it('answers 202 and never throws when the collector is down', async () => {
     const POST = createCollectRoute({ url: 'http://127.0.0.1:9', proxySecret: SECRET, timeoutMs: 2_000 });
     expect((await POST(beacon(browser))).status).toBe(202);
+  });
+});
+
+describe('where the address comes from', () => {
+  // A visitor can send any x-forwarded-for they like. On a host that passes it
+  // through or appends to it, the first entry is theirs to choose, and the
+  // route's signature would make the collector believe it.
+  const forged = { ...browser, 'x-forwarded-for': '6.6.6.6' };
+
+  it('behind Cloudflare, reads CF-Connecting-IP and ignores a forged x-forwarded-for', async () => {
+    const POST = createCollectRoute({ url: base, proxySecret: SECRET, clientAddress: addressFrom.cloudflare });
+    await POST(beacon({ ...forged, 'cf-connecting-ip': '203.0.113.50' }, '/behind-cloudflare'));
+    await expect.poll(() => stored().length).toBe(1);
+    expect(stored()[0]?.ip).toBe('203.0.113.50');
+  });
+
+  it("behind an appending proxy, reads the last entry, the address that proxy saw", async () => {
+    const POST = createCollectRoute({ url: base, proxySecret: SECRET, clientAddress: addressFrom.lastForwardedFor });
+    await POST(beacon({ ...browser, 'x-forwarded-for': '6.6.6.6, 198.51.100.20' }, '/behind-nginx'));
+    await expect.poll(() => stored().length).toBe(1);
+    expect(stored()[0]?.ip).toBe('198.51.100.20');
+  });
+
+  it('reads a header of your own proxy', async () => {
+    const POST = createCollectRoute({ url: base, proxySecret: SECRET, clientAddress: addressFrom.header('x-real-ip') });
+    await POST(beacon({ ...forged, 'x-real-ip': '192.0.2.77' }, '/own-header'));
+    await expect.poll(() => stored().length).toBe(1);
+    expect(stored()[0]?.ip).toBe('192.0.2.77');
+  });
+
+  it('the default trusts the first entry, which is why it is only for a host that overwrites it', async () => {
+    const POST = createCollectRoute({ url: base, proxySecret: SECRET });
+    await POST(beacon(forged, '/default-reader'));
+    await expect.poll(() => stored().length).toBe(1);
+    expect(stored()[0]?.ip).toBe('6.6.6.6');
+  });
+
+  it('signs nothing when the reader knows nothing, or throws', async () => {
+    const nothing = createCollectRoute({ url: base, proxySecret: SECRET, fetch: recordingFetch, clientAddress: () => undefined });
+    await nothing(beacon(browser, '/reader-nothing'));
+    const throwing = createCollectRoute({
+      url: base,
+      proxySecret: SECRET,
+      fetch: recordingFetch,
+      clientAddress: () => {
+        throw new Error('no header');
+      },
+    });
+    expect((await throwing(beacon(browser, '/reader-throws'))).status).toBe(202);
+    expect(outgoing.map((headers) => headers.get('x-chokh-forwarded-for'))).toEqual([null, null]);
+    await expect.poll(() => stored().length).toBe(2);
+  });
+
+  it('keeps visitorAddress answering as it did', () => {
+    expect(visitorAddress(new Headers({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }))).toBe('203.0.113.9');
+    expect(visitorAddress(new Headers())).toBe('');
+  });
+});
+
+describe('the size of a beacon', () => {
+  it('forwards nothing larger than maxBodyBytes, by its declared length or its real one', async () => {
+    const POST = createCollectRoute({ url: base, proxySecret: SECRET, fetch: recordingFetch, maxBodyBytes: 64 });
+    expect((await POST(beacon(browser, '/far-too-long-a-path-for-sixty-four-bytes'))).status).toBe(202);
+    expect(outgoing).toEqual([]);
   });
 });

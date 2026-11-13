@@ -33,14 +33,66 @@ export interface CollectRouteOptions {
   // The collector's CHOKH_PROXY_SECRET, server side always. Without it the
   // visitor's address is not sent, and the collector sees your host's.
   proxySecret?: string | undefined;
+  // Where the visitor's address is read from. The route signs what this answers,
+  // and the signature is what makes the collector believe it, so it must read
+  // a header your host sets itself and a visitor cannot. The default,
+  // addressFrom.firstForwardedFor, is right on Vercel and wrong on most other
+  // hosts: see addressFrom below and the README.
+  clientAddress?: AddressReader;
   // How long the collector may take before the beacon is given up on.
   timeoutMs?: number;
+  // A body larger than this is not forwarded (the tracker's batches are a few
+  // kilobytes). Default 64 KiB.
+  maxBodyBytes?: number;
   // Injected for tests.
   fetch?: typeof fetch;
   now?: () => number;
 }
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
+
+// Reads the visitor's address off a request; an empty or missing answer means
+// "not known", and then nothing is signed.
+export type AddressReader = (request: Request) => string | undefined;
+
+function firstEntry(value: string | null): string | undefined {
+  const entry = value?.split(',')[0]?.trim();
+  return entry === undefined || entry === '' ? undefined : entry;
+}
+
+function lastEntry(value: string | null): string | undefined {
+  const entries = value?.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '') ?? [];
+  return entries[entries.length - 1];
+}
+
+// The usual answers to "where is the visitor's address", one per kind of host.
+// Each is safe only where the header it reads is set by your own
+// infrastructure; a header a visitor can send is an address they can claim.
+export interface AddressFrom {
+  firstForwardedFor: AddressReader;
+  lastForwardedFor: AddressReader;
+  cloudflare: AddressReader;
+  header(name: string): AddressReader;
+}
+
+export const addressFrom: AddressFrom = {
+  // The first entry of x-forwarded-for, else x-real-ip. Right where the host
+  // overwrites x-forwarded-for with the address it saw, as Vercel documents
+  // that it does. The default.
+  firstForwardedFor: (request) =>
+    firstEntry(request.headers.get('x-forwarded-for')) ?? firstEntry(request.headers.get('x-real-ip')),
+  // The last entry of x-forwarded-for: the address the nearest proxy saw,
+  // when that proxy appends to the header (nginx's $proxy_add_x_forwarded_for)
+  // and nothing else sits between it and this app.
+  lastForwardedFor: (request) => lastEntry(request.headers.get('x-forwarded-for')),
+  // CF-Connecting-IP, which Cloudflare sets to the address that connected to
+  // it. Right when Cloudflare is in front and the origin answers only to it.
+  cloudflare: (request) => firstEntry(request.headers.get('cf-connecting-ip')),
+  // Any one header, for a proxy of your own that sets it (nginx with
+  // proxy_set_header X-Real-IP $remote_addr, for one).
+  header: (name) => (request) => firstEntry(request.headers.get(name)),
+};
 
 // The browser headers the collector reads, forwarded byte for byte: origin for
 // the site's domain allowlist, user-agent for browser, device and system,
@@ -72,13 +124,10 @@ export async function signForwardedAddress(secret: string, ip: string, ts: numbe
   return base64url(await crypto.subtle.sign('HMAC', key, encoder.encode(`${ip}\n${ts}`)));
 }
 
-// The visitor's address as the host hands it to the function: the first entry
-// of x-forwarded-for, else x-real-ip. Empty means unknown, and an unknown
-// address is left to the collector rather than guessed.
+// The default reader's answer for a set of headers, kept for callers of the
+// first version: the first entry of x-forwarded-for, else x-real-ip, else ''.
 export function visitorAddress(headers: Headers): string {
-  const chain = headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '';
-  if (chain !== '') return chain;
-  return headers.get('x-real-ip')?.trim() ?? '';
+  return addressFrom.firstForwardedFor(new Request('http://localhost/', { headers })) ?? '';
 }
 
 function browserHeaders(from: Headers): Headers {
@@ -104,13 +153,26 @@ export function createCollectRoute(options: CollectRouteOptions): (request: Requ
   const doFetch = options.fetch ?? globalThis.fetch;
   const now = options.now ?? Date.now;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const readAddress = options.clientAddress ?? addressFrom.firstForwardedFor;
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
   return async function POST(request: Request): Promise<Response> {
     if (collectUrl === '') return new Response(null, { status: 202 });
     try {
+      // A body the tracker could not have sent is not forwarded, and the length
+      // a client declares is believed only to refuse sooner.
+      if (Number(request.headers.get('content-length') ?? '0') > maxBodyBytes) {
+        return new Response(null, { status: 202 });
+      }
       const body = await request.arrayBuffer();
+      if (body.byteLength > maxBodyBytes) return new Response(null, { status: 202 });
       const headers = browserHeaders(request.headers);
-      const ip = visitorAddress(request.headers);
+      let ip = '';
+      try {
+        ip = readAddress(request)?.trim() ?? '';
+      } catch {
+        // A reader that throws knows nothing: nothing is signed.
+      }
       if (secret !== '' && ip !== '') {
         const ts = now();
         headers.set('X-Chokh-Forwarded-For', ip);

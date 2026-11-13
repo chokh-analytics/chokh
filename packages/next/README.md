@@ -32,6 +32,40 @@ The folder is `%5Fpa`, not `_pa`: a folder whose name starts with an underscore
 is private in the App Router and never routed, and `%5F` is how a segment that
 really starts with one is written.
 
+**Where the visitor's address comes from: read this before you deploy.** The
+route signs the address it forwards, and the signature is what makes the
+collector believe it. So it must read a header your host sets itself, never
+one a visitor can send. By default it reads the first entry of
+`x-forwarded-for` (else `x-real-ip`). That is right on Vercel, which documents
+that it overwrites `x-forwarded-for` with the address it saw. On a host that
+passes the header through, or appends to it, the first entry is whatever the
+visitor typed, and the route would sign it. Say where the address is instead:
+
+```ts
+import { addressFrom, createCollectRoute } from '@chokh/next/collect';
+
+export const POST = createCollectRoute({
+  url: process.env.NEXT_PUBLIC_CHOKH_URL,
+  proxySecret: process.env.CHOKH_PROXY_SECRET,
+  clientAddress: addressFrom.cloudflare,
+});
+```
+
+| Your app runs | Pass | Why |
+| --- | --- | --- |
+| On Vercel | nothing (the default, `addressFrom.firstForwardedFor`) | Vercel overwrites `x-forwarded-for` with the address it saw. |
+| Behind Cloudflare, the origin answering only to Cloudflare | `addressFrom.cloudflare` | Cloudflare sets `CF-Connecting-IP` to the address that connected to it; it appends to an `x-forwarded-for` the visitor sent. |
+| Behind your own nginx that sets `proxy_set_header X-Real-IP $remote_addr` | `addressFrom.header('x-real-ip')` | nginx writes the address it saw over whatever the visitor sent. |
+| Behind one proxy that appends (`$proxy_add_x_forwarded_for`), nothing else in between | `addressFrom.lastForwardedFor` | The last entry is the one that proxy added. |
+| `next start` with nothing in front | `() => undefined` | There is no header you can trust; the collector then stores your server's address. |
+| Anywhere else | a function `(request) => string \| undefined` | Read the one header your platform documents as set by its edge. |
+
+The Vercel, Cloudflare and nginx rows are from those projects' own
+documentation; for any other host, check its documentation for the header its
+edge sets. A function that answers nothing, or throws, signs nothing. A body
+larger than 64 KiB (`maxBodyBytes`) is not forwarded; the tracker's batches are
+a few kilobytes.
+
 **3. `app/layout.tsx`**: the tag.
 
 ```tsx
@@ -94,6 +128,7 @@ against the real server.
 | `hashRouting`, `respectDnt` | Count `#hash` changes as pages; honour Do Not Track. |
 | `vitals`, `errors` | Load `v.js` (Core Web Vitals) and `e.js` (JavaScript errors) from beside the tracker, or from a URL you give. |
 | `consent` | Left out: no gate. A boolean: nothing is sent until it is `true`; a later `false` withdraws. |
+| `nonce` | A Content-Security-Policy nonce, given to the inline stub and every script. |
 
 It renders the tracker's queue stub inline, so a `track()` or a report from
 `v.js` that runs before `a.js` boots waits for it, then the scripts through
