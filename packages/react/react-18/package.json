@@ -1,0 +1,17 @@
+{
+  "name": "@chokh/react-on-react-18",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runs @chokh/react's unit cases on React 18, the oldest major its peer range claims. Its own project so pnpm can give react-dom 18 the React 18 it peers on.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "vitest": "^3.2.7"
+  }
+}

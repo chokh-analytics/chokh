@@ -1,5 +1,7 @@
 packages:
   - 'packages/*'
+  # @chokh/react's unit cases again, on React 18 (see its package.json).
+  - 'packages/react/react-18'
 
 onlyBuiltDependencies:
   - esbuild

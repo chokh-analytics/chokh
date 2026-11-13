@@ -1,0 +1,79 @@
+{
+  "name": "@chokh/react",
+  "version": "0.1.0",
+  "description": "Chokh analytics in a React app: <ChokhProvider> loads the tracker once, useTrack sends events. No tracker code in the bundle.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "analytics",
+    "chokh",
+    "react",
+    "web-analytics",
+    "privacy"
+  ],
+  "homepage": "https://github.com/chokh-analytics/chokh/tree/main/packages/react#readme",
+  "bugs": "https://github.com/chokh-analytics/chokh/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chokh-analytics/chokh.git",
+    "directory": "packages/react"
+  },
+  "sideEffects": false,
+  "//exports": [
+    "The repository's map reads types from src, so a fresh clone typechecks",
+    "before anything is built. publishConfig replaces it in the packed copy:",
+    "ES modules or CommonJS by condition, each with its own .d.ts."
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/cjs/index.js",
+    "module": "./dist/esm/index.js",
+    "types": "./dist/cjs/index.d.ts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.3",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.7"
+  }
+}
