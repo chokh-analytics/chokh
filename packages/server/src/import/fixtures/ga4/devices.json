@@ -1,0 +1,148 @@
+{
+  "dimensionHeaders": [
+    {
+      "name": "date"
+    },
+    {
+      "name": "deviceCategory"
+    }
+  ],
+  "metricHeaders": [
+    {
+      "name": "totalUsers",
+      "type": "TYPE_INTEGER"
+    },
+    {
+      "name": "screenPageViews",
+      "type": "TYPE_INTEGER"
+    },
+    {
+      "name": "sessions",
+      "type": "TYPE_INTEGER"
+    },
+    {
+      "name": "engagedSessions",
+      "type": "TYPE_INTEGER"
+    },
+    {
+      "name": "averageSessionDuration",
+      "type": "TYPE_SECONDS"
+    }
+  ],
+  "rows": [
+    {
+      "dimensionValues": [
+        {
+          "value": "20250101"
+        },
+        {
+          "value": "desktop"
+        }
+      ],
+      "metricValues": [
+        {
+          "value": "25"
+        },
+        {
+          "value": "60"
+        },
+        {
+          "value": "30"
+        },
+        {
+          "value": "20"
+        },
+        {
+          "value": "70"
+        }
+      ]
+    },
+    {
+      "dimensionValues": [
+        {
+          "value": "20250101"
+        },
+        {
+          "value": "mobile"
+        }
+      ],
+      "metricValues": [
+        {
+          "value": "15"
+        },
+        {
+          "value": "35"
+        },
+        {
+          "value": "20"
+        },
+        {
+          "value": "10"
+        },
+        {
+          "value": "50.5"
+        }
+      ]
+    },
+    {
+      "dimensionValues": [
+        {
+          "value": "20250102"
+        },
+        {
+          "value": "smart tv"
+        }
+      ],
+      "metricValues": [
+        {
+          "value": "1"
+        },
+        {
+          "value": "2"
+        },
+        {
+          "value": "1"
+        },
+        {
+          "value": "1"
+        },
+        {
+          "value": "10"
+        }
+      ]
+    },
+    {
+      "dimensionValues": [
+        {
+          "value": "20250102"
+        },
+        {
+          "value": "mobile"
+        }
+      ],
+      "metricValues": [
+        {
+          "value": "29"
+        },
+        {
+          "value": "68"
+        },
+        {
+          "value": "35"
+        },
+        {
+          "value": "19"
+        },
+        {
+          "value": "41"
+        }
+      ]
+    }
+  ],
+  "rowCount": 4,
+  "metadata": {
+    "currencyCode": "USD",
+    "timeZone": "Asia/Dhaka"
+  },
+  "kind": "analyticsData#runReport"
+}

@@ -1,0 +1,4 @@
+session_id,website_id,browser,os,device,screen,language,country,region,city,distinct_id,created_at
+a1000000-0000-4000-8000-000000000001,5d7c3e1a-0b6f-4c2e-9a10-6f1d2a3b4c5d,chrome,Windows 10,desktop,1920x1080,en-US,BD,BD-13,Dhaka,,2025-01-01 03:00:00+00
+a1000000-0000-4000-8000-000000000002,5d7c3e1a-0b6f-4c2e-9a10-6f1d2a3b4c5d,ios,iOS,mobile,390x844,bn-BD,BD,BD-13,Dhaka,,2025-01-01 19:30:00+00
+a1000000-0000-4000-8000-000000000003,5d7c3e1a-0b6f-4c2e-9a10-6f1d2a3b4c5d,firefox,Linux,laptop,1366x768,de-DE,DE,DE-BE,Berlin,,2025-01-02 05:00:00+00

@@ -7,6 +7,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "src/index.ts",
+  "bin": {
+    "chokh-import": "dist/cli/import.js"
+  },
   "//exports": [
     "Types from src and code from dist, the way every other package here does",
     "it. Without the types line a fresh clone cannot typecheck anything that",

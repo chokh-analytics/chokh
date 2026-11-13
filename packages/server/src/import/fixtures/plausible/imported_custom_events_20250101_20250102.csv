@@ -1,0 +1,5 @@
+"date","name","link_url","path","visitors","events"
+"2025-01-01","Signup","","",2,2
+"2025-01-01","Outbound Link: Click","https://github.com/","",1,1
+"2025-01-01","Outbound Link: Click","https://example.net/","",1,2
+"2025-01-02",404,"","/missing",1,1
