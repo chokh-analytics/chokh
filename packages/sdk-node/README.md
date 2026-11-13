@@ -45,18 +45,33 @@ identify (below) stands in for.
 | A flush starts when this many events are queued | 20 | `flushAt` |
 | or this long after the first of them | 1 s | `flushIntervalMs` |
 | At most this many events wait; a full queue drops its oldest | 1,000 | `maxQueueSize` |
+| Requests in flight at once, never two for one person | 4 | `concurrency` |
 | One request may take | 5 s | `timeoutMs` |
-| Retries, on a network error or a 5xx only | 5 | `maxRetries` |
-| Each wait is random, below a ceiling that doubles from 500 ms up to 30 s | | `retryBaseMs`, `retryMaxMs` |
+| Retries, on a network error, a 5xx, a 408 or a 429 | 5 | `maxRetries` |
+| Each wait is random, below a ceiling that doubles from 500 ms up to 30 s, or what `Retry-After` asks, up to 30 s | | `retryBaseMs`, `retryMaxMs` |
 | `shutdown()` keeps sending for | 5 s | `shutdownTimeoutMs` |
 
+A request carries one person, so the client delivers at most `concurrency`
+people per round trip to the server: with the default and a 50 ms round trip,
+80 requests a second of up to 50 events each. Past that the queue fills and
+drops its oldest, so a backend that names more people than that each second
+raises `concurrency`. One person never has two requests in flight, so each
+person's events arrive in the order they were tracked.
+
 With the defaults a request that keeps failing gives up within about sixteen
-seconds of waiting. A 4xx is never retried: the server refused the request, and
-the same request would be refused again. An event outside the route's limits (a
-name over 120 characters, more than 40 properties, a property over 512
-characters, a value that is not a finite number) is refused when you track it,
-alone, so it cannot take 49 good events down with it. An event carries the moment
-you tracked it; the server moves anything older than 24 hours to 24 hours ago.
+seconds of waiting. A 408 or a 429 (which a proxy in front of a Chokh server can
+send, though the route itself does not) is retried like a 5xx. Any other 4xx is
+never retried: the server refused the request, and the same request would be
+refused again. An event outside the route's limits or of the wrong type (a name
+over 120 characters, more than 40 properties, a property over 512 characters or
+that is not a string, number or boolean, a value that is not a finite number, a
+path that is not a string) is refused when you track it, alone, so it cannot take
+49 good events down with it. An event carries the moment you tracked it; the
+server moves anything older than 24 hours to 24 hours ago.
+
+**Delivery is at least once.** A request whose answer is lost after the server
+stored it (a timeout, a dropped connection) is sent again, and the server keeps
+both copies: nothing on the route folds a repeated server event.
 
 **Nothing is dropped silently.** Every event that leaves the queue unstored is
 handed to `onDrop` with a reason: `invalid`, `queue_full`, `rejected` (a 4xx,

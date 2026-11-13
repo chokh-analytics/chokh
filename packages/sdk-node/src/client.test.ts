@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ChokhError, createClient, type ChokhClientOptions, type ChokhDrop } from './index.js';
+import { retryAfterMs } from './client.js';
 
 // Every case here posts to the real Chokh server: packages/server's own buildApp
 // on its in-memory store, listening on a free port, with a write:events key minted
@@ -119,40 +120,63 @@ async function startRealServer(): Promise<Real> {
   };
 }
 
-// What the proxy does with the next request it receives.
-type Act = 'pass' | '503' | 'reset' | 'hang';
+// What the proxy does with a request: pass it to the real server, answer for
+// it, or lose it. 'hold' passes it once release() is called; 'stored-reset'
+// passes it and then drops the connection before the answer, so the server
+// has stored it and the client never hears so.
+type Act = 'pass' | '503' | '408' | '429' | 'reset' | 'hang' | 'hold' | 'stored-reset';
+
+interface Seen {
+  act: Act;
+  body: { userId: string; visitorId?: string; events: unknown[] };
+}
 
 interface Proxy {
   url: string;
+  // The next requests, in arrival order, unless the person has a plan of their own.
   plan: Act[];
-  seen: { act: Act; body: { userId: string; visitorId?: string; events: unknown[] } }[];
+  byUser: Map<string, Act[]>;
+  // What a 429 or a 408 says in Retry-After, when anything.
+  retryAfter: string | undefined;
+  seen: Seen[];
+  // The most requests in flight at once, overall and for any one person.
+  maxInFlight: number;
+  maxInFlightPerUser: number;
+  // Lets every held request through.
+  release(): void;
+  // Every request may take a little while: a delay in ms chosen per request.
+  delay: (index: number) => number;
   close(): Promise<void>;
 }
 
 async function startProxy(upstream: string): Promise<Proxy> {
   const hanging: ServerResponse[] = [];
-  const proxy: Proxy = { url: '', plan: [], seen: [], close: async () => undefined };
+  let releaseHeld: () => void = () => undefined;
+  let held = new Promise<void>((resolve) => {
+    releaseHeld = resolve;
+  });
+  const inFlight = new Map<string, number>();
+  let total = 0;
+  const proxy: Proxy = {
+    url: '',
+    plan: [],
+    byUser: new Map(),
+    retryAfter: undefined,
+    seen: [],
+    maxInFlight: 0,
+    maxInFlightPerUser: 0,
+    release: () => {
+      releaseHeld();
+      held = new Promise<void>((resolve) => {
+        releaseHeld = resolve;
+      });
+    },
+    delay: () => 0,
+    close: async () => undefined,
+  };
 
-  async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(chunk as Buffer);
-    const body = Buffer.concat(chunks);
-    const act = proxy.plan.shift() ?? 'pass';
-    proxy.seen.push({ act, body: JSON.parse(body.toString('utf8')) as Proxy['seen'][number]['body'] });
-    if (act === 'reset') {
-      request.socket.destroy();
-      return;
-    }
-    if (act === 'hang') {
-      hanging.push(response);
-      return;
-    }
-    if (act === '503') {
-      response.writeHead(503, { 'content-type': 'text/html' });
-      response.end('<html><body>Service Unavailable</body></html>');
-      return;
-    }
-    const answer = await fetch(`${upstream}${request.url ?? '/'}`, {
+  async function forward(request: IncomingMessage, body: Buffer): Promise<Response> {
+    return fetch(`${upstream}${request.url ?? '/'}`, {
       method: request.method ?? 'POST',
       headers: {
         'content-type': String(request.headers['content-type'] ?? 'application/json'),
@@ -160,19 +184,70 @@ async function startProxy(upstream: string): Promise<Proxy> {
       },
       body,
     });
+  }
+
+  async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(chunk as Buffer);
+    const body = Buffer.concat(chunks);
+    const parsed = JSON.parse(body.toString('utf8')) as Seen['body'];
+    const act = proxy.byUser.get(parsed.userId)?.shift() ?? proxy.plan.shift() ?? 'pass';
+    const index = proxy.seen.length;
+    proxy.seen.push({ act, body: parsed });
+
+    const mine = (inFlight.get(parsed.userId) ?? 0) + 1;
+    inFlight.set(parsed.userId, mine);
+    total += 1;
+    proxy.maxInFlight = Math.max(proxy.maxInFlight, total);
+    proxy.maxInFlightPerUser = Math.max(proxy.maxInFlightPerUser, mine);
+    const done = (): void => {
+      inFlight.set(parsed.userId, (inFlight.get(parsed.userId) ?? 1) - 1);
+      total -= 1;
+    };
+
+    const pause = proxy.delay(index);
+    if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
+
+    if (act === 'reset') {
+      done();
+      request.socket.destroy();
+      return;
+    }
+    if (act === 'hang') {
+      done();
+      hanging.push(response);
+      return;
+    }
+    if (act === '503' || act === '408' || act === '429') {
+      const headers: Record<string, string> = { 'content-type': 'text/html' };
+      if (act !== '503' && proxy.retryAfter !== undefined) headers['retry-after'] = proxy.retryAfter;
+      response.writeHead(Number(act), headers);
+      response.end('<html><body>Try again later</body></html>');
+      done();
+      return;
+    }
+    if (act === 'hold') await held;
+    const answer = await forward(request, body);
+    const answerBody = Buffer.from(await answer.arrayBuffer());
+    done();
+    if (act === 'stored-reset') {
+      request.socket.destroy();
+      return;
+    }
     response.writeHead(answer.status, { 'content-type': answer.headers.get('content-type') ?? 'application/json' });
-    response.end(Buffer.from(await answer.arrayBuffer()));
+    response.end(answerBody);
   }
 
   const server: Server = createServer((request, response) => {
     void handle(request, response);
   });
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   proxy.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   proxy.close = async () => {
+    releaseHeld();
     for (const response of hanging) response.socket?.destroy();
     server.closeAllConnections();
-    await new Promise<void>((done) => server.close(() => done()));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   };
   return proxy;
 }
@@ -195,6 +270,11 @@ afterAll(async () => {
 beforeEach(() => {
   real.clear();
   proxy.plan = [];
+  proxy.byUser = new Map();
+  proxy.retryAfter = undefined;
+  proxy.delay = () => 0;
+  proxy.maxInFlight = 0;
+  proxy.maxInFlightPerUser = 0;
   proxy.seen = [];
   drops = [];
   waits = [];
@@ -406,19 +486,27 @@ describe('retries', () => {
     expect(real.stored().map((row) => row.userId)).toEqual(['u_2']);
   });
 
-  it('holds the queue in order behind a retrying request, then sends it all', async () => {
-    proxy.plan = ['503'];
+  it('holds one person behind their own retrying request, and sends it all', async () => {
+    proxy.byUser.set('u_1', ['503']);
     const chokh = client();
     chokh.track('u_1', 'first');
     chokh.track('u_2', 'second');
+    chokh.track('u_1', 'third');
     await chokh.flush();
-    expect(real.stored().map((row) => row.name)).toEqual(['first', 'second']);
+    expect(real.stored().map((row) => row.name).sort()).toEqual(['first', 'second', 'third']);
+    // u_1's two events ride in one request, sent again after the 503; u_2's
+    // went once, beside it.
+    expect(proxy.seen.filter((request) => request.body.userId === 'u_1').map((request) => [request.act, request.body.events.length])).toEqual([
+      ['503', 2],
+      ['pass', 2],
+    ]);
+    expect(proxy.seen.filter((request) => request.body.userId === 'u_2')).toHaveLength(1);
   });
 });
 
 describe('flush and shutdown', () => {
   it('reports what a flush sent and dropped, and never rejects', async () => {
-    proxy.plan = ['503', '503', '503', '503', '503', '503'];
+    proxy.byUser.set('u_1', ['503', '503', '503', '503', '503', '503']);
     const chokh = client();
     chokh.track('u_1', 'lost');
     chokh.track('u_2', 'kept');
@@ -436,8 +524,9 @@ describe('flush and shutdown', () => {
   });
 
   it('shutdown gives up after shutdownTimeoutMs and drops what is left', async () => {
+    // One slot, so the second person is still queued when time runs out.
     proxy.plan = ['hang'];
-    const chokh = client({ shutdownTimeoutMs: 150, timeoutMs: 10_000, sleep: undefined });
+    const chokh = client({ shutdownTimeoutMs: 150, timeoutMs: 10_000, sleep: undefined, concurrency: 1 });
     chokh.track('u_1', 'in_flight');
     chokh.track('u_2', 'never_sent');
     const started = performance.now();
@@ -493,5 +582,173 @@ describe('send, one request now', () => {
       status: 403,
       code: expect.stringMatching(/^[A-Z_]+$/),
     });
+  });
+});
+
+describe('requests in flight at once', () => {
+  it('sends several people at once, never two requests for one person, each person in order', async () => {
+    // Every request takes 0 to 20 ms, decided by its position, so they overlap.
+    proxy.delay = (index) => (index * 7) % 21;
+    const chokh = client({ concurrency: 3 });
+    const people = ['u_a', 'u_b', 'u_c', 'u_d'];
+    // u_a first and in bulk: three requests' worth at the head of the queue,
+    // which is when a free slot would start a second request for u_a if the
+    // rule let it. Then the others, interleaved.
+    for (let i = 0; i < 120; i += 1) chokh.track('u_a', `u_a_${String(i).padStart(3, '0')}`);
+    for (let i = 0; i < 120; i += 1) {
+      for (const person of people.slice(1)) chokh.track(person, `${person}_${String(i).padStart(3, '0')}`);
+    }
+    expect(await chokh.flush()).toEqual({ sent: 480, dropped: 0 });
+
+    expect(proxy.maxInFlight).toBe(3);
+    expect(proxy.maxInFlightPerUser).toBe(1);
+    for (const person of people) {
+      const sent = proxy.seen
+        .filter((request) => request.body.userId === person)
+        .flatMap((request) => request.body.events.map((event) => (event as { name: string }).name));
+      expect(sent).toEqual(Array.from({ length: 120 }, (_, i) => `${person}_${String(i).padStart(3, '0')}`));
+    }
+    expect(real.stored()).toHaveLength(480);
+  });
+
+  it('does not let one slow person hold the others back', async () => {
+    proxy.byUser.set('u_slow', ['hold']);
+    const chokh = client();
+    chokh.track('u_slow', 'waiting');
+    const flushed = chokh.flush();
+    await expect.poll(() => proxy.seen.length).toBe(1);
+    chokh.track('u_quick', 'one');
+    chokh.track('u_other', 'two');
+    // Tracked while the slow request is still open, and stored all the same.
+    await expect.poll(() => real.stored().map((row) => row.name).sort()).toEqual(['one', 'two']);
+    proxy.release();
+    expect(await flushed).toEqual({ sent: 3, dropped: 0 });
+    expect(real.stored().map((row) => row.name).sort()).toEqual(['one', 'two', 'waiting']);
+  });
+
+  it('with concurrency 1, sends one request at a time', async () => {
+    proxy.delay = () => 5;
+    const chokh = client({ concurrency: 1 });
+    for (const person of ['u_1', 'u_2', 'u_3']) chokh.track(person, 'x');
+    await chokh.flush();
+    expect(proxy.maxInFlight).toBe(1);
+  });
+});
+
+describe('the 4xx that mean again later', () => {
+  it('retries a 429, waiting what Retry-After asks', async () => {
+    proxy.plan = ['429'];
+    proxy.retryAfter = '2';
+    const chokh = client();
+    chokh.track('u_1', 'throttled');
+    expect(await chokh.flush()).toEqual({ sent: 1, dropped: 0 });
+    expect(waits).toEqual([2_000]);
+    expect(proxy.seen.map((request) => request.act)).toEqual(['429', 'pass']);
+  });
+
+  it('waits no longer than retryMaxMs, whatever Retry-After asks', async () => {
+    proxy.plan = ['429'];
+    proxy.retryAfter = '3600';
+    const chokh = client({ retryMaxMs: 5_000 });
+    chokh.track('u_1', 'throttled');
+    await chokh.flush();
+    expect(waits).toEqual([5_000]);
+  });
+
+  it('retries a 408 like a 5xx', async () => {
+    proxy.plan = ['408'];
+    const chokh = client();
+    chokh.track('u_1', 'slow');
+    expect(await chokh.flush()).toEqual({ sent: 1, dropped: 0 });
+    expect(waits).toEqual([499]);
+  });
+
+  it('reads Retry-After as seconds or as a date', () => {
+    expect(retryAfterMs('2', 0)).toBe(2_000);
+    expect(retryAfterMs('Thu, 01 Jan 1970 00:00:10 GMT', 4_000)).toBe(6_000);
+    expect(retryAfterMs('soon', 0)).toBeUndefined();
+    expect(retryAfterMs(null, 0)).toBeUndefined();
+  });
+});
+
+describe('a caller TypeScript does not check', () => {
+  // As a CommonJS or plain JavaScript caller would call it.
+  const loose = (chokh: ReturnType<typeof client>) =>
+    chokh as unknown as {
+      track(...args: unknown[]): void;
+      identify(...args: unknown[]): void;
+    };
+
+  it('takes null options as none', async () => {
+    const chokh = client();
+    expect(() => loose(chokh).track('u_1', 'with_null', null)).not.toThrow();
+    expect(() => loose(chokh).identify('u_1', null, null)).not.toThrow();
+    expect(await chokh.flush()).toEqual({ sent: 2, dropped: 0 });
+  });
+
+  it('drops a value of the wrong type alone, before it can fail a request', async () => {
+    const chokh = client();
+    const call = loose(chokh);
+    call.track('u_1', 'fine');
+    call.track('u_1', 'path_number', { path: 5 });
+    call.track('u_1', 'props_array', { props: ['a'] });
+    call.track('u_1', 'props_object_value', { props: { plan: { tier: 'pro' } } });
+    call.track('u_1', 'value_string', { value: '12' });
+    call.track('u_1', 'options_string', 'oops');
+    call.track('u_1', 'visitor_number', { visitorId: 7 });
+    call.identify('u_1', 'traits as a string');
+    call.identify('u_1', { ok: 'yes' }, { ts: 1.5 });
+    call.track(42, 'user_number');
+    call.track('u_1', 'fine_too');
+    expect(await chokh.flush()).toEqual({ sent: 2, dropped: 0 });
+    expect(real.stored().map((row) => row.name)).toEqual(['fine', 'fine_too']);
+    expect(drops.map((drop) => drop.message)).toEqual([
+      'the path is not a string of at most 1024 characters',
+      'the properties are not an object',
+      'property "plan" is not a string, a number or a boolean',
+      'the value is not a finite number',
+      'the options are not an object',
+      'visitorId is not a string of 1 to 200 characters',
+      'the traits are not an object',
+      'ts is not an integer number of milliseconds',
+      'userId is not a string of 1 to 200 characters',
+    ]);
+    expect(drops.every((drop) => drop.reason === 'invalid')).toBe(true);
+  });
+
+  it('turns anything that throws inside a call into an invalid drop', async () => {
+    const chokh = client();
+    const hostile = {
+      get props(): never {
+        throw new Error('a getter that throws');
+      },
+    };
+    expect(() => loose(chokh).track('u_1', 'hostile', hostile)).not.toThrow();
+    expect(drops).toEqual([expect.objectContaining({ reason: 'invalid', message: 'the event could not be read: a getter that throws' })]);
+  });
+});
+
+describe('delivery is at least once', () => {
+  it('stores a batch twice when the answer is lost after the server stored it, and says nothing', async () => {
+    // The route has no idempotency key and the store folds no repeated server
+    // event, so a retry after a lost answer is a second copy. The README says so.
+    proxy.plan = ['stored-reset'];
+    const chokh = client();
+    chokh.track('u_1', 'paid_once');
+    expect(await chokh.flush()).toEqual({ sent: 1, dropped: 0 });
+    expect(real.stored().map((row) => row.name)).toEqual(['paid_once', 'paid_once']);
+  });
+});
+
+describe('shutdown called twice', () => {
+  it('answers both calls with the one shutdown', async () => {
+    proxy.plan = ['hang'];
+    const chokh = client({ shutdownTimeoutMs: 100, timeoutMs: 10_000, sleep: undefined });
+    chokh.track('u_1', 'in_flight');
+    const first = chokh.shutdown();
+    const second = chokh.shutdown();
+    expect(second).toBe(first);
+    expect(await first).toEqual({ sent: 0, dropped: 1 });
+    expect(drops).toHaveLength(1);
   });
 });

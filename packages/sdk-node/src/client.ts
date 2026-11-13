@@ -72,12 +72,15 @@ export class ChokhError extends Error {
   readonly code: string;
   // The HTTP status, or 0 when no answer arrived at all.
   readonly status: number;
+  // How long the server asked us to wait (a Retry-After header), when it did.
+  readonly retryAfterMs: number | undefined;
 
-  constructor(code: string, message: string, status: number) {
+  constructor(code: string, message: string, status: number, retryAfterMs?: number) {
     super(message);
     this.name = 'ChokhError';
     this.code = code;
     this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -136,6 +139,9 @@ export interface ChokhClientOptions {
   retryMaxMs?: number;
   // How long shutdown() keeps sending before it drops what is left.
   shutdownTimeoutMs?: number;
+  // At most this many requests in flight at once, never two for one person
+  // (one userId and visitorId), so each person's events arrive in order.
+  concurrency?: number;
   // Send what is queued when the process's event loop runs dry. No signal
   // handler is installed: see the README for SIGTERM.
   flushOnExit?: boolean;
@@ -187,6 +193,12 @@ export const DEFAULTS = {
   retryBaseMs: 500,
   retryMaxMs: 30_000,
   shutdownTimeoutMs: 5_000,
+  // One request at a time delivers at most one person per round trip: 20 a
+  // second at 50 ms, past which a healthy server's queue fills and drops. Four
+  // lifts that to 80 requests a second of up to 50 events each, more than an
+  // application's own backend usually sends, while a Chokh server sees at most
+  // four connections from each process that uses this.
+  concurrency: 4,
 } as const;
 
 interface Envelope {
@@ -195,15 +207,24 @@ interface Envelope {
   error?: { code?: string; message?: string };
 }
 
+// The checks below are for callers TypeScript does not reach: a CommonJS or
+// plain JavaScript caller can pass anything, and a value of the wrong type that
+// got past here would fail the whole request it rides in at the server.
 function attributes(
-  input: ChokhAttributes,
+  input: unknown,
   what: 'property' | 'trait',
 ): Record<string, string> | string {
+  const plural = what === 'property' ? 'properties' : 'traits';
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return `the ${plural} are not an object`;
+  }
   const out: Record<string, string> = {};
   let count = 0;
-  for (const key of Object.keys(input)) {
-    const raw = input[key];
+  for (const [key, raw] of Object.entries(input)) {
     if (raw === undefined || raw === null) continue;
+    if (typeof raw !== 'string' && typeof raw !== 'number' && typeof raw !== 'boolean') {
+      return `${what} "${key.slice(0, 80)}" is not a string, a number or a boolean`;
+    }
     if (key.length === 0 || key.length > LIMITS.attributeKeyLength) {
       return `${what} name "${key.slice(0, 80)}" is not 1 to ${LIMITS.attributeKeyLength} characters`;
     }
@@ -215,9 +236,31 @@ function attributes(
     count += 1;
   }
   if (count > LIMITS.attributes) {
-    return `more than ${LIMITS.attributes} ${what === 'property' ? 'properties' : 'traits'}`;
+    return `more than ${LIMITS.attributes} ${plural}`;
   }
   return out;
+}
+
+function checkPath(path: unknown): string | undefined {
+  if (path === undefined) return undefined;
+  if (typeof path !== 'string' || path.length > LIMITS.pathLength) {
+    return `the path is not a string of at most ${LIMITS.pathLength} characters`;
+  }
+  return undefined;
+}
+
+function checkTs(ts: unknown): string | undefined {
+  return ts === undefined || Number.isInteger(ts) ? undefined : 'ts is not an integer number of milliseconds';
+}
+
+// How long a Retry-After header asks for, in milliseconds: delay-seconds or an
+// HTTP date. Unreadable or absent is undefined.
+export function retryAfterMs(header: string | null, now: number): number | undefined {
+  if (header === null || header.trim() === '') return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
 }
 
 function checkId(value: unknown, what: string): string | undefined {
@@ -259,6 +302,7 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
   const retryBaseMs = options.retryBaseMs ?? DEFAULTS.retryBaseMs;
   const retryMaxMs = options.retryMaxMs ?? DEFAULTS.retryMaxMs;
   const shutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULTS.shutdownTimeoutMs;
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? DEFAULTS.concurrency));
 
   let queue: QueuedEvent[] = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -271,6 +315,11 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
   // Ends every wait and every request in flight once shutdown has run out of
   // time; a fresh one per shutdown.
   let abandon: AbortController | undefined;
+  let stopping: Promise<FlushResult> | undefined;
+  // The people with a request in flight, and how many requests that is.
+  const inFlight = new Set<string>();
+  let active = 0;
+  let settle: (() => void) | undefined;
 
   function drop(reason: DropReason, events: QueuedEvent[], message: string, error?: ChokhError): void {
     if (events.length === 0) return;
@@ -301,9 +350,13 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
       }
     }
     queue.push(item);
-    if (queue.length >= flushAt) {
+    if (draining !== undefined) {
+      // A drain is running: a free slot takes this person now rather than
+      // waiting for a slow one to finish.
+      pump();
+    } else if (queue.length >= flushAt) {
       void flush();
-    } else if (timer === undefined && draining === undefined) {
+    } else if (timer === undefined) {
       timer = setTimeout(() => {
         timer = undefined;
         void flush();
@@ -312,10 +365,12 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
     }
   }
 
-  // The next request: the oldest event's person, and every other queued event
-  // of that same person up to the route's 50, in the order they were tracked.
+  // The next request: the oldest queued event of a person with no request in
+  // flight, and every other queued event of that person up to the route's 50,
+  // in the order they were tracked. A person already in flight waits for their
+  // own request to finish, so their events arrive in order.
   function takeGroup(): QueuedEvent[] {
-    const first = queue[0];
+    const first = queue.find((item) => !inFlight.has(groupKey(item)));
     if (first === undefined) return [];
     const key = groupKey(first);
     const group: QueuedEvent[] = [];
@@ -370,13 +425,17 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
         envelope.error?.code ?? 'REQUEST_FAILED',
         envelope.error?.message ?? `The server answered ${response.status}`,
         response.status,
+        retryAfterMs(response.headers.get('retry-after'), now()),
       );
     }
     return envelope.data;
   }
 
+  // Worth sending again: no answer, a 5xx, and the two 4xx that mean "again
+  // later", 408 (the request took too long) and 429 (too many). The route
+  // itself sends neither, but a proxy in front of a Chokh server can.
   function retryable(error: ChokhError): boolean {
-    return error.status === 0 || error.status >= 500;
+    return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
   }
 
   // Read through a function so a check after an await sees the current answer.
@@ -424,26 +483,62 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
           drop('retries_exhausted', group, `${attempt + 1} attempts, the last: ${error.message}`, error);
           return;
         }
+        // A Retry-After is honoured, up to retryMaxMs; otherwise full jitter.
         const ceiling = Math.min(retryMaxMs, retryBaseMs * 2 ** attempt);
-        await wait(Math.floor(random() * ceiling));
+        await wait(
+          error.retryAfterMs === undefined
+            ? Math.floor(random() * ceiling)
+            : Math.min(retryMaxMs, error.retryAfterMs),
+        );
       }
     }
   }
 
-  function drain(): Promise<void> {
-    if (draining === undefined) {
-      clearTimer();
-      draining = (async () => {
-        try {
-          for (let group = takeGroup(); group.length > 0; group = takeGroup()) {
-            await deliver(group);
+  // Start a request for every free slot that has a person to send: at most
+  // `concurrency` at once and never two for one person. Each request, when it
+  // ends, frees its slot and its person and starts the next. The drain ends
+  // when nothing is in flight, which is when the queue is empty.
+  function pump(): void {
+    while (active < concurrency) {
+      const group = takeGroup();
+      const first = group[0];
+      if (first === undefined) break;
+      const key = groupKey(first);
+      inFlight.add(key);
+      active += 1;
+      void deliver(group)
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight.delete(key);
+          active -= 1;
+          pump();
+          if (active === 0) {
+            const done = settle;
+            settle = undefined;
+            draining = undefined;
+            done?.();
           }
-        } finally {
-          draining = undefined;
-        }
-      })();
+        });
     }
-    return draining;
+  }
+
+  function drain(): Promise<void> {
+    clearTimer();
+    if (draining === undefined) {
+      draining = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+    }
+    const current = draining;
+    pump();
+    if (active === 0 && settle !== undefined) {
+      // Nothing to send: the drain ends as it starts.
+      const done = settle;
+      settle = undefined;
+      draining = undefined;
+      done();
+    }
+    return current;
   }
 
   async function flush(): Promise<FlushResult> {
@@ -468,7 +563,14 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
     process.on('beforeExit', onBeforeExit);
   }
 
-  async function shutdown(): Promise<FlushResult> {
+  // A second shutdown while one is running joins it, rather than replacing the
+  // abandon signal under a request already in flight.
+  function shutdown(): Promise<FlushResult> {
+    stopping ??= stop();
+    return stopping;
+  }
+
+  async function stop(): Promise<FlushResult> {
     const sentBefore = sentTotal;
     const droppedBefore = droppedTotal;
     closed = true;
@@ -499,69 +601,81 @@ export function createClient(options: ChokhClientOptions): ChokhClient {
   }
 
   return {
-    track(userId, name, eventOptions = {}) {
+    // Both check every argument against the route's limits and types, because a
+    // JavaScript caller can pass anything, and a request the server refuses
+    // takes up to 49 other events with it. Whatever fails, or throws, becomes
+    // an `invalid` drop: neither call ever throws.
+    track(userId, name, eventOptions) {
       const item: QueuedEvent = { userId, event: { type: 'event', name } };
-      const problem =
-        checkId(userId, 'userId') ??
-        (eventOptions.visitorId === undefined ? undefined : checkId(eventOptions.visitorId, 'visitorId')) ??
-        (typeof name !== 'string' || name.length === 0 || name.length > LIMITS.nameLength
-          ? `the event name is not 1 to ${LIMITS.nameLength} characters`
-          : undefined) ??
-        (eventOptions.path !== undefined && eventOptions.path.length > LIMITS.pathLength
-          ? `the path is longer than ${LIMITS.pathLength} characters`
-          : undefined) ??
-        (eventOptions.value !== undefined && !Number.isFinite(eventOptions.value)
-          ? 'the value is not a finite number'
-          : undefined) ??
-        (eventOptions.ts !== undefined && !Number.isInteger(eventOptions.ts)
-          ? 'ts is not an integer number of milliseconds'
-          : undefined);
-      if (eventOptions.visitorId !== undefined) item.visitorId = eventOptions.visitorId;
-      if (problem !== undefined) {
-        drop('invalid', [item], problem);
-        return;
-      }
-      item.event.ts = eventOptions.ts ?? now();
-      if (eventOptions.path !== undefined) item.event.path = eventOptions.path;
-      if (eventOptions.value !== undefined) item.event.value = eventOptions.value;
-      if (eventOptions.props !== undefined) {
-        const props = attributes(eventOptions.props, 'property');
-        if (typeof props === 'string') {
-          drop('invalid', [item], props);
+      try {
+        const options: TrackOptions = eventOptions ?? {};
+        if (typeof options !== 'object') {
+          drop('invalid', [item], 'the options are not an object');
           return;
         }
-        if (Object.keys(props).length > 0) item.event.props = props;
+        if (typeof options.visitorId === 'string') item.visitorId = options.visitorId;
+        const problem =
+          checkId(userId, 'userId') ??
+          (options.visitorId === undefined ? undefined : checkId(options.visitorId, 'visitorId')) ??
+          (typeof name !== 'string' || name.length === 0 || name.length > LIMITS.nameLength
+            ? `the event name is not 1 to ${LIMITS.nameLength} characters`
+            : undefined) ??
+          checkPath(options.path) ??
+          (options.value !== undefined && !Number.isFinite(options.value) ? 'the value is not a finite number' : undefined) ??
+          checkTs(options.ts);
+        if (problem !== undefined) {
+          drop('invalid', [item], problem);
+          return;
+        }
+        item.event.ts = options.ts ?? now();
+        if (options.path !== undefined) item.event.path = options.path;
+        if (options.value !== undefined) item.event.value = options.value;
+        if (options.props !== undefined && options.props !== null) {
+          const props = attributes(options.props, 'property');
+          if (typeof props === 'string') {
+            drop('invalid', [item], props);
+            return;
+          }
+          if (Object.keys(props).length > 0) item.event.props = props;
+        }
+        enqueue(item);
+      } catch (error) {
+        drop('invalid', [item], `the event could not be read: ${error instanceof Error ? error.message : String(error)}`);
       }
-      enqueue(item);
     },
 
-    identify(userId, traits, identifyOptions = {}) {
+    identify(userId, traits, identifyOptions) {
       const item: QueuedEvent = { userId, event: { type: 'identify' } };
-      if (identifyOptions.visitorId !== undefined) item.visitorId = identifyOptions.visitorId;
-      const problem =
-        checkId(userId, 'userId') ??
-        (identifyOptions.visitorId === undefined ? undefined : checkId(identifyOptions.visitorId, 'visitorId')) ??
-        (identifyOptions.path !== undefined && identifyOptions.path.length > LIMITS.pathLength
-          ? `the path is longer than ${LIMITS.pathLength} characters`
-          : undefined) ??
-        (identifyOptions.ts !== undefined && !Number.isInteger(identifyOptions.ts)
-          ? 'ts is not an integer number of milliseconds'
-          : undefined);
-      if (problem !== undefined) {
-        drop('invalid', [item], problem);
-        return;
-      }
-      item.event.ts = identifyOptions.ts ?? now();
-      if (identifyOptions.path !== undefined) item.event.path = identifyOptions.path;
-      if (traits !== undefined) {
-        const checked = attributes(traits, 'trait');
-        if (typeof checked === 'string') {
-          drop('invalid', [item], checked);
+      try {
+        const options: IdentifyOptions = identifyOptions ?? {};
+        if (typeof options !== 'object') {
+          drop('invalid', [item], 'the options are not an object');
           return;
         }
-        if (Object.keys(checked).length > 0) item.event.traits = checked;
+        if (typeof options.visitorId === 'string') item.visitorId = options.visitorId;
+        const problem =
+          checkId(userId, 'userId') ??
+          (options.visitorId === undefined ? undefined : checkId(options.visitorId, 'visitorId')) ??
+          checkPath(options.path) ??
+          checkTs(options.ts);
+        if (problem !== undefined) {
+          drop('invalid', [item], problem);
+          return;
+        }
+        item.event.ts = options.ts ?? now();
+        if (options.path !== undefined) item.event.path = options.path;
+        if (traits !== undefined && traits !== null) {
+          const checked = attributes(traits, 'trait');
+          if (typeof checked === 'string') {
+            drop('invalid', [item], checked);
+            return;
+          }
+          if (Object.keys(checked).length > 0) item.event.traits = checked;
+        }
+        enqueue(item);
+      } catch (error) {
+        drop('invalid', [item], `the identify could not be read: ${error instanceof Error ? error.message : String(error)}`);
       }
-      enqueue(item);
     },
 
     flush,
