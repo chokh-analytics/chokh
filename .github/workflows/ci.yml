@@ -465,6 +465,41 @@ jobs:
 
       - run: pnpm --filter @chokh/react test:e2e
 
+  next-e2e:
+    name: '@chokh/next in an App Router app on Next ${{ matrix.next }}, against the real server'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 15 is what the first consumer runs; 16 is the latest. The peer range
+        # claims both, so both are proved.
+        next: ['15', '16']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The lockfile holds 16; the other leg swaps the example app's Next for
+      # the newest 15.5 just for this run.
+      - name: Next ${{ matrix.next }} in the example app
+        if: matrix.next == '15'
+        run: pnpm --filter @chokh/example-next add next@~15.5.0
+
+      # The real server and the built tracker it serves, and the packages the
+      # app imports.
+      - run: pnpm --filter '@chokh/server...' --filter '@chokh/next...' --filter @chokh/tracker build
+
+      - run: pnpm --filter @chokh/example-next exec playwright install --with-deps chromium
+
+      - run: pnpm --filter @chokh/example-next e2e
+
   dashboard-e2e:
     name: dashboard smoke and accessibility in a real browser
     runs-on: ubuntu-latest

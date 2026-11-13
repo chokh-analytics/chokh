@@ -2,6 +2,8 @@ packages:
   - 'packages/*'
   # @chokh/react's unit cases again, on React 18 (see its package.json).
   - 'packages/react/react-18'
+  # Apps that prove a package in a real framework, never published.
+  - 'examples/*'
 
 onlyBuiltDependencies:
   - esbuild

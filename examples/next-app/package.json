@@ -1,0 +1,25 @@
+{
+  "name": "@chokh/example-next",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A small App Router app wired with @chokh/next, driven by a browser case against the real Chokh server. Never published; no build or test script, so the repository gate does not build it.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@chokh/next": "workspace:*",
+    "next": "^16.4.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@chokh/server": "workspace:*",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.3",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "typescript": "^5.7.3"
+  }
+}
