@@ -1,22 +1,71 @@
 {
   "name": "@chokh/sdk-node",
-  "version": "0.0.0",
-  "private": true,
-  "description": "The Chokh server-side SDK: track and identify from your backend.",
+  "version": "0.1.0",
+  "description": "Chokh analytics from your own server: track and identify, queued, batched and retried, and the signatures a page and a proxy need.",
   "license": "MIT",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "keywords": [
+    "analytics",
+    "chokh",
+    "web-analytics",
+    "privacy",
+    "server-side-tracking"
+  ],
+  "homepage": "https://github.com/chokh-analytics/chokh/tree/main/packages/sdk-node#readme",
+  "bugs": "https://github.com/chokh-analytics/chokh/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chokh-analytics/chokh.git",
+    "directory": "packages/sdk-node"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "//exports": [
+    "In this repository the types come from src, so a fresh clone typechecks",
+    "before anything is built (CI typechecks first). publishConfig replaces the",
+    "map when the package is packed: a consumer gets the built files only, ES",
+    "modules or CommonJS by condition, each with its own .d.ts."
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/cjs/index.js",
+    "module": "./dist/esm/index.js",
+    "types": "./dist/cjs/index.d.ts",
+    "exports": {
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./package.json": "./package.json"
+    }
+  },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node ../../scripts/build-package.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "devDependencies": {
+    "@chokh/server": "workspace:*",
     "@types/node": "^22.20.3",
     "typescript": "^5.7.3",
     "vitest": "^3.2.7"

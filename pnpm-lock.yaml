@@ -170,6 +170,9 @@ importers:
 
   packages/sdk-node:
     devDependencies:
+      '@chokh/server':
+        specifier: workspace:*
+        version: link:../server
       '@types/node':
         specifier: ^22.20.3
         version: 22.20.3

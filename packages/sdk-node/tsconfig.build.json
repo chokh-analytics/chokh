@@ -3,8 +3,9 @@
   "compilerOptions": {
     "noEmit": false,
     "declaration": true,
+    "sourceMap": false,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist/esm"
   },
   "include": [
     "src"
