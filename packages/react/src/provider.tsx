@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, type ReactElement, type ReactNode } from 'react';
+import { useEffect, type ReactElement, type ReactNode } from 'react';
 
-import { consent as sendConsent, ensureStub } from './pa.js';
+import { useConsent } from './hooks.js';
+import { ensureStub } from './pa.js';
 import {
   ERRORS_ID,
   TRACKER_ID,
@@ -64,21 +65,7 @@ export function ChokhProvider(props: ChokhProviderProps): ReactElement {
     if (errorsSrc !== undefined) addScript(ERRORS_ID, errorsSrc);
   }, [key]);
 
-  // Consent is sent when it is granted and when it changes, never as the
-  // starting false: the tag's data-consent already holds every event until it is
-  // granted, and the tracker reads a false as consent withdrawn, which throws
-  // away what it was holding, the first pageview among it. The last value sent
-  // is kept in a ref, so strict mode's second run of the effect sends nothing.
-  const sent = useRef<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (consent === undefined || consent === sent.current) return;
-    if (sent.current === undefined && !consent) {
-      sent.current = false;
-      return;
-    }
-    sent.current = consent;
-    sendConsent(consent);
-  }, [consent]);
+  useConsent(consent);
 
   return <>{children}</>;
 }

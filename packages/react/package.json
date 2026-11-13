@@ -24,6 +24,7 @@
     "before anything is built. publishConfig replaces it in the packed copy:",
     "ES modules or CommonJS by condition, each with its own .d.ts."
   ],
+  "types": "./src/index.ts",
   "exports": {
     ".": {
       "types": "./src/index.ts",

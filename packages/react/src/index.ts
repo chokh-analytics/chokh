@@ -7,7 +7,7 @@
 // your Chokh server (or a first-party path to it), as it is without React.
 
 export { ChokhProvider, type ChokhProviderProps } from './provider.js';
-export { useChokh, useTrack, type Chokh } from './hooks.js';
+export { useChokh, useConsent, useTrack, type Chokh } from './hooks.js';
 export { CHOKH_QUEUE_STUB, consent, ensureStub, identify, reset, track, type ChokhProps } from './pa.js';
 export {
   ERRORS_ID,

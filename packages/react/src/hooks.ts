@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { consent, identify, reset, track, type ChokhProps } from './pa.js';
 
@@ -25,4 +25,26 @@ export function useTrack(): (name: string, props?: ChokhProps) => void {
 // const { identify, reset, consent } = useChokh();
 export function useChokh(): Chokh {
   return useMemo(() => ({ track, identify, reset, consent }), []);
+}
+
+// Keep the tracker's consent in step with a value: undefined is no gate, false
+// is not granted, true is granted. <ChokhProvider> and @chokh/next's
+// <Analytics /> both use it for their consent prop.
+//
+// A grant is sent, and so is a later withdrawal, each once. The starting false
+// is never sent: the tag's data-consent already holds every event until consent
+// is granted, and the tracker reads a false as consent withdrawn, which throws
+// away what it was holding, the first pageview among it. The last value sent is
+// kept in a ref, so strict mode's second run of the effect sends nothing.
+export function useConsent(granted: boolean | undefined): void {
+  const sent = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    if (granted === undefined || granted === sent.current) return;
+    if (sent.current === undefined && !granted) {
+      sent.current = false;
+      return;
+    }
+    sent.current = granted;
+    consent(granted);
+  }, [granted]);
 }
