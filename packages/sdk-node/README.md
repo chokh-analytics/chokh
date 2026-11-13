@@ -1,7 +1,9 @@
 # @chokh/sdk-node
 
-What your own server needs from [Chokh](../../README.md): send events it knows
-about, and sign an identify so a page cannot claim to be somebody it is not.
+What your own server needs from [Chokh](https://github.com/chokh-analytics/chokh):
+send events it knows about, and sign an identify so a page cannot claim to be
+somebody it is not. No dependency beyond Node's standard library; Node 22 or
+newer; ES modules and CommonJS both.
 
 ```bash
 npm install @chokh/sdk-node
@@ -17,31 +19,86 @@ cannot be trusted about.
 import { createClient } from '@chokh/sdk-node';
 
 const chokh = createClient({
-  url: process.env.CHOKH_API_URL,   // https://analytics.example.com
-  siteId: process.env.CHOKH_SITE,   // my_site
-  apiKey: process.env.CHOKH_API_KEY, // a key carrying write:events
+  url: process.env.CHOKH_URL,        // https://analytics.example.com
+  siteId: process.env.CHOKH_SITE,    // my_site
+  apiKey: process.env.CHOKH_API_KEY, // a key carrying write:events, never in a page
 });
 
-await chokh.identify('u_42', { plan: 'pro' });
-await chokh.track('u_42', 'order_paid', { value: 1200, path: '/checkout' });
+chokh.identify('u_42', { plan: 'pro' });
+chokh.track('u_42', 'order_paid', { value: 1200, path: '/checkout', props: { currency: 'BDT' } });
 ```
 
-Pass the browser's `visitorId` when you know it and the event joins the stay that
-person is in the middle of:
+`track` and `identify` return at once and never throw: the events wait in a queue
+and go in the background, so analytics is never the reason a checkout hangs. Pass
+the browser's `visitorId` when you know it and the event joins the stay that person
+is in the middle of: `chokh.track('u_42', 'order_paid', { visitorId })`.
+
+A server identify needs no signature. The key is the proof: the route trusts the
+`userId` a `write:events` key sends, which is exactly what a browser's signed
+identify (below) stands in for.
+
+### How the queue behaves
+
+| What | Default | Option |
+| --- | --- | --- |
+| A request carries one person's events, at most | 50 (the route's limit) | |
+| A flush starts when this many events are queued | 20 | `flushAt` |
+| or this long after the first of them | 1 s | `flushIntervalMs` |
+| At most this many events wait; a full queue drops its oldest | 1,000 | `maxQueueSize` |
+| One request may take | 5 s | `timeoutMs` |
+| Retries, on a network error or a 5xx only | 5 | `maxRetries` |
+| Each wait is random, below a ceiling that doubles from 500 ms up to 30 s | | `retryBaseMs`, `retryMaxMs` |
+| `shutdown()` keeps sending for | 5 s | `shutdownTimeoutMs` |
+
+With the defaults a request that keeps failing gives up within about sixteen
+seconds of waiting. A 4xx is never retried: the server refused the request, and
+the same request would be refused again. An event outside the route's limits (a
+name over 120 characters, more than 40 properties, a property over 512
+characters, a value that is not a finite number) is refused when you track it,
+alone, so it cannot take 49 good events down with it. An event carries the moment
+you tracked it; the server moves anything older than 24 hours to 24 hours ago.
+
+**Nothing is dropped silently.** Every event that leaves the queue unstored is
+handed to `onDrop` with a reason: `invalid`, `queue_full`, `rejected` (a 4xx,
+with the server's error code), `retries_exhausted` or `shutdown`. The default
+writes one `console.warn` line; pass your own to count them or send them to your
+logger:
 
 ```ts
-await chokh.send({
+const chokh = createClient({
+  url, siteId, apiKey,
+  onDrop: ({ reason, events, message }) => log.warn({ reason, count: events.length }, message),
+});
+```
+
+### Flushing and stopping
+
+`await chokh.flush()` sends everything queued and resolves with `{ sent, dropped }`;
+it never rejects. When the process's event loop runs dry (a script that has done
+its work) the client flushes by itself. It installs no signal handler, because a
+library that catches `SIGTERM` changes how your process exits; stop it in your own:
+
+```ts
+process.on('SIGTERM', () => {
+  chokh.shutdown().finally(() => process.exit(0));
+});
+```
+
+`shutdown()` sends what is queued for up to five seconds, drops the rest (and says
+so through `onDrop`), and refuses events tracked after it.
+
+### One request, now
+
+`send` posts a batch at once, outside the queue and with no retry, and resolves
+with the visitor the events landed on, or rejects with a `ChokhError` carrying the
+`code` and `status` the server answered with:
+
+```ts
+const { visitorId } = await chokh.send({
   userId: 'u_42',
-  visitorId: cookies.get('chokh_vid'),
   events: [{ type: 'event', name: 'order_paid', value: 1200 }],
 });
 ```
-
-A failure raises a `ChokhError` carrying the `code` the API refused with, so a
-caller can tell a wrong scope from a site that does not exist. There is no
-batching, no queue and no retry: analytics must never be the reason a checkout
-hangs, so either await it somewhere that can afford five seconds, or do not await
-it at all.
 
 ## Signing an identify
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ChokhError, createClient, signForwardedAddress, signUserId } from './index.js';
+import { signForwardedAddress, signUserId } from './sign.js';
 
 // The shared identify signature test vector.
 //
@@ -70,98 +70,5 @@ describe('signForwardedAddress', () => {
     expect(
       signForwardedAddress('another-secret-entirely', FORWARDED_VECTOR.ip, FORWARDED_VECTOR.ts),
     ).not.toBe(FORWARDED_VECTOR.signature);
-  });
-});
-
-interface Recorded {
-  url: string;
-  init: RequestInit;
-}
-
-function stubFetch(
-  status: number,
-  body: unknown,
-): { fetch: typeof fetch; calls: Recorded[] } {
-  const calls: Recorded[] = [];
-  const fake = (async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    calls.push({ url: String(url), init: init ?? {} });
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as unknown as typeof fetch;
-  return { fetch: fake, calls };
-}
-
-describe('createClient', () => {
-  const accepted = { success: true, data: { accepted: 1, visitorId: 'v_1' } };
-
-  it('posts a tracked event to the site events route with the key as a bearer token', async () => {
-    const stub = stubFetch(202, accepted);
-    const client = createClient({
-      url: 'https://analytics.example.com/',
-      siteId: 'ps_web',
-      apiKey: 'chk_example',
-      fetch: stub.fetch,
-    });
-
-    const result = await client.track('u_42', 'order_paid', { value: 1200 });
-
-    expect(result).toEqual({ accepted: 1, visitorId: 'v_1' });
-    const call = stub.calls[0];
-    // The trailing slash on the url is not doubled into the path.
-    expect(call?.url).toBe('https://analytics.example.com/api/sites/ps_web/events');
-    expect((call?.init.headers as Record<string, string>)['authorization']).toBe(
-      'Bearer chk_example',
-    );
-    expect(JSON.parse(String(call?.init.body))).toEqual({
-      userId: 'u_42',
-      events: [{ type: 'event', name: 'order_paid', value: 1200 }],
-    });
-  });
-
-  it('posts an identify with its traits', async () => {
-    const stub = stubFetch(202, accepted);
-    const client = createClient({
-      url: 'https://analytics.example.com',
-      siteId: 'ps_web',
-      apiKey: 'chk_example',
-      fetch: stub.fetch,
-    });
-
-    await client.identify('u_42', { plan: 'pro' });
-
-    expect(JSON.parse(String(stub.calls[0]?.init.body))).toEqual({
-      userId: 'u_42',
-      events: [{ type: 'identify', traits: { plan: 'pro' } }],
-    });
-  });
-
-  it('signs a userId for the site it was created for', () => {
-    const client = createClient({
-      url: 'https://analytics.example.com',
-      siteId: VECTOR.siteId,
-      apiKey: 'chk_example',
-    });
-    expect(client.signUserId(VECTOR.identifySecret, VECTOR.userId)).toBe(VECTOR.signature);
-  });
-
-  it('raises the code the collector refused with, not a bare status', async () => {
-    const stub = stubFetch(403, {
-      success: false,
-      error: { code: 'SCOPE_REQUIRED', message: 'This route needs the write:events scope' },
-    });
-    const client = createClient({
-      url: 'https://analytics.example.com',
-      siteId: 'ps_web',
-      apiKey: 'chk_readonly',
-      fetch: stub.fetch,
-    });
-
-    await expect(client.track('u_42', 'order_paid')).rejects.toThrow(ChokhError);
-    await expect(client.track('u_42', 'order_paid')).rejects.toMatchObject({
-      code: 'SCOPE_REQUIRED',
-      status: 403,
-    });
   });
 });

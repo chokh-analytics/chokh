@@ -16,7 +16,7 @@ const NOW = 1758268800000;
 // A first-party proxy makes these signatures through @chokh/sdk-node and this
 // package verifies them, and the two implementations are deliberately separate: a
 // product must not depend on its own client SDK. What stops them drifting is this
-// vector, asserted here and again in packages/sdk-node/src/index.test.ts with the
+// vector, asserted here and again in packages/sdk-node/src/sign.test.ts with the
 // same three inputs and the same expected string. Change the formula on one side
 // and one of the two suites goes red.
 const VECTOR = {

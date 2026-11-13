@@ -10,7 +10,7 @@ const SECRET = 'test-secret-not-a-real-key';
 // @chokh/sdk-node makes these signatures and this package verifies them, and the
 // two implementations are deliberately separate: a product must not depend on its
 // own client SDK. What stops them drifting is this vector, asserted here and again
-// in packages/sdk-node/src/index.test.ts with the same three inputs and the same
+// in packages/sdk-node/src/sign.test.ts with the same three inputs and the same
 // expected string. Change the formula on one side and one of the two suites goes
 // red.
 const VECTOR = {
