@@ -443,6 +443,28 @@ jobs:
 
       - run: pnpm --filter @chokh/tracker test:e2e
 
+  react-e2e:
+    name: '@chokh/react with the real tracker in a real browser'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The fixture serves the real a.js, so the tracker is built first.
+      - run: pnpm --filter @chokh/tracker build
+
+      - run: pnpm --filter @chokh/react exec playwright install --with-deps chromium
+
+      - run: pnpm --filter @chokh/react test:e2e
+
   dashboard-e2e:
     name: dashboard smoke and accessibility in a real browser
     runs-on: ubuntu-latest
