@@ -11,6 +11,7 @@ import { createAccounts } from './accounts.js';
 import { DEFAULT_STATEMENT_TIMEOUT_MS, openPool } from './db.js';
 import { createDepth } from './depth.js';
 import { createIngest } from './ingest.js';
+import { createImports } from './imports.js';
 import { verify } from './migrate.js';
 import { createPartitionManager } from './partitions.js';
 import { createPeople } from './people.js';
@@ -123,6 +124,7 @@ export async function createPostgresStore(options: PostgresStoreOptions): Promis
     ...createDepth({ pool, sites, now }),
     ...createRollup({ pool, sites, now }),
     ...createPurge({ pool, partitions }),
+    ...createImports({ pool, sites, now }),
     ingest,
 
     site: (siteId) => sites.site(siteId),

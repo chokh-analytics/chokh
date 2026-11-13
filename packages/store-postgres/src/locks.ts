@@ -23,6 +23,10 @@ export const LOCK_MIGRATE = 1;
 // finds the month already there.
 export const LOCK_PARTITIONS = 2;
 
+// Writing an import: the day rule is decided and the rows written under it, so
+// two imports cannot both claim a day (packages/store/src/imports.ts).
+export const LOCK_IMPORTS = 3;
+
 export function advisoryLockSql(purpose: number): string {
   return `SELECT pg_advisory_xact_lock(${LOCK_NAMESPACE}, ${purpose})`;
 }

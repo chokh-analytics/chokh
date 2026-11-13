@@ -22,6 +22,8 @@ export interface RollupRecord extends Totals {
   date: string;
   dim: RollupDim;
   key: string;
+  // Set on a row an import wrote (imports.ts), absent on every native row.
+  importId?: string;
 }
 
 export function zeroTotals(): Totals {

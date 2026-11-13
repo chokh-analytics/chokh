@@ -228,6 +228,7 @@ import {
   USERS,
   VISITORS,
 } from './schema.js';
+import { createImports } from './imports.js';
 
 // The MongoDB adapter. Everything below reads and writes through aggregation
 // pipelines built in pipelines.ts; nothing here creates an index, because only
@@ -616,9 +617,18 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     return (row?.visitors as number | undefined) ?? 0;
   }
 
+  // Imported history, in imports.ts with its reasons.
+  const imports = createImports({
+    rollups,
+    events: db.collection<{ siteId: string; ts: number }>(EVENTS),
+    siteOrThrow,
+    now,
+  });
+
   return {
     db,
     serverVersion,
+    ...imports,
 
     async createSite(site: Site): Promise<void> {
       if (site.domains.length === 0) {

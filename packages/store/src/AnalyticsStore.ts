@@ -38,6 +38,7 @@ import type {
   VitalsQuery,
   VitalsResult,
 } from './health.js';
+import type { ImportStore } from './imports.js';
 import type { Presence } from './presence.js';
 import type { Site, StoredEvent } from './types.js';
 
@@ -49,7 +50,9 @@ import type { Site, StoredEvent } from './types.js';
 // before it come from the daily rollups, the rest comes from raw events. A
 // past day nobody rolled up contributes nothing, and rollupDay is idempotent,
 // so a backfill is the cure.
-export interface AnalyticsStore {
+// The four import methods (importState, importedRollups, writeImport,
+// removeImport) are declared in imports.ts with the reasons for their rules.
+export interface AnalyticsStore extends ImportStore {
   site(siteId: string): Promise<Site | null>;
 
   // Every site this install knows. The jobs need it: a rollup and a retention

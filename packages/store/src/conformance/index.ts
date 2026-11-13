@@ -20,7 +20,8 @@ import {
   type PersonRow,
 } from '../query.js';
 import { MAX_FUNNEL_ROWS_PER_VISITOR } from '../funnel.js';
-import { dayKey } from '../time.js';
+import { dayBounds, dayKey } from '../time.js';
+import type { ImportRow } from '../imports.js';
 import type { SitePatch } from '../AccountStore.js';
 import { defaultSiteSettings, type Site, type StoredEvent } from '../types.js';
 import * as F from './fixture.js';
@@ -2665,6 +2666,183 @@ export function runStoreConformance(name: string, create: () => Promise<StoreHar
         const routes = rowsByKey(await store.breakdown({ ...yesterday, dim: 'route' }));
         const pages = rowsByKey(await store.breakdown({ ...yesterday, dim: 'page' }));
         expect([...routes.keys()].sort()).toEqual([...pages.keys()].sort());
+      });
+    });
+
+    describe('imported history', () => {
+      // The fixture site has data of its own from DAY_BEFORE (the 16th, Dhaka),
+      // and its today is the 18th, so the 10th to the 15th can be imported and
+      // the 16th, 17th and 18th cannot.
+      const importRows = (date: string, pages: Record<string, number>): ImportRow[] => {
+        const visitors = Object.values(pages).reduce((sum, count) => sum + count, 0);
+        const day = { visitors, pageviews: visitors * 2, visits: visitors + 1, bounces: 1, durationSum: 60_000 };
+        return [
+          { date, dim: 'total', key: '', ...day },
+          { date, dim: 'bot', key: 'false', ...day },
+          { date, dim: 'country', key: 'BD', ...day },
+          ...Object.entries(pages).map(([page, count]) => ({
+            date,
+            dim: 'page' as const,
+            key: page,
+            visitors: count,
+            pageviews: count * 2,
+            visits: 0,
+            bounces: 0,
+            durationSum: 0,
+          })),
+          ...Object.entries(pages).map(([page, count]) => ({
+            date,
+            dim: 'route' as const,
+            key: page,
+            visitors: count,
+            pageviews: count * 2,
+            visits: 0,
+            bounces: 0,
+            durationSum: 0,
+          })),
+        ];
+      };
+      const span = (first: string, last: string) => ({
+        siteId: F.SITE_ID,
+        from: dayBounds(first, F.TIMEZONE).start,
+        to: dayBounds(last, F.TIMEZONE).end,
+      });
+      const plausible = [
+        ...importRows('2026-09-10', { '/': 3, '/pricing': 2 }),
+        ...importRows('2026-09-11', { '/': 4 }),
+        ...importRows(F.DAY_BEFORE, { '/': 9 }),
+        ...importRows(F.YESTERDAY, { '/': 9 }),
+        ...importRows(F.TODAY, { '/': 9 }),
+      ];
+      const sorted = (rows: ImportRow[]) =>
+        [...rows].sort((left, right) => `${left.date} ${left.dim} ${left.key}`.localeCompare(`${right.date} ${right.dim} ${right.key}`));
+
+      beforeAll(seed);
+      afterAll(seed);
+
+      it('knows the first day the site has data of its own, and that nothing is imported', async () => {
+        expect(await store.importState(F.SITE_ID)).toEqual({ ownFrom: F.DAY_BEFORE, imports: [] });
+      });
+
+      it('writes the days before that, and refuses the rest per day with the reason', async () => {
+        const summary = await store.writeImport(F.SITE_ID, 'plausible', plausible);
+        expect(summary).toEqual({
+          importId: 'plausible',
+          days: 2,
+          rows: 7 + 5,
+          refused: [
+            { date: F.DAY_BEFORE, reason: 'own_data' },
+            { date: F.YESTERDAY, reason: 'recent' },
+            { date: F.TODAY, reason: 'recent' },
+          ],
+        });
+        expect(await store.importState(F.SITE_ID)).toEqual({
+          ownFrom: F.DAY_BEFORE,
+          imports: [{ importId: 'plausible', from: '2026-09-10', to: '2026-09-11', days: 2, rows: 12 }],
+        });
+        expect(sorted(await store.importedRollups(F.SITE_ID, 'plausible'))).toEqual(
+          sorted(plausible.filter((row) => row.date === '2026-09-10' || row.date === '2026-09-11')),
+        );
+      });
+
+      it('reads an imported day as a total, a daily series and a breakdown', async () => {
+        const range = span('2026-09-10', '2026-09-11');
+        const total = await store.aggregate(range);
+        expect(total.metrics).toMatchObject({ visitors: 9, pageviews: 18, visits: 11, bounces: 2 });
+        expect(total.metrics.avgDurationMs).toBeCloseTo(120_000 / 11, 10);
+
+        const series = await store.timeseries({ ...range, interval: 'day' });
+        expect(series.points.map((point) => [point.metrics.visitors, point.metrics.pageviews])).toEqual([
+          [5, 10],
+          [4, 8],
+        ]);
+
+        const pages = rowsByKey(await store.breakdown({ ...range, dim: 'page' }));
+        expect(pages.get('/')).toMatchObject({ visitors: 7, pageviews: 14 });
+        expect(pages.get('/pricing')).toMatchObject({ visitors: 2, pageviews: 4 });
+        expect(rowsByKey(await store.breakdown({ ...range, dim: 'country' })).get('BD')?.visitors).toBe(9);
+      });
+
+      it('answers nothing for what a rollup cannot: a filter, or an hour', async () => {
+        const range = span('2026-09-10', '2026-09-10');
+        const filtered = await store.aggregate({ ...range, filters: [{ dim: 'page', op: 'is', value: '/' }] });
+        expect(filtered.metrics.visitors).toBe(0);
+        const hourly = await store.timeseries({ ...range, interval: 'hour' });
+        expect(hourly.points.every((point) => point.metrics.visitors === 0)).toBe(true);
+      });
+
+      it("leaves the site's own days exactly as they were", async () => {
+        const whole = await store.aggregate(wholeRange);
+        expect(whole.metrics.pageviews).toBe(F.EXPECTED_RANGE.pageviews);
+        expect(whole.metrics.visitors).toBe(F.EXPECTED_RANGE.visitors);
+      });
+
+      it("refuses a day another import holds, naming it, and writes the rest", async () => {
+        const summary = await store.writeImport(F.SITE_ID, 'umami', [
+          ...importRows('2026-09-11', { '/': 1 }),
+          ...importRows('2026-09-12', { '/': 1 }),
+        ]);
+        expect(summary.days).toBe(1);
+        expect(summary.refused).toEqual([{ date: '2026-09-11', reason: 'other_import', heldBy: 'plausible' }]);
+        expect((await store.importState(F.SITE_ID)).imports.map((entry) => [entry.importId, entry.from, entry.to])).toEqual([
+          ['plausible', '2026-09-10', '2026-09-11'],
+          ['umami', '2026-09-12', '2026-09-12'],
+        ]);
+      });
+
+      it('replaces a day it holds wholly, so a rewrite with fewer rows leaves only those', async () => {
+        const summary = await store.writeImport(F.SITE_ID, 'plausible', importRows('2026-09-10', { '/': 3 }));
+        expect(summary).toMatchObject({ days: 1, rows: 5, refused: [] });
+        const pages = rowsByKey(await store.breakdown({ ...span('2026-09-10', '2026-09-10'), dim: 'page' }));
+        expect([...pages.keys()]).toEqual(['/']);
+        // The other day of the import is not touched.
+        expect((await store.aggregate(span('2026-09-11', '2026-09-11'))).metrics.visitors).toBe(4);
+      });
+
+      it('is kept by the jobs: rollupDay, regroupRoutes and purge leave an imported day alone', async () => {
+        const range = span('2026-09-10', '2026-09-12');
+        const before = await store.aggregate(range);
+        const routesBefore = rowsByKey(await store.breakdown({ ...range, dim: 'route' }));
+
+        expect((await store.rollupDay(F.SITE_ID, '2026-09-10')).rows).toBe(0);
+        await store.regroupRoutes(F.SITE_ID);
+        await store.purge(F.SITE_ID, F.NOW);
+
+        expect(await store.aggregate(range)).toEqual(before);
+        expect(rowsByKey(await store.breakdown({ ...range, dim: 'route' }))).toEqual(routesBefore);
+        // With every raw row purged, the site's own data starts where its own
+        // rollups do.
+        expect((await store.importState(F.SITE_ID)).ownFrom).toBe(F.DAY_BEFORE);
+      });
+
+      it('takes one import back out and nothing else', async () => {
+        const nativeBefore = await store.aggregate(dayBefore);
+        expect(await store.removeImport(F.SITE_ID, 'plausible')).toEqual({ importId: 'plausible', days: 2, rows: 5 + 5 });
+        expect(await store.importedRollups(F.SITE_ID, 'plausible')).toEqual([]);
+        expect((await store.importState(F.SITE_ID)).imports.map((entry) => entry.importId)).toEqual(['umami']);
+        expect((await store.aggregate(span('2026-09-10', '2026-09-12'))).metrics.visitors).toBe(1);
+        expect(await store.aggregate(dayBefore)).toEqual(nativeBefore);
+        expect(await store.removeImport(F.SITE_ID, 'plausible')).toEqual({ importId: 'plausible', days: 0, rows: 0 });
+      });
+
+      it('refuses a malformed import id and malformed rows, writing nothing', async () => {
+        for (const call of [
+          () => store.importState(F.SITE_ID).then(() => store.importedRollups(F.SITE_ID, 'Bad Id')),
+          () => store.writeImport(F.SITE_ID, '../x', importRows('2026-09-13', { '/': 1 })),
+          () => store.removeImport(F.SITE_ID, ''),
+        ]) {
+          await expect(call()).rejects.toMatchObject({ code: 'INVALID_IMPORT_ID' });
+        }
+        await expect(
+          store.writeImport(F.SITE_ID, 'broken', [...importRows('2026-09-13', { '/': 1 }), ...importRows('2026-09-14', { '/': 1 }).slice(1)]),
+        ).rejects.toMatchObject({ code: 'INVALID_IMPORT_ROW' });
+        expect((await store.importState(F.SITE_ID)).imports.map((entry) => entry.importId)).toEqual(['umami']);
+      });
+
+      it('refuses a site nobody registered', async () => {
+        await expect(store.writeImport(F.OTHER_SITE_ID, 'plausible', importRows('2026-09-10', { '/': 1 }))).rejects.toMatchObject({
+          code: 'UNKNOWN_SITE',
+        });
       });
     });
 

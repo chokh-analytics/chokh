@@ -16,6 +16,15 @@ import {
   SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
   activityPlan,
+  checkImportId,
+  checkImportRows,
+  importDecision,
+  summariseImports,
+  type ImportRefusedDay,
+  type ImportRemoveSummary,
+  type ImportRow,
+  type ImportState,
+  type ImportWriteSummary,
   addVisitorDays,
   assertHealthRange,
   foldCoverage,
@@ -270,6 +279,28 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
         startedAt: session.startedAt,
         isNew: session.isNew,
       }));
+  }
+
+  // The site's imported rollup rows.
+  function importedOf(siteId: string): (RollupRecord & { importId: string })[] {
+    return rollups.filter(
+      (row): row is RollupRecord & { importId: string } => row.siteId === siteId && row.importId !== undefined,
+    );
+  }
+
+  // The first day of the site's calendar holding data of its own: a native
+  // rollup row or any raw event.
+  function ownFrom(site: Site): string | null {
+    let first: string | null = null;
+    for (const row of rollups) {
+      if (row.siteId === site.id && row.importId === undefined && (first === null || row.date < first)) first = row.date;
+    }
+    for (const event of events) {
+      if (event.siteId !== site.id) continue;
+      const day = dayKey(event.ts, site.settings.timezone);
+      if (first === null || day < first) first = day;
+    }
+    return first;
   }
 
   function siteOrThrow(siteId: string): Site {
@@ -1954,6 +1985,54 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       const { routesChangedAt: _routesChangedAt, ...cleared } = site;
       bySiteId.set(siteId, cleared);
       return { siteId, events: considered, days: days.size };
+    },
+
+    // Imported history (imports.ts): rollup rows that carry an importId, kept
+    // in the same list as the native ones, so every read sees them unchanged.
+    async importState(siteId: string): Promise<ImportState> {
+      return { ownFrom: ownFrom(siteOrThrow(siteId)), imports: summariseImports(importedOf(siteId)) };
+    },
+
+    async importedRollups(siteId: string, importId: string): Promise<ImportRow[]> {
+      checkImportId(importId);
+      siteOrThrow(siteId);
+      return importedOf(siteId)
+        .filter((row) => row.importId === importId)
+        .map(({ siteId: _siteId, importId: _importId, ...rest }) => rest);
+    },
+
+    async writeImport(siteId: string, importId: string, rows: readonly ImportRow[]): Promise<ImportWriteSummary> {
+      checkImportId(importId);
+      const days = checkImportRows(rows);
+      const site = siteOrThrow(siteId);
+      const own = ownFrom(site);
+      const today = dayKey(now(), site.settings.timezone);
+      const holders = new Map<string, string>();
+      for (const row of importedOf(siteId)) {
+        if (row.importId !== importId) holders.set(row.date, row.importId);
+      }
+      const refused: ImportRefusedDay[] = [];
+      const accepted = new Set<string>();
+      for (const date of days) {
+        const refusal = importDecision(importId, date, own, today, holders.get(date));
+        if (refusal === undefined) accepted.add(date);
+        else refused.push(refusal);
+      }
+      const written = rows
+        .filter((row) => accepted.has(row.date))
+        .map((row) => ({ ...row, siteId, importId }));
+      rollups = rollups
+        .filter((row) => !(row.siteId === siteId && row.importId === importId && accepted.has(row.date)))
+        .concat(written);
+      return { importId, days: accepted.size, rows: written.length, refused };
+    },
+
+    async removeImport(siteId: string, importId: string): Promise<ImportRemoveSummary> {
+      checkImportId(importId);
+      siteOrThrow(siteId);
+      const gone = importedOf(siteId).filter((row) => row.importId === importId);
+      rollups = rollups.filter((row) => !(row.siteId === siteId && row.importId === importId));
+      return { importId, days: new Set(gone.map((row) => row.date)).size, rows: gone.length };
     },
 
     purge(siteId: string, before: number): Promise<PurgeSummary> {

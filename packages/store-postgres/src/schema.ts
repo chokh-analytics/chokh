@@ -303,6 +303,10 @@ export const schema: readonly TableSchema[] = [
       column('visits', 'bigint NOT NULL'),
       column('bounces', 'bigint NOT NULL'),
       column('duration_sum', 'bigint NOT NULL'),
+      // Set on a row an import wrote, NULL on every native one (AN-SDK01,
+      // packages/store/src/imports.ts). No index: every statement that reads it
+      // leads with site_id, which the key serves.
+      text('import_id'),
     ],
     primaryKey: ['site_id', 'date', 'dim', 'key'],
     indexes: [
