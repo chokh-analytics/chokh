@@ -52,6 +52,16 @@ const Alerts = lazy(async () => ({ default: (await import('../pages/Alerts.js'))
 const Settings = lazy(async () => ({
   default: (await import('../pages/Settings.js')).Settings,
 }));
+// Who can reach the site, and the record of who looked at whom (AN-TEAM01).
+// Beside Settings under the site's own name, and a chunk each: most visits
+// open neither.
+const Team = lazy(async () => ({ default: (await import('../pages/Team.js')).Team }));
+const AuditLog = lazy(async () => ({
+  default: (await import('../pages/AuditLog.js')).AuditLog,
+}));
+// The page an invitation link opens: outside the boot below, like the shared
+// page, because whoever holds the link may have no account yet.
+const Invite = lazy(async () => ({ default: (await import('../pages/Invite.js')).Invite }));
 // The shared page (AN-RPT01): outside the boot below, because whoever holds
 // the link has no session and GET /api/me would send them to sign in.
 const Share = lazy(async () => ({ default: (await import('../pages/Share.js')).Share }));
@@ -124,6 +134,12 @@ function SiteRoutes({ value }: { value: AppContextValue }): JSX.Element {
             about the site, not a report of it. */}
         <Route path="/:siteId/settings">
           <Settings />
+        </Route>
+        <Route path="/:siteId/team">
+          <Team />
+        </Route>
+        <Route path="/:siteId/audit">
+          <AuditLog />
         </Route>
         {/*
           Two segments, and both of them matter: a visitor id is a browser and
@@ -370,10 +386,32 @@ export function App(): JSX.Element {
             </Suspense>
           )}
         </Route>
+        <Route path="/invite">
+          <Suspense fallback={<Splash />}>
+            <Invited client={client} />
+          </Suspense>
+        </Route>
         <Route>
           <Authenticated client={client} onExpired={onExpired} />
         </Route>
       </Switch>
     </QueryClientProvider>
+  );
+}
+
+// The invitation page, and what happens when it has been used: the person is
+// signed in by the answer, so everything cached before it belongs to nobody
+// (or to whoever was here before), and they go to what they were let in to.
+function Invited({ client }: { client: Client }): JSX.Element {
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+  return (
+    <Invite
+      client={client}
+      onAccepted={(scope) => {
+        queryClient.clear();
+        navigate(scope.kind === 'site' ? `/${scope.id}` : '/', { replace: true });
+      }}
+    />
   );
 }

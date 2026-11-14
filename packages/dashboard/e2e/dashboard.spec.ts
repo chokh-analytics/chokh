@@ -1225,3 +1225,316 @@ test('walks the health views and windows from the keyboard and keeps each in the
   await page.reload();
   await expect(page.getByRole('tab', { name: 'Coverage' })).toHaveAttribute('aria-selected', 'true');
 });
+
+// AN-TEAM01: who can reach a site, and the record of who looked at whom.
+//
+// What only a browser against the real server can say: that the pages are
+// reached from the navigation with a keyboard, that an invitation's link is
+// shown once and lets exactly its person in, that the token is out of the
+// address bar before anything asks a server anything and is in no address, no
+// storage and no request to anywhere else, that a removal ends the session a
+// browser is holding, and that the audit log is asked for when somebody asks
+// and at no other time.
+test.describe.serial('teams, invitations and the audit log', () => {
+  const INVITED = 'invited@chokh.test';
+  const THEIR_PASSWORD = 'a-password-of-their-own';
+  // A browser with nobody signed in. Said out loud, because a context made in
+  // a test starts with the session the whole suite shares unless it is told
+  // otherwise, and an invitation opened by the owner is a different page.
+  const NOBODY = { storageState: { cookies: [], origins: [] } };
+
+  async function openFromSiteMenu(page: Page, link: string): Promise<void> {
+    const menu = page.getByRole('button', { name: /^Progsity/ });
+    await menu.focus();
+    await page.keyboard.press('Enter');
+    const item = page.getByRole('link', { name: link });
+    await item.focus();
+    await page.keyboard.press('Enter');
+  }
+
+  function storedText(page: Page): Promise<string> {
+    return page.evaluate(() =>
+      JSON.stringify({
+        local: { ...localStorage },
+        session: { ...sessionStorage },
+        cookie: document.cookie,
+      }),
+    );
+  }
+
+  test('invites somebody from the Team page by keyboard, shows the link once, and lets them in by it', async ({
+    page,
+    browser,
+  }) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ORIGIN });
+    await boot(page);
+    await openFromSiteMenu(page, 'Team and invitations');
+    await expect(page).toHaveURL(new RegExp(`/${SITE}/team$`));
+    await expect(page.getByRole('heading', { name: 'Who can see Progsity', level: 1 })).toBeVisible();
+
+    // The form, from the keyboard: an address, and Enter.
+    const form = page.getByRole('region', { name: 'Invite somebody' });
+    await form.getByLabel('Their email').fill(INVITED);
+    await page.keyboard.press('Enter');
+
+    const once = page.getByRole('group', { name: `The link for ${INVITED}` });
+    await expect(once).toBeFocused();
+    await expect(once.getByText(/shown once and will not be shown again/)).toBeVisible();
+    const link = await once.getByLabel('The invitation link').inputValue();
+    expect(link).toMatch(new RegExp(`^${ORIGIN}/invite#chi_[A-Za-z0-9_-]{40,}$`));
+    const token = link.split('#')[1] ?? '';
+    await once.getByRole('button', { name: 'Copy the link' }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
+
+    // Shown once: a reload has the invitation in the list and the link nowhere.
+    await page.reload();
+    const waiting = page.getByRole('region', { name: 'Invitations waiting' });
+    await expect(waiting.getByText(INVITED)).toBeVisible();
+    await expect(waiting.getByText(/Waiting\. The link works until/)).toBeVisible();
+    expect(await page.content()).not.toContain(token);
+    expect(await storedText(page)).not.toContain(token);
+
+    // The person it was sent to, in a browser of their own with nothing in it.
+    const context = await browser.newContext(NOBODY);
+    const guest = await context.newPage();
+    const asked: { url: string; body: string | null }[] = [];
+    guest.on('request', (request) => asked.push({ url: request.url(), body: request.postData() }));
+    await guest.goto(link);
+    await expect(guest.getByText(`invited ${INVITED} to the team Default, as Viewer.`)).toBeVisible();
+
+    // Out of the address bar, parked nowhere, written to no storage.
+    expect(guest.url()).toBe(`${ORIGIN}/invite`);
+    expect(await guest.evaluate(() => window.location.hash)).toBe('');
+    expect(await guest.evaluate(() => '__chokhInvite' in window)).toBe(false);
+    expect(await storedText(guest)).not.toContain(token);
+    // Every request went to this server, none carried the token in its
+    // address, and the one that carried it at all carried it in a body.
+    expect(asked.length).toBeGreaterThan(3);
+    for (const request of asked) {
+      expect(new URL(request.url).origin).toBe(ORIGIN);
+      expect(request.url).not.toContain(token);
+    }
+    expect(
+      asked.filter((request) => (request.body ?? '').includes(token)).map((request) => request.url),
+    ).toEqual([`${ORIGIN}/api/invitations/lookup`]);
+
+    // They choose a password of their own, and are in.
+    await guest.getByLabel('Choose a password').fill(THEIR_PASSWORD);
+    await guest.keyboard.press('Enter');
+    await expect(guest.getByRole('navigation', { name: 'Report' })).toBeVisible();
+    await expect(guest).toHaveURL(new RegExp(`/${SITE}$`));
+    expect(JSON.stringify(await (await guest.request.get('/api/me')).json())).toContain(INVITED);
+
+    // A viewer is told who the Team page is for, and is not sent to be refused.
+    const refused: string[] = [];
+    guest.on('response', (response) => {
+      if (response.status() === 403) refused.push(response.url());
+    });
+    await guest.goto(`/${SITE}/team`);
+    await expect(guest.getByText(/Only an owner of this site, or of the team it belongs to/)).toBeVisible();
+    await expect(guest.getByRole('region', { name: 'Invite somebody' })).toHaveCount(0);
+    expect(refused).toEqual([]);
+
+    // The link is spent, and the page it opened has forgotten it anyway.
+    await guest.goto('/invite');
+    await expect(guest.getByText(/This page opens from an invitation link/)).toBeVisible();
+
+    // The owner sees them in the team, and nothing left waiting.
+    await page.reload();
+    const team = page.getByRole('region', { name: 'The team, Default' });
+    await expect(team.getByText(INVITED)).toBeVisible();
+    await expect(page.getByText('Nobody is waiting on an invitation.')).toBeVisible();
+
+    // Removed, and the session their browser is holding ends with it.
+    await team.getByRole('button', { name: `Remove ${INVITED}` }).click();
+    await team.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(team.getByText('Removed, and signed out.')).toBeVisible();
+    await expect(team.getByText(INVITED)).toHaveCount(0);
+    await guest.goto(`/${SITE}`);
+    await expect(guest).toHaveURL(/\/login/);
+    await context.close();
+  });
+
+  test('lets an address that already has an account sign in on the invitation page, to one site only', async ({
+    page,
+    browser,
+  }) => {
+    // The account the case above made, now in no team.
+    const made = await page.request.post(`/api/sites/${SITE}/invitations`, {
+      data: { email: INVITED, role: 'editor', identity: false },
+    });
+    expect(made.status(), 'the invitation was refused').toBe(201);
+    const { link } = ((await made.json()) as { data: { once: { link: string } } }).data.once;
+
+    // Opened by somebody signed in as another account, it says whose it is
+    // and offers neither form: it is accepted by its own address or nobody.
+    await page.goto(link);
+    await expect(
+      page.getByText(`This invitation is for ${INVITED}, and you are signed in as ${OWNER.email}.`),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Accept the invitation' })).toHaveCount(0);
+    await expect(page.getByLabel('Password')).toHaveCount(0);
+    expect(page.url()).toBe(`${ORIGIN}/invite`);
+
+    const context = await browser.newContext(NOBODY);
+    const guest = await context.newPage();
+    await guest.goto(link);
+    await expect(guest.getByText(`invited ${INVITED} to the site Progsity, as Editor.`)).toBeVisible();
+    await expect(guest.getByText(/An account with this address already exists/)).toBeVisible();
+    expect(guest.url()).toBe(`${ORIGIN}/invite`);
+    // No password to choose: the account has one, and it is asked for here.
+    await expect(guest.getByLabel('Choose a password')).toHaveCount(0);
+    await guest.getByLabel('Password').fill(THEIR_PASSWORD);
+    await guest.keyboard.press('Enter');
+    await expect(guest.getByRole('navigation', { name: 'Report' })).toBeVisible();
+    await expect(guest).toHaveURL(new RegExp(`/${SITE}$`));
+    await context.close();
+
+    // On the owner's page they hold a role on this site alone, and are not in
+    // the team. Taken off again, so the next case finds the site as it was.
+    await boot(page, `/${SITE}/team`);
+    const site = page.getByRole('region', { name: 'On this site only' });
+    await expect(site.getByText(INVITED)).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'The team, Default' }).getByText(INVITED),
+    ).toHaveCount(0);
+    await site.getByRole('button', { name: `Remove ${INVITED}` }).click();
+    await site.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(page.getByText('Nobody holds a role on this site alone.')).toBeVisible();
+  });
+
+  test('reads the audit log, and asks for it only when somebody asks', async ({ page }) => {
+    const opened: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith('/audit')) opened.push(`${url.pathname}${url.search}`);
+    });
+
+    await boot(page);
+    await openFromSiteMenu(page, 'Audit log');
+    await expect(page).toHaveURL(new RegExp(`/${SITE}/audit$`));
+    const log = page.getByRole('table', { name: 'The audit log, newest first.' });
+    // What the two cases above left behind on this site, in words.
+    await expect(log.getByText('Sent an invitation').first()).toBeVisible();
+    await expect(log.getByText('An invitation was used').first()).toBeVisible();
+    await expect(page.getByText(/Opening this list is itself written to it/)).toBeVisible();
+    expect(opened).toEqual([`/api/sites/${SITE}/audit?limit=50`]);
+
+    // The tab is left and returned to, the window loses the focus and gets it
+    // back, the network drops and returns: none of it is somebody asking.
+    await page.evaluate(() => {
+      const set = (state: string): void => {
+        Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+      set('hidden');
+      window.dispatchEvent(new Event('blur'));
+      set('visible');
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('offline'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await page.waitForTimeout(1_500);
+    expect(opened).toHaveLength(1);
+
+    // Opened again, by somebody pressing the button: one more request, and
+    // the first opening is now a row.
+    await page.getByRole('button', { name: 'Open the log again' }).click();
+    await expect(log.getByText('Opened the audit log').first()).toBeVisible();
+    expect(opened).toHaveLength(2);
+
+    // Narrowed from the form, which asks when Show is pressed and not before.
+    await page.getByLabel('Show').selectOption('access');
+    await page.waitForTimeout(400);
+    expect(opened).toHaveLength(2);
+    await page.getByRole('button', { name: 'Show', exact: true }).click();
+    await expect(page).toHaveURL(/[?&]kind=access/);
+    await expect(log.getByText('Sent an invitation').first()).toBeVisible();
+    await expect(log.getByText('Opened the audit log')).toHaveCount(0);
+    expect(opened[2]).toBe(`/api/sites/${SITE}/audit?kind=access&limit=50`);
+
+    // The team's own log, by keyboard: what happened to the team is there.
+    const team = page.getByRole('tab', { name: 'The team' });
+    await team.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/[?&]log=team/);
+    await expect(team).toHaveAttribute('aria-selected', 'true');
+    await expect(log.getByText('Removed somebody').first()).toBeVisible();
+    expect(opened[3]).toContain('/api/teams/default/audit');
+    expect(opened).toHaveLength(4);
+  });
+
+  test('keeps the Team page, the audit log and the invitation page inside a laptop, a small laptop and a phone', async ({
+    page,
+    browser,
+  }) => {
+    const overflow = (target: Page): Promise<number> =>
+      target.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+
+    for (const width of [1280, 1024, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+      await boot(page, `/${SITE}/team`);
+      await expect(
+        page.getByRole('region', { name: 'The team, Default' }).getByRole('list'),
+      ).toBeVisible();
+      expect(await overflow(page), `the Team page at ${width}`).toBe(0);
+      // The way to the other two pages is on screen at every width.
+      await expect(
+        page.getByRole('navigation', { name: 'About this site' }).getByRole('link'),
+      ).toHaveCount(3);
+    }
+
+    // One opening of the log for all three widths: it is resized, not reread.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await boot(page, `/${SITE}/audit`);
+    const box = page.getByRole('group', { name: 'The audit log, newest first.' });
+    await expect(box).toBeVisible();
+    for (const width of [1280, 1024, 390]) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+      // Polled, because the bar refits its destinations a frame after the
+      // window changes size; what is held is where it settles.
+      await expect.poll(() => overflow(page), `the audit log at ${width}`).toBe(0);
+    }
+    // Five columns do not fit a phone: the table scrolls inside its card, and
+    // the box can take the focus so a keyboard can scroll it.
+    expect(
+      await box.evaluate((element) => element.scrollWidth - element.clientWidth),
+    ).toBeGreaterThan(0);
+    await box.focus();
+    await expect(box).toBeFocused();
+
+    const made = await page.request.post(`/api/sites/${SITE}/invitations`, {
+      data: {
+        email: 'somebody-with-a-long-address@a-long-company-name.test',
+        role: 'viewer',
+        identity: true,
+      },
+    });
+    const sent = (
+      (await made.json()) as { data: { invitation: { id: string }; once: { link: string } } }
+    ).data;
+    const context = await browser.newContext(NOBODY);
+    const guest = await context.newPage();
+    await guest.setViewportSize({ width: 390, height: 844 });
+    // Opened in a tab that is already on the page, which is a change of
+    // fragment and not a load: nothing that runs at load runs again, and the
+    // token still comes out of the address bar and the page still reads it.
+    await guest.goto('/invite');
+    await expect(guest.getByText(/This page opens from an invitation link/)).toBeVisible();
+    await guest.goto(sent.once.link);
+    await expect(guest.getByRole('button', { name: 'Make the account and accept' })).toBeVisible();
+    expect(guest.url()).toBe(`${ORIGIN}/invite`);
+    for (const width of [390, 1024, 1280]) {
+      await guest.setViewportSize({ width, height: width === 390 ? 844 : 800 });
+      await expect.poll(() => overflow(guest), `the invitation page at ${width}`).toBe(0);
+    }
+    await context.close();
+    // Taken back, so nothing is left waiting.
+    const revoked = await page.request.delete(
+      `/api/sites/${SITE}/invitations/${sent.invitation.id}`,
+    );
+    expect(revoked.status()).toBe(200);
+  });
+});

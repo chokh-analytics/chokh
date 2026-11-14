@@ -1,0 +1,91 @@
+/*
+ * The page an invitation link opens. The sign-in page's shape, because it is
+ * the same moment for a different person: the mark, one card, nothing else.
+ */
+
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s5);
+  padding: var(--gutter);
+}
+
+.head {
+  display: grid;
+  justify-items: center;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  padding: var(--s5);
+  width: min(420px, 100%);
+  box-sizing: border-box;
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--t-h2);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* What the invitation is, in one sentence, before anything is asked for. */
+.what {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.text {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  display: grid;
+  gap: var(--s3);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.reading {
+  display: grid;
+  gap: var(--s2);
+}
+
+/* A refusal in amber, as on the sign-in page: a link that has run out is not
+   something that broke. */
+.notice {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r2);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--t-label);
+  line-height: 1.45;
+}
+
+.link {
+  font-size: var(--t-body);
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r1);
+}

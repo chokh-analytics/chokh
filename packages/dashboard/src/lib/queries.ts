@@ -15,6 +15,8 @@ import type {
 
 import {
   api,
+  type AuditParams,
+  type InvitationScope,
   type LicenseStatus,
   type Me,
   type PeopleParams,
@@ -553,5 +555,108 @@ export function useSiteCounts(client: Client, siteIds: string[]) {
       });
       return { online, pending: results.some((result) => result.isPending) };
     },
+  });
+}
+
+// Who may reach a team and a site, and who is still waiting on a link
+// (AN-TEAM01). Read on the clock a membership is read on, and refreshed by
+// hand after every change the page makes. Each takes whether to ask at all:
+// somebody who is not an owner is told so by the page, and is not sent to
+// fetch a 403 to learn it.
+export function teamMembersKey(teamId: string): unknown[] {
+  return ['team-members', teamId];
+}
+
+export function useTeamMembers(client: Client, teamId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: teamMembersKey(teamId),
+    queryFn: () => api.teamMembers(client, teamId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+    enabled,
+  });
+}
+
+export function siteMembersKey(siteId: string): unknown[] {
+  return ['site-members', siteId];
+}
+
+export function useSiteMembers(client: Client, siteId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: siteMembersKey(siteId),
+    queryFn: () => api.siteMembers(client, siteId),
+    staleTime: ME_STALE_MS,
+    retry: false,
+    enabled,
+  });
+}
+
+export function invitationsKey(scope: InvitationScope): unknown[] {
+  return ['invitations', scope.kind, scope.id];
+}
+
+export function useInvitations(client: Client, scope: InvitationScope, enabled: boolean) {
+  return useQuery({
+    queryKey: invitationsKey(scope),
+    queryFn: () => api.invitations(client, scope),
+    staleTime: ME_STALE_MS,
+    retry: false,
+    enabled,
+  });
+}
+
+// The audit log, a page at a time.
+//
+// Every option here says the same thing: this query is asked when a person
+// asks, and at no other time. Opening the log writes a row to it (who opened
+// it, and when), so a list that reloaded itself when the window got the focus
+// back, when the network came back, when the page was returned to, or on a
+// timer would fill the log with rows saying the owner opened it every minute,
+// and bury the reads somebody opens it to find.
+//
+// - never stale, so nothing decides by itself that it is time to ask again;
+// - no refetch on focus, on reconnect or on a timer;
+// - not kept once the page is left (gcTime 0), so coming back is a new
+//   opening somebody chose, and not a silent reload of an old one;
+// - no retry: a refusal is an answer, and a retried opening is two rows.
+export const AUDIT_PAGE = 50;
+
+export function auditKey(scope: InvitationScope, filters: AuditParams): unknown[] {
+  return [
+    'audit',
+    scope.kind,
+    scope.id,
+    filters.kind ?? '',
+    filters.actor ?? '',
+    filters.target ?? '',
+    filters.from ?? 0,
+    filters.to ?? 0,
+  ];
+}
+
+export function useAuditLog(
+  client: Client,
+  scope: InvitationScope,
+  filters: AuditParams,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: auditKey(scope, filters),
+    queryFn: ({ pageParam }) =>
+      api.audit(client, scope, {
+        ...filters,
+        limit: AUDIT_PAGE,
+        cursor: pageParam === '' ? undefined : pageParam,
+      }),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.data.next ?? undefined,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    refetchInterval: false,
+    retry: false,
+    enabled,
   });
 }

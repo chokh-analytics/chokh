@@ -775,3 +775,97 @@ describe('a link that names a goal', () => {
     expect(aggregates.every((url) => url.includes('goal=g_signup'))).toBe(true);
   });
 });
+
+// Who can reach a site and the record of who looked at whom (AN-TEAM01) are
+// about the site, so they are reached where its settings are: under its own
+// name, by links a keyboard lands on like any other.
+describe('the pages about a site', () => {
+  function serveSite(): void {
+    serve({
+      '/api/me': () =>
+        envelope({
+          actor: { kind: 'session', id: 'u_1' },
+          user: { id: 'u_1', email: 'owner@chokh.test' },
+          sites: [{ ...SITE, scopes: ['read:stats'] }],
+          teams: [],
+        }),
+    });
+  }
+
+  it('are in the site menu, beside its settings', async () => {
+    at('/s_test');
+    serveSite();
+    render(<App />);
+    await userEvent.click(await screen.findByRole('button', { name: /Progsity/ }));
+    const menu = await screen.findByRole('group', { name: 'Switch site' });
+    const links = within(menu)
+      .getAllByRole('link')
+      .map((link) => [link.textContent, link.getAttribute('href')]);
+    expect(links).toEqual([
+      ['Site settings', '/s_test/settings'],
+      ['Team and invitations', '/s_test/team'],
+      ['Audit log', '/s_test/audit'],
+    ]);
+  });
+
+  it('each lead to the other two, and say which one this is', async () => {
+    at('/s_test/team');
+    serveSite();
+    render(<App />);
+    const tabs = await screen.findByRole('navigation', { name: 'About this site' });
+    expect(
+      within(tabs)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href'), link.getAttribute('aria-current')]),
+    ).toEqual([
+      ['Settings', '/s_test/settings', null],
+      ['Team', '/s_test/team', 'page'],
+      ['Audit log', '/s_test/audit', null],
+    ]);
+    // Somebody who only reads the numbers is told who this page is for.
+    expect(screen.getByRole('heading', { level: 1, name: 'Who can see Progsity' })).toBeInTheDocument();
+    expect(screen.getByText(/Only an owner of this site/)).toBeInTheDocument();
+  });
+});
+
+describe('an invitation link', () => {
+  const TOKEN = 'chi_an-invented-token-for-a-test-0123456789';
+
+  it('opens for somebody with no session, with the token out of the address bar, and is not sent to sign in', async () => {
+    at(`/invite#${TOKEN}`);
+    serve({
+      '/api/me': () => refusal(401, 'UNAUTHENTICATED'),
+      '/api/invitations/lookup': () =>
+        envelope({
+          invitation: {
+            email: 'ada@test.example',
+            scope: { kind: 'team', id: 'default', name: 'Default' },
+            role: 'viewer',
+            identity: false,
+            invitedBy: 'Olu',
+            expiresAt: Date.UTC(2026, 8, 30),
+            accountExists: false,
+          },
+        }),
+    });
+    render(<App />);
+    expect(
+      await screen.findByText('Olu invited ada@test.example to the team Default, as Viewer.'),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/invite');
+    expect(window.location.href).not.toContain(TOKEN);
+    const { forgetInviteToken } = await import('../lib/invite-token.js');
+    forgetInviteToken();
+  });
+});
+
+describe('a sign-in from another application that was refused', () => {
+  it('says so in its own sentence when it would have lowered the last owner', async () => {
+    at('/login?sso=LAST_OWNER');
+    serve({ '/api/me': () => refusal(401, 'UNAUTHENTICATED') });
+    render(<App />);
+    expect(
+      await screen.findByText(/it would have lowered the last owner of a team/),
+    ).toBeInTheDocument();
+  });
+});

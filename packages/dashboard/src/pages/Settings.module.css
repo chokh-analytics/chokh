@@ -1,6 +1,6 @@
 .title {
   margin: 0 0 var(--s1);
-  font-size: var(--t-title);
+  font-size: var(--t-h1);
   font-weight: 600;
   color: var(--ink);
 }

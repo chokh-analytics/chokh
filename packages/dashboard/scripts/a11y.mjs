@@ -58,12 +58,28 @@ const PAGES = [
   { name: 'settings', path: '/s_demo/settings' },
   // The first paid feature, described on an install with no key.
   { name: 'alerts', path: '/s_demo/alerts' },
+  // Who can reach the site (AN-TEAM01): the invitation form, and lists with a
+  // select, a box and two buttons to a row, each named for whose row it is.
+  { name: 'team', path: '/s_demo/team' },
+  // The audit log: the form that asks, and a table whose names are buttons.
+  { name: 'audit', path: '/s_demo/audit' },
+  // The page an invitation link opens, read by somebody with no session: the
+  // invitation is made through the API for the audit and taken back after it.
+  // Its landmark is the main, because it has no navigation.
+  // One card with three fields and a button, so fewer audits have anything
+  // to look at than on a report: sixteen apply (measured 2026-11-14), where a
+  // blank page gets about ten. Its floor is its own, and still above blank.
+  { name: 'invite', path: '/invite', invite: true, guard: 'main form', minAudits: 15 },
   // The shared page (AN-RPT01), read by somebody with the link and no
   // session: the share is made through the API for the audit and taken off
   // after it. Its landmark is the main, because it has no navigation.
   { name: 'share', path: '/share/', share: true, guard: 'main[aria-label="Report"]' },
 ];
 const THEMES = ['light', 'dark'];
+
+// How many audits have to have applied for a score to count, unless a page
+// says otherwise: a perfect score over a handful is a blank page's score.
+const MIN_AUDITS = 20;
 
 // What has to be on screen for the audit to count. The navigation is in the
 // shell, so a page that rendered it booted, routed and painted.
@@ -86,6 +102,17 @@ async function audit(browser, page, theme) {
     const { token } = (await made.json()).data.share;
     path = `${page.path}${token}`;
   }
+  let invitation = null;
+  if (page.invite === true) {
+    const made = await tab.request.post(`${base}/api/sites/s_demo/invitations`, {
+      data: { email: `audited-${theme}@chokh.test`, role: 'viewer', identity: false },
+    });
+    const sent = (await made.json()).data;
+    invitation = sent.invitation.id;
+    path = sent.once.link;
+    // Whoever opens a link like this is nobody yet.
+    await browser.clearCookies();
+  }
   const guard = page.guard ?? GUARD;
   await tab.goto(`${base}${path}`);
   await tab.waitForSelector(guard);
@@ -106,6 +133,12 @@ async function audit(browser, page, theme) {
   if (page.share === true) {
     await tab.request.delete(`${base}/api/sites/s_demo/share`);
   }
+  if (invitation !== null) {
+    await tab.request.post(`${base}/api/auth/login`, {
+      data: { email: 'owner@chokh.test', password: 'a-long-enough-password' },
+    });
+    await tab.request.delete(`${base}/api/sites/s_demo/invitations/${invitation}`);
+  }
   await tab.close();
 
   const report = result?.lhr;
@@ -122,6 +155,7 @@ async function audit(browser, page, theme) {
     auditsRun: audits.length,
     auditsApplicable: applicable.length,
     rendered: painted,
+    minAudits: page.minAudits ?? MIN_AUDITS,
     failed: applicable.filter((one) => one.score < 1).map((one) => one.id),
   };
 }
@@ -151,7 +185,7 @@ for (const result of results) {
   if (result.rendered < 1) {
     problems.push('the page had no dashboard in it');
   }
-  if (result.auditsApplicable < 20) {
+  if (result.auditsApplicable < result.minAudits) {
     problems.push(`only ${result.auditsApplicable} audits applied`);
   }
   if (result.accessibility !== 1) {

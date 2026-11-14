@@ -207,6 +207,14 @@ function SiteList({
       <Link to={`/${value.site.id}/settings`} className={popover.item} onClick={onPicked}>
         <span>{messages.sites.settings}</span>
       </Link>
+      {/* Who can reach the site and the record of who looked at whom
+          (AN-TEAM01): about the site too, so they live here beside it. */}
+      <Link to={`/${value.site.id}/team`} className={popover.item} onClick={onPicked}>
+        <span>{messages.sites.teamPage}</span>
+      </Link>
+      <Link to={`/${value.site.id}/audit`} className={popover.item} onClick={onPicked}>
+        <span>{messages.sites.auditPage}</span>
+      </Link>
     </>
   );
 }

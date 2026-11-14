@@ -13,11 +13,17 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  AUDIT,
   ENGAGEMENT,
   EVENTS,
   FUNNELS,
   GOALS,
+  INVITATION_PREVIEW,
   ME,
+  SITE_INVITATIONS,
+  SITE_MEMBERS,
+  TEAM_INVITATIONS,
+  TEAM_MEMBERS,
   PROFILE,
   REALTIME,
   aggregateFor,
@@ -75,12 +81,36 @@ async function serveFile(res, path) {
   }
 }
 
-function api(url, res) {
+function api(url, res, req) {
   const path = url.pathname;
   const params = url.searchParams;
-
   if (path === '/api/me') {
+    // Whoever opens an invitation link is nobody yet: the page asking from
+    // /invite is told so, and draws the form somebody new would see.
+    if (new URL(req.headers.referer ?? 'http://x/').pathname === '/invite') {
+      return refuse(res, 401, 'UNAUTHENTICATED', 'Sign in first');
+    }
     return ok(res, ME);
+  }
+  // Who can reach the site, who is waiting, and the record of who looked at
+  // whom (AN-TEAM01), for the Team, Audit log and invitation pictures.
+  if (path === '/api/teams/default/members') {
+    return ok(res, TEAM_MEMBERS);
+  }
+  if (path === '/api/sites/s_demo/members') {
+    return ok(res, SITE_MEMBERS, { siteId: 's_demo' });
+  }
+  if (path === '/api/teams/default/invitations') {
+    return ok(res, TEAM_INVITATIONS);
+  }
+  if (path === '/api/sites/s_demo/invitations') {
+    return ok(res, SITE_INVITATIONS);
+  }
+  if (path.endsWith('/audit')) {
+    return ok(res, AUDIT, { identity: true, limit: 50 });
+  }
+  if (path === '/api/invitations/lookup') {
+    return ok(res, INVITATION_PREVIEW);
   }
   // The public share (AN-RPT01) of the demo site, one token. Its report
   // routes end the way a site's do, so the handlers below answer them.
@@ -178,7 +208,7 @@ const server = createServer((req, res) => {
 `);
       return undefined;
     }
-    return api(url, res);
+    return api(url, res, req);
   }
 
   const asked = normalize(url.pathname).replace(/^(\.\.[/\\])+/, '');

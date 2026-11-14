@@ -1,4 +1,4 @@
-// The twenty-two pictures: eleven views, two themes.
+// The thirty-four pictures: seventeen views, two themes.
 //
 // A developer decides in about ten seconds of screenshots whether a dashboard
 // is worth installing, so these are a deliverable rather than a debugging aid,
@@ -21,9 +21,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'screenshots');
 // The ones the README carries, and every one of them is embedded in it: a
 // picture committed and referenced from nowhere is a file nobody can find and
-// nobody can delete. All twenty-two are taken every run and the rest are not
+// nobody can delete. All thirty-four are taken every run and the rest are not
 // committed, because a README picture has to be in the repository to be a
-// README picture and the other fourteen are a regenerable command away.
+// README picture and the others are a regenerable command away.
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
@@ -66,6 +66,18 @@ const PAGES = [
   // The shared page (AN-RPT01), as whoever holds the link sees it; the
   // fixture answers the share's routes for one token.
   { name: '14-share', path: '/share/tok_demo', guard: 'main[aria-label="Report"]' },
+  // Who can reach the site (AN-TEAM01): the invitation form, who is waiting,
+  // the team and the one site.
+  { name: '15-team', path: `/${SITE}/team` },
+  // The record of who looked at whom and who was let in.
+  { name: '16-audit', path: `/${SITE}/audit` },
+  // What an invitation link opens for somebody with no account. The token is
+  // invented, and the picture shows it gone from the address bar.
+  {
+    name: '17-invite',
+    path: '/invite#chi_an-invented-token-for-the-picture-000000000000',
+    guard: 'main form',
+  },
 ];
 const THEMES = ['light', 'dark'];
 

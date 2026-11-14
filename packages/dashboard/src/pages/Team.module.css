@@ -1,0 +1,319 @@
+/*
+ * The Team page: lists and one form, no table. A member is a name, two
+ * controls and two buttons, which sit on one line on a laptop and fold under
+ * each other on a phone without anything having to scroll sideways.
+ */
+
+.header {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--t-h1);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+.lede {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-body);
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+.loading {
+  display: grid;
+  gap: 6px;
+  padding: var(--s2) var(--s3);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The first thing in its card: the card's own line is line enough. */
+.first > .member:first-child {
+  border-top: 0;
+  padding-top: var(--s1);
+}
+
+/* Who, what they hold, what can be done. Three columns while there is room,
+   one under the other when there is not. */
+.member {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: var(--s2) var(--s4);
+  padding: var(--s3);
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .member {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.email {
+  font-size: var(--t-label);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--r4);
+  padding: 1px var(--s2);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  min-width: 0;
+}
+
+.select {
+  min-height: 36px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-body);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.select:disabled {
+  color: var(--muted);
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 36px;
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.fixed {
+  font-size: var(--t-body);
+  color: var(--ink);
+}
+
+.managed {
+  margin: 0;
+  flex: 1 1 28ch;
+  font-size: var(--t-label);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .rowActions {
+    justify-content: flex-start;
+  }
+}
+
+.state,
+.stateOff {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+}
+
+.stateOff {
+  color: var(--warn);
+}
+
+.form {
+  padding: 0 var(--s3) var(--s3);
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--s3);
+  max-width: 560px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+
+@media (max-width: 520px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+}
+
+.note {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.problem {
+  margin: 0;
+  padding: 0 var(--s3) var(--s2);
+  font-size: var(--t-label);
+  color: var(--warn);
+}
+
+.fieldset .problem,
+.member .problem {
+  padding: 0;
+}
+
+.done {
+  margin: 0;
+  padding: 0 var(--s3) var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.actions .done {
+  padding: 0;
+}
+
+/*
+ * Something the page is asking, or showing once: the keys question, the roles
+ * still standing, the link. Set off from the list it interrupts, and it takes
+ * the focus when it appears.
+ */
+.panel {
+  display: grid;
+  gap: var(--s2);
+  margin: 0 var(--s3) var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r2);
+  background: var(--soft);
+  min-width: 0;
+}
+
+.panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.plain {
+  margin: 0;
+  padding: 0 0 0 var(--s4);
+  display: grid;
+  gap: 2px;
+  font-size: var(--t-body);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* The sentence that says the link will not be shown again. Read before the
+   link, so it is ink and not muted. */
+.once {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.link {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  min-width: 0;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

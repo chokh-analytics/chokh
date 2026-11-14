@@ -1,0 +1,194 @@
+/*
+ * The audit log: a sentence saying that reading it is recorded, a form that
+ * asks only when its button is pressed, and one table that scrolls inside its
+ * card on a phone and never takes the page with it.
+ */
+
+.header {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--t-h1);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.intro {
+  margin: 0;
+  font-size: var(--t-body);
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+.recorded {
+  margin: 0;
+  padding: 0 var(--s3) var(--s3);
+  font-size: var(--t-label);
+  color: var(--muted);
+  line-height: 1.45;
+  max-width: 80ch;
+}
+
+/* Five fields and a button. As many across as fit, each wide enough to read
+   its own label, down to one a line on a phone. */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  align-items: start;
+  gap: var(--s3);
+  padding: 0 var(--s3) var(--s4);
+  min-width: 0;
+}
+
+.filterActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  /* Level with the inputs, under their labels. */
+  margin-top: calc(var(--t-label) * 1.5 + var(--s1));
+  min-height: 36px;
+}
+
+.loading {
+  display: grid;
+  gap: var(--s2);
+  padding: 0 var(--s3) var(--s3);
+}
+
+.hiddenNote {
+  margin: 0;
+  padding: 0 var(--s3) var(--s2);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Wide enough that a row is a line or two and not a column of words: on a
+   phone the box above scrolls, and the page does not. */
+.table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+
+.head th {
+  padding: var(--s2) var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--accent-soft);
+}
+
+.cell {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  min-width: 12ch;
+}
+
+.when {
+  font-family: var(--font-mono);
+  font-size: var(--t-num);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.detail {
+  display: grid;
+  gap: 2px;
+  min-width: 24ch;
+  overflow-wrap: anywhere;
+}
+
+.route {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* A name that narrows the log to itself when it is pressed. A button, drawn
+   as the text it is, with the underline saying it does something. */
+.pick {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-ink);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.pick:hover {
+  text-decoration-color: currentColor;
+}
+
+.pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r1);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+  padding: var(--s3);
+}
+
+.footActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.count {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--muted);
+}
+
+.stale {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--warn);
+  max-width: 64ch;
+}

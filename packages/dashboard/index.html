@@ -31,6 +31,25 @@
       } catch (error) {
         /* A private window has no storage. The system preference still works. */
       }
+      /*
+       * An invitation link, taken out of the address bar before anything else.
+       *
+       * The link is /invite#<token>, and the token is in the fragment so that
+       * no server ever sees it. This takes it out of the address bar and the
+       * history before a single module has been fetched, and parks it where
+       * src/lib/invite-token.ts collects it and clears it. After that it is
+       * in that module's memory and nowhere else: not in the URL, not in any
+       * storage. replaceState and not a navigation, so nothing reloads and
+       * the back button does not lead to the link.
+       */
+      try {
+        if (location.pathname === '/invite' && location.hash.length > 1) {
+          window.__chokhInvite = location.hash.slice(1);
+          history.replaceState(null, '', '/invite');
+        }
+      } catch (error) {
+        /* The module takes the same step when it loads. */
+      }
     </script>
   </head>
   <body>

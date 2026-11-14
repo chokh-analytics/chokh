@@ -67,7 +67,13 @@ const BUDGETS = [
   // and the error card's in the one messages file the shell carries, the
   // thirteenth destination and its key, the vital formatter and the three API
   // calls; the page itself is the Health chunk.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 44 * 1024 },
+  // Raised to 48 KB on 2026-11-14 by the commit that spent it, teams,
+  // invitations and the audit log (AN-TEAM01): measured at 48,348 B, the three
+  // pages' hundred and fifty strings in the one messages file the shell
+  // carries, the two links in the site menu, the twelve API calls and the
+  // four query hooks, and the first import that takes an invitation's token
+  // out of the address bar; the pages themselves are three chunks of their own.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 48 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },
@@ -105,7 +111,13 @@ const BUDGETS = [
   // and coverage (AN-VIT01): measured at 51,526 B, Health its own chunk at
   // 4,644 B with the vitals tiles, the slow pages table, the error groups and
   // coverage, and Settings a little larger with the error capture card.
-  { name: 'routes', pattern: /\.js$/, bytes: 51 * 1024 },
+  // Raised to 61 KB on 2026-11-14 by the commit that spent it, teams,
+  // invitations and the audit log (AN-TEAM01): measured at 61,375 B, Team its
+  // own chunk at 4,495 B with the invitation form, the link shown once, the
+  // two lists, the keys question and the roles still standing, AuditLog at
+  // 3,019 B with the form and the table, Invite at 1,822 B with its three
+  // forms, and the tab row the three site pages share at 484 B.
+  { name: 'routes', pattern: /\.js$/, bytes: 61 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
   // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared
@@ -119,7 +131,10 @@ const BUDGETS = [
   // Raised to 21 KB on 2026-11-12 by the commit that spent it, vitals, errors
   // and coverage (AN-VIT01): measured at 20,595 B, Health 1,822 B with the
   // tiles, the band marks, the stacked bars, the table and the error groups.
-  { name: 'css', pattern: /\.css$/, bytes: 21 * 1024 },
+  // Raised to 23 KB on 2026-11-14 by the commit that spent it, teams,
+  // invitations and the audit log (AN-TEAM01): measured at 23,392 B, Team
+  // 1,093 B, AuditLog 916 B, Invite 478 B and the shared tab row 313 B.
+  { name: 'css', pattern: /\.css$/, bytes: 23 * 1024 },
   // Measured 2026-09-19: the variable sans is 45,712 B and the mono is 14,708.
   { name: 'fonts', pattern: /\.woff2?$/, bytes: 62 * 1024 },
   { name: 'html', pattern: /\.html$/, bytes: 4 * 1024 },

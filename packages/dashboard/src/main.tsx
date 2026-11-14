@@ -1,3 +1,8 @@
+// First, before the application's own modules are evaluated: an invitation
+// link's token comes out of the address bar here (and already has, by the
+// inline script in index.html, wherever that ran).
+import './lib/invite-token.js';
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 

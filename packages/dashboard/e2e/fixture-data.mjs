@@ -36,14 +36,143 @@ export const SITE = {
   },
 };
 
+const OWNER_SCOPES = ['admin', 'read:identity', 'read:stats', 'write:events'];
+
 export const ME = {
   actor: { kind: 'session', id: 'u_demo' },
   user: { id: 'u_demo', email: 'owner@chokh.test', name: 'Abu Jafar' },
+  // What this person may do on each site, as GET /api/me answers it.
   sites: [
-    SITE,
-    { ...SITE, id: 's_docs', name: 'Chokh docs', domains: ['docs.chokh.test'] },
+    { ...SITE, scopes: OWNER_SCOPES, role: 'owner' },
+    {
+      ...SITE,
+      id: 's_docs',
+      name: 'Chokh docs',
+      domains: ['docs.chokh.test'],
+      scopes: OWNER_SCOPES,
+      role: 'owner',
+    },
   ],
   teams: [{ id: 'default', name: 'Progsity', role: 'owner' }],
+};
+
+// Who can reach the site (AN-TEAM01), for the Team page's picture: an owner,
+// two colleagues, somebody another application signs in, a client let in to
+// this one site, and two invitations, one of which would no longer work.
+const DAY = 86_400_000;
+
+export const TEAM_MEMBERS = {
+  team: { id: 'default', name: 'Progsity' },
+  members: [
+    { userId: 'u_demo', email: 'owner@chokh.test', name: 'Abu Jafar', role: 'owner', identity: true, managed: false },
+    { userId: 'u_ada', email: 'ada@progsity.test', name: 'Ada Rahman', role: 'editor', identity: true, managed: false },
+    { userId: 'u_grace', email: 'grace@progsity.test', name: 'Grace Chowdhury', role: 'viewer', identity: false, managed: false },
+    { userId: 'sso_staff_7', email: 'support@progsity.test', name: 'Support desk', role: 'viewer', identity: false, managed: true },
+  ],
+};
+
+export const SITE_MEMBERS = {
+  members: [
+    { userId: 'u_client', email: 'marketing@client.test', name: 'A client', role: 'viewer', identity: false, managed: false },
+  ],
+};
+
+function invitation(id, email, scope, role, over = {}) {
+  return {
+    id,
+    email,
+    scope,
+    role,
+    identity: false,
+    invitedBy: 'u_demo',
+    createdAt: NOW - DAY,
+    expiresAt: NOW + 6 * DAY,
+    state: 'pending',
+    usable: true,
+    ...over,
+  };
+}
+
+export const TEAM_INVITATIONS = {
+  invitations: [
+    invitation('inv_1', 'new.colleague@progsity.test', { kind: 'team', id: 'default' }, 'editor'),
+    invitation('inv_2', 'contractor@studio.test', { kind: 'team', id: 'default' }, 'viewer', {
+      invitedBy: 'u_gone',
+      usable: false,
+    }),
+  ],
+};
+
+export const SITE_INVITATIONS = { invitations: [] };
+
+// What an invitation link answers whoever opens it.
+export const INVITATION_PREVIEW = {
+  invitation: {
+    email: 'new.colleague@progsity.test',
+    scope: { kind: 'team', id: 'default', name: 'Progsity' },
+    role: 'editor',
+    identity: false,
+    invitedBy: 'Abu Jafar',
+    expiresAt: NOW + 6 * DAY,
+    accountExists: false,
+  },
+};
+
+function auditRow(id, minutesAgo, action, kind, route, over = {}) {
+  return {
+    id: String(id),
+    siteId: 's_demo',
+    ts: NOW - minutesAgo * 60_000,
+    actor: { kind: 'session', id: 'u_demo', email: 'owner@chokh.test' },
+    action,
+    kind,
+    route,
+    fields: [],
+    ...over,
+  };
+}
+
+export const AUDIT = {
+  rows: [
+    auditRow(9, 4, 'read:identity', 'identity', 'GET /api/sites/:siteId/visitors/:visitorId', {
+      actor: { kind: 'session', id: 'u_ada', email: 'ada@progsity.test' },
+      target: 'v_abcdef0001',
+      fields: ['ips', 'traits', 'userId'],
+    }),
+    auditRow(8, 22, 'read:identity', 'identity', 'GET /api/sites/:siteId/people', {
+      actor: { kind: 'session', id: 'u_ada', email: 'ada@progsity.test' },
+      target: 'rahim@example.test',
+      fields: ['traits', 'userId'],
+    }),
+    auditRow(7, 61, 'read:audit', 'log', 'GET /api/sites/:siteId/audit', { fields: ['email', 'target'] }),
+    auditRow(6, 95, 'member:set', 'access', 'PUT /api/sites/:siteId/members/:userId', {
+      target: 'u_client',
+      fields: ['role: none > viewer'],
+    }),
+    auditRow(5, 96, 'invite:accept', 'access', 'POST /api/invitations/accept', {
+      actor: { kind: 'session', id: 'u_client', email: 'marketing@client.test' },
+      target: 'u_client',
+      fields: ['invitation inv_0', 'role: viewer'],
+    }),
+    auditRow(4, 180, 'invite:create', 'access', 'POST /api/sites/:siteId/invitations', {
+      target: 'marketing@client.test',
+      fields: ['invitation inv_0', 'role: viewer'],
+    }),
+    auditRow(3, 300, 'read:identity', 'identity', 'GET /api/sites/:siteId/realtime/stream', {
+      actor: { kind: 'key', id: 'k_backend' },
+      fields: ['ip', 'userId'],
+    }),
+    auditRow(2, 1500, 'read:identity', 'identity', 'GET /api/sites/:siteId/users/:userId', {
+      target: 'u_42',
+      fields: ['ips', 'traits', 'userId'],
+    }),
+  ],
+  accounts: {
+    u_demo: { email: 'owner@chokh.test', name: 'Abu Jafar' },
+    u_ada: { email: 'ada@progsity.test', name: 'Ada Rahman' },
+    u_client: { email: 'marketing@client.test', name: 'A client' },
+  },
+  next: null,
 };
 
 function metrics(visitors, over = {}) {

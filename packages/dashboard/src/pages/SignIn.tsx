@@ -27,7 +27,13 @@ function ssoNotice(code: string | null): string | null {
   if (code === null) {
     return null;
   }
-  return code === 'TOKEN_EXPIRED' ? messages.auth.ssoExpired : messages.auth.ssoRefused;
+  if (code === 'TOKEN_EXPIRED') {
+    return messages.auth.ssoExpired;
+  }
+  // The exchange would have lowered the last owner of a team, which a team is
+  // never left without (AN-TEAM01). A different sentence, because the way out
+  // is different: the link was fine and trying it again changes nothing.
+  return code === 'LAST_OWNER' ? messages.auth.ssoLastOwner : messages.auth.ssoRefused;
 }
 
 export interface SignInProps {

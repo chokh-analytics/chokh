@@ -2,6 +2,7 @@ import { useState, type FormEvent, type JSX } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { isRouteRule } from '@chokh/store/contract';
 
+import { SiteTabs } from '../app/SiteTabs.js';
 import { isOwner, useApp } from '../app/context.js';
 import { api, type PublicSite } from '../lib/api.js';
 import { ChokhError } from '../lib/client.js';
@@ -645,6 +646,7 @@ export function Settings(): JSX.Element {
           {owner ? messages.settings.lede : messages.settings.ownerOnly}
         </p>
       </div>
+      <SiteTabs />
       <div className={page.stack}>
         <General owner={owner} />
         <Exclusions owner={owner} />

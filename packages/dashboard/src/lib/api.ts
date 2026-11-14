@@ -85,6 +85,114 @@ export interface PublicSite {
   routesChangedAt?: number;
   // The public share, when the owner made one (AN-RPT01).
   share?: PublicShare;
+  // What this person may do on this site, as GET /api/me answers it. The role
+  // in the site's team says less than this since a role can be held on one
+  // site alone (AN-TEAM01): somebody invited to a single site is in no team
+  // and may still be its owner. Absent only from an answer that is not a
+  // listing of the caller's own sites.
+  scopes?: string[];
+  role?: Role;
+}
+
+export type Role = 'owner' | 'editor' | 'viewer';
+
+// Somebody in a team, or holding a role on one site, as a list shows them.
+export interface ListedMember {
+  userId: string;
+  email?: string;
+  name?: string;
+  role: Role;
+  identity: boolean;
+  // Signed in by another application, which sets their role on every arrival:
+  // not edited here, removable here.
+  managed: boolean;
+}
+
+// A key somebody made on a site they are losing admin on, as the question
+// about it names it. Never a token.
+export interface KeySummary {
+  id: string;
+  name: string;
+  siteId: string;
+  scopes: string[];
+}
+
+// What a change of membership did besides the change, in the answer's meta.
+export interface MembershipEffects {
+  sessionsEnded: boolean;
+  // The roles the person still holds on single sites of the team, which a
+  // change to their place in the team does not touch.
+  siteRolesKept: { siteId: string; role: Role; identity: boolean }[];
+  keysRevoked: KeySummary[];
+  keysKept: KeySummary[];
+  invitationsRevoked: number;
+}
+
+export type InvitationScope = { kind: 'team' | 'site'; id: string };
+
+export interface Invitation {
+  id: string;
+  email: string;
+  scope: InvitationScope;
+  role: Role;
+  identity: boolean;
+  invitedBy: string;
+  createdAt: number;
+  expiresAt: number;
+  state: 'pending' | 'accepted' | 'revoked' | 'expired';
+  // Whether its link would work if it were opened now: waiting, and sent by
+  // somebody who could still send it.
+  usable: boolean;
+}
+
+export interface CreatedInvitation {
+  invitation: Invitation;
+  // The only time the link exists: the server keeps a hash of the token and
+  // nothing else.
+  once: { token: string; link: string };
+}
+
+// What an invitation is for, as whoever holds its link is told before they
+// type anything.
+export interface InvitationPreview {
+  email: string;
+  scope: { kind: 'team' | 'site'; id: string; name: string };
+  role: Role;
+  identity: boolean;
+  invitedBy: string;
+  expiresAt: number;
+  accountExists: boolean;
+}
+
+export type AuditKind = 'identity' | 'access' | 'log';
+
+export interface AuditRow {
+  id: string;
+  siteId?: string;
+  teamId?: string;
+  ts: number;
+  actor: { kind: 'session' | 'key' | 'sso'; id: string; email?: string };
+  action: string;
+  kind: AuditKind | 'other';
+  route: string;
+  // Absent for a caller without read:identity, on every row.
+  target?: string;
+  fields: string[];
+}
+
+export interface AuditLogPage {
+  rows: AuditRow[];
+  accounts: Record<string, { email: string; name?: string }>;
+  next: string | null;
+}
+
+export interface AuditParams {
+  cursor?: string | undefined;
+  from?: number | undefined;
+  to?: number | undefined;
+  actor?: string | undefined;
+  kind?: AuditKind | undefined;
+  target?: string | undefined;
 }
 
 export interface PublicUser {
@@ -578,7 +686,116 @@ export const api = {
   // Not a JSON read either: an EventSource opens it and keeps it open.
   streamUrl: (client: Client, siteId: string): string =>
     client.url(`/api/sites/${siteId}/realtime/stream`),
+
+  // Who may reach a team or one site (AN-TEAM01). `revokeKeys` answers the
+  // question a change asks when the person made keys on a site they are
+  // losing admin on; left out, the server asks it (409 KEYS_DECISION_REQUIRED).
+  teamMembers: (
+    client: Client,
+    teamId: string,
+  ): Promise<Answer<{ team: { id: string; name: string }; members: ListedMember[] }>> =>
+    client.get(`/api/teams/${encodeURIComponent(teamId)}/members`),
+
+  setTeamMember: (
+    client: Client,
+    teamId: string,
+    userId: string,
+    input: { role: Role; identity: boolean; revokeKeys?: boolean },
+  ): Promise<Answer<unknown>> =>
+    client.put(
+      `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+      input,
+    ),
+
+  removeTeamMember: (
+    client: Client,
+    teamId: string,
+    userId: string,
+    revokeKeys?: boolean,
+  ): Promise<Answer<unknown>> =>
+    client.delete(
+      `/api/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}${revokeQuery(revokeKeys)}`,
+    ),
+
+  siteMembers: (client: Client, siteId: string): Promise<Answer<{ members: ListedMember[] }>> =>
+    client.get(`/api/sites/${siteId}/members`),
+
+  setSiteMember: (
+    client: Client,
+    siteId: string,
+    userId: string,
+    input: { role: Role; identity: boolean; revokeKeys?: boolean },
+  ): Promise<Answer<{ members: ListedMember[] }>> =>
+    client.put(`/api/sites/${siteId}/members/${encodeURIComponent(userId)}`, input),
+
+  removeSiteMember: (
+    client: Client,
+    siteId: string,
+    userId: string,
+    revokeKeys?: boolean,
+  ): Promise<Answer<{ members: ListedMember[] }>> =>
+    client.delete(
+      `/api/sites/${siteId}/members/${encodeURIComponent(userId)}${revokeQuery(revokeKeys)}`,
+    ),
+
+  // Invitations, to a team or to one site. The scope picks the path, so one
+  // list component serves both.
+  invitations: (
+    client: Client,
+    scope: InvitationScope,
+  ): Promise<Answer<{ invitations: Invitation[] }>> => client.get(invitationsPath(scope)),
+
+  createInvitation: (
+    client: Client,
+    scope: InvitationScope,
+    input: { email: string; role: Role; identity: boolean },
+  ): Promise<Answer<CreatedInvitation>> => client.post(invitationsPath(scope), input),
+
+  revokeInvitation: (
+    client: Client,
+    scope: InvitationScope,
+    invitationId: string,
+  ): Promise<Answer<{ invitation: Invitation }>> =>
+    client.delete(`${invitationsPath(scope)}/${encodeURIComponent(invitationId)}`),
+
+  // What somebody holding a link uses. The token goes in the body and never
+  // in a path or a query: a URL is written to logs, a body is not.
+  lookupInvitation: (
+    client: Client,
+    token: string,
+  ): Promise<Answer<{ invitation: InvitationPreview }>> =>
+    client.post('/api/invitations/lookup', { token }),
+
+  acceptInvitation: (
+    client: Client,
+    input: { token: string; password?: string; name?: string },
+  ): Promise<Answer<{ user: PublicUser; created: boolean; scope: InvitationScope; role: Role }>> =>
+    client.post('/api/invitations/accept', input),
+
+  // One page of a site's audit log or a team's. Opening it (no cursor) is
+  // itself written to the log, so nothing calls this on a timer or on focus.
+  audit: (
+    client: Client,
+    scope: InvitationScope,
+    params: AuditParams & { limit?: number },
+  ): Promise<Answer<AuditLogPage>> =>
+    client.get(
+      scope.kind === 'site'
+        ? `/api/sites/${scope.id}/audit`
+        : `/api/teams/${encodeURIComponent(scope.id)}/audit`,
+      { ...params },
+    ),
 };
+
+function revokeQuery(revokeKeys: boolean | undefined): string {
+  return revokeKeys === undefined ? '' : `?revokeKeys=${revokeKeys ? 'true' : 'false'}`;
+}
+
+function invitationsPath(scope: InvitationScope): string {
+  return scope.kind === 'site'
+    ? `/api/sites/${scope.id}/invitations`
+    : `/api/teams/${encodeURIComponent(scope.id)}/invitations`;
+}
 
 // The window a retention read covers, as instants.
 export interface RetentionWindow {
