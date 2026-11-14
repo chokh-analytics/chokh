@@ -134,7 +134,9 @@ jobs:
           fi
           # @chokh/react before @chokh/next, which depends on it.
           for name in sdk-node react next; do
-            tarball="$(ls tarballs/chokh-${name}-*.tgz)"
+            # A path that starts with ./, or npm reads tarballs/x.tgz as a
+            # GitHub repository named by its owner and name.
+            tarball="$(ls ./tarballs/chokh-${name}-*.tgz)"
             version="$(tar -xOzf "${tarball}" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
             if npm view "@chokh/${name}@${version}" version > /dev/null 2>&1; then
               echo "@chokh/${name}@${version} is already on npm, passed over"
