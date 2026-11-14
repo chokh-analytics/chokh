@@ -62,9 +62,25 @@ export interface KeySummary {
   scopes: Scope[];
 }
 
+// A role somebody holds on one site of a team, which a change to their place
+// in the team does not touch.
+export interface SiteRoleKept {
+  siteId: string;
+  role: Role;
+  identity: boolean;
+}
+
 export interface MembershipChange {
   // Whether the account's sessions were ended.
   sessionsEnded: boolean;
+  // After a change to a team: the roles the account still holds on single
+  // sites of that team. A row on a site is not part of a team membership (the
+  // grant order makes it its own thing), so taking somebody out of a team, or
+  // lowering them, leaves these standing. Nothing takes them off by itself;
+  // the answer and the audit row say they are there, so "removed" is never
+  // somebody still reading one site without the person who removed them
+  // knowing. Empty for a change to a site's own row.
+  siteRolesKept: SiteRoleKept[];
   keysRevoked: KeySummary[];
   keysKept: KeySummary[];
   invitationsRevoked: number;
@@ -198,6 +214,7 @@ interface Follow {
   decision: KeysDecision;
   // What changed, for the audit row: the role before and after.
   changed: string[];
+  siteRolesKept: SiteRoleKept[];
 }
 
 // Steps 2 to 5, the same for a team and for a site.
@@ -220,6 +237,12 @@ async function follow(input: Follow): Promise<MembershipChange> {
 
   const fields = [...input.changed];
   if (input.lowered) fields.push('sessions ended');
+  if (input.siteRolesKept.length > 0) {
+    fields.push(`site roles kept: ${input.siteRolesKept.length}`);
+    for (const kept of input.siteRolesKept) {
+      fields.push(`still ${said(kept.role, kept.identity)} on ${kept.siteId}`);
+    }
+  }
   if (invitationsRevoked > 0) fields.push(`invitations revoked: ${invitationsRevoked}`);
   if (keysRevoked.length > 0) fields.push(`keys revoked: ${keysRevoked.length}`);
   if (keysKept.length > 0) {
@@ -239,7 +262,13 @@ async function follow(input: Follow): Promise<MembershipChange> {
     fields,
     at: deps.now(),
   });
-  return { sessionsEnded: input.lowered, keysRevoked, keysKept, invitationsRevoked };
+  return {
+    sessionsEnded: input.lowered,
+    siteRolesKept: input.siteRolesKept,
+    keysRevoked,
+    keysKept,
+    invitationsRevoked,
+  };
 }
 
 export interface TeamChangeInput {
@@ -328,6 +357,11 @@ export async function changeTeamMembership(
     keys,
     decision: input.keys,
     changed: [`role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`],
+    // What they hold on this team's sites by rows of their own, which this
+    // change left exactly as it found them.
+    siteRolesKept: before.rows
+      .filter((row) => sites.some((site) => site.id === row.siteId))
+      .map((row) => ({ siteId: row.siteId, role: row.role, identity: row.identity })),
   });
   return { ok: true, team: changed.data, ...followed };
 }
@@ -406,6 +440,7 @@ export async function changeSiteMembership(
     keys,
     decision: input.keys,
     changed: [`role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`],
+    siteRolesKept: [],
   });
   return { ok: true, members: await store.siteMembers(site.id), ...followed };
 }

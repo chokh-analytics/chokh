@@ -41,8 +41,10 @@ interface ListedMember {
   name?: string;
   role: TeamMember['role'];
   identity: boolean;
-  // Signed in by another application, which sets their role on every arrival:
-  // shown, and not editable here.
+  // Signed in by another application, which sets their role on every arrival.
+  // Their role is not edited here, and they are given no role on a single
+  // site; they can be removed here, which signs them out, and their next
+  // arrival puts them back as that application says.
   managed: boolean;
 }
 
@@ -73,6 +75,7 @@ function decisionOf(revokeKeys: boolean | undefined): KeysDecision {
 function effects(change: MembershipChange): Record<string, unknown> {
   return {
     sessionsEnded: change.sessionsEnded,
+    siteRolesKept: change.siteRolesKept,
     keysRevoked: change.keysRevoked,
     keysKept: change.keysKept,
     invitationsRevoked: change.invitationsRevoked,
@@ -177,9 +180,12 @@ export function createRemoveTeamMemberController(deps: ApiDeps) {
         .send(fail('INVALID_QUERY', 'revokeKeys is true or false', query.error.issues));
     }
     const { userId } = request.params as { userId: string };
-    if (isSsoManaged(userId)) {
-      return reply.code(MANAGED_BY_SSO.status).send(fail(MANAGED_BY_SSO.code, MANAGED_BY_SSO.message));
-    }
+    // An account another application signs in is removed like anybody else.
+    // Editing its role is what is refused (above), because a role given here
+    // would outlive what that application takes away; a removal gives nothing,
+    // and it is the one way an owner here can sign out, now, somebody that
+    // application has let go. Their next arrival through the exchange puts
+    // them back as the token says, which is that application's word.
     const changed = await changeTeamMembership(deps, {
       teamId: team.id,
       userId,

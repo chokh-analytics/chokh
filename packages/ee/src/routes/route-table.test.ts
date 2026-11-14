@@ -5,6 +5,7 @@ import {
   buildApp,
   compareRoutes,
   routeKey,
+  walkCrossSite,
   walkRouteTable,
   type RouteCaller,
   type ServerExtension,
@@ -64,6 +65,8 @@ function licensedExtension(): ServerExtension {
 
 interface Install {
   app: FastifyInstance;
+  // The owner's session, for the walk that asks from the wrong place.
+  owner: string;
   callers: RouteCaller[];
   registered: { method: string; url: string }[];
 }
@@ -157,6 +160,7 @@ async function install(extension: ServerExtension): Promise<Install> {
 
   return {
     app,
+    owner,
     registered,
     callers: [
       { name: 'nobody', headers: {}, principal: null, scopes: null, ownsTeam: false, ownsAnyTeam: false },
@@ -204,6 +208,42 @@ describe('the paid routes, with a licence', () => {
         params: { siteId: SITE_ID },
       }),
     ).toEqual([]);
+  });
+});
+
+// A paid route that changes something is held to the rule every such route
+// is held to: with a session, only from this dashboard (the core's
+// plugins/auth.ts). The paid routes share the core's hooks today, so this
+// passes because those hooks do; it is here for the route that arrives with a
+// hook of its own, which this walk is what notices.
+describe('the paid routes, asked from somewhere that is not this dashboard', () => {
+  let here: Install;
+
+  beforeAll(async () => {
+    here = await install(licensedExtension());
+  });
+
+  afterAll(async () => {
+    await here.app.close();
+  });
+
+  it('refuse a change made with a session from a neighbour, from a stranger, and as anything but JSON', async () => {
+    const writes = EE_ROUTES.filter((rule) => rule.method !== 'GET');
+    expect(writes.length).toBeGreaterThan(5);
+    expect(
+      await walkCrossSite({
+        app: here.app,
+        rules: EE_ROUTES,
+        params: { siteId: SITE_ID },
+        session: { cookie: here.owner },
+      }),
+    ).toEqual([]);
+  });
+
+  it('name no route that is entered from another application', () => {
+    // Held the way the core's list is: adding a row here is a decision, and
+    // this is the line that has to change with it.
+    expect(EE_ROUTES.filter((rule) => rule.crossSite === true).map(routeKey)).toEqual([]);
   });
 });
 

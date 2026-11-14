@@ -384,3 +384,80 @@ export async function walkRouteTable(walk: RouteWalk): Promise<string[]> {
   }
   return disagreements;
 }
+
+export interface CrossSiteWalk {
+  app: FastifyInstance;
+  rules: readonly RouteRule[];
+  params: Record<string, string>;
+  // The headers of somebody signed in who may do everything the rows ask:
+  // the point is that even they are refused from the wrong place.
+  session: Record<string, string>;
+}
+
+function answeredWith(response: { statusCode: number; body: string }): string {
+  return `${response.statusCode} ${codeOf(response.body).code ?? ''}`.trim();
+}
+
+// Ask every row a session can change something through the way another origin
+// would ask it, and answer with every row that did not refuse (plugins/auth.ts
+// has the rule). From a neighbour (same-site) and from a stranger
+// (cross-site), each has to be 403 CROSS_SITE_REQUEST; and a POST that is not
+// JSON, or that has no body and no word from the browser that it is same
+// origin, has to be 415 JSON_REQUIRED.
+//
+// The core's routes share their hooks, so this mostly proves the hooks. It is
+// here for the route that arrives with a hook of its own: an extension's
+// routes are walked with it too.
+export async function walkCrossSite(walk: CrossSiteWalk): Promise<string[]> {
+  const disagreements: string[] = [];
+  const ask = (rule: RouteRule, headers: Record<string, string>, body?: string) =>
+    walk.app.inject({
+      method: rule.method,
+      url: pathOf(rule.url, walk.params),
+      headers: { ...walk.session, ...headers },
+      ...(body === undefined ? {} : { payload: body }),
+    });
+  for (const rule of walk.rules) {
+    if (rule.crossSite === true) {
+      if (rule.needs.kind !== 'public') {
+        disagreements.push(`${routeKey(rule)}: marked as entered from another application, and reads a session`);
+      }
+      continue;
+    }
+    if (rule.method === 'GET' || rule.needs.kind === 'public' || rule.needs.kind === 'share') {
+      continue;
+    }
+    for (const from of ['same-site', 'cross-site']) {
+      const response = await ask(rule, { 'sec-fetch-site': from, 'content-type': 'application/json' }, '{}');
+      if (answeredWith(response) !== '403 CROSS_SITE_REQUEST') {
+        disagreements.push(`${routeKey(rule)} from ${from}: answered ${answeredWith(response)}`);
+      }
+    }
+    if (rule.method !== 'POST') {
+      continue;
+    }
+    const forms: [string | undefined, string | undefined][] = [
+      ['application/x-www-form-urlencoded', undefined],
+      ['text/plain', undefined],
+      ['multipart/form-data; boundary=x', 'same-origin'],
+      // No body and no type, and nothing from the browser to say where from.
+      [undefined, undefined],
+    ];
+    for (const [type, fetchSite] of forms) {
+      const response = await ask(
+        rule,
+        {
+          ...(type === undefined ? {} : { 'content-type': type }),
+          ...(fetchSite === undefined ? {} : { 'sec-fetch-site': fetchSite }),
+        },
+        type === undefined ? undefined : '{}',
+      );
+      if (answeredWith(response) !== '415 JSON_REQUIRED') {
+        disagreements.push(
+          `${routeKey(rule)} as ${type ?? 'nothing at all'}: answered ${answeredWith(response)}`,
+        );
+      }
+    }
+  }
+  return disagreements;
+}

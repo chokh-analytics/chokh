@@ -156,7 +156,7 @@ success envelope. A failure on either is the ordinary envelope.
 | `POST /api/sites/:siteId/identify-secret/rotate` | `admin` | Returns the new secret once |
 | `GET`/`POST /api/sites/:siteId/keys` | `admin` | The token is shown once |
 | `DELETE /api/sites/:siteId/keys/:keyId` | `admin` | Takes effect immediately |
-| `GET /api/teams/:teamId/members` | owner of the team, a person | Who is in it, what each holds, and who is signed in by another application |
+| `GET /api/teams/:teamId/members` | owner of the team, a person | Who is in it, what each holds, and whose role is set by another application (`managed`: not edited here, removable here) |
 | `PUT /api/teams/:teamId/members/:userId` | owner of the team, a person | Role and identity flag; `revokeKeys` when it asks |
 | `DELETE /api/teams/:teamId/members/:userId` | owner of the team, a person | Take somebody out; `?revokeKeys=true` or `false` when it asks |
 | `PATCH /api/teams/:teamId` | owner of the team, a person | Rename it |
@@ -659,11 +659,19 @@ exchange, goes through one function, and four things follow it:
 
 Each change writes one row to the audit log, about the team or about the site.
 
-An account the SSO exchange signs in (`sso_…`) is managed by the application
-that signs it in, whole: its team role is not edited here, it is not removed
-here, and it is given no role on a single site, each answered
-`409 MANAGED_BY_SSO`. Whatever it was given here would outlive a permission
-that application later takes away.
+A change to somebody's place in a team does not touch a role they hold on one
+of its sites by a row of its own: that is the grant order working. So the
+answer to a team change carries `siteRolesKept`, the rows the person still
+holds on that team's sites, and the audit row names them. Nothing is taken off
+by itself; "removed from the team" never quietly means "still reading one
+site".
+
+An account the SSO exchange signs in (`sso_…`) has its role set by the
+application that signs it in: its team role is not edited here and it is given
+no role on a single site, each answered `409 MANAGED_BY_SSO`, because whatever
+it was given here would outlive a permission that application later takes
+away. It can be removed here like anybody else, which signs it out at once;
+its next arrival through the exchange puts it back as the token says.
 
 **A change has to come from this dashboard.** The session cookie is
 `SameSite=Lax`, which stops another site's form from carrying it but not a
@@ -673,7 +681,10 @@ that carries a session and is not a read is refused with
 `same-origin` or `none`, or is absent; and a `POST` made with a session has to
 be `application/json` (`415 JSON_REQUIRED`), the one type a form cannot send.
 A program driving the API with a session cookie sends its `POST`s as JSON,
-with `{}` when it has nothing to say. A key is held to neither: a key is
+with `{}` when it has nothing to say. A browser sends `Sec-Fetch-Site` only to
+`https` and to `localhost`, so on an install served over plain `http` the
+header is absent and the JSON rule is the one that holds: serve the dashboard
+over TLS. A key is held to neither: a key is
 presented on purpose. The SSO exchange is the one thing entered from another
 application by design, and it reads no session.
 

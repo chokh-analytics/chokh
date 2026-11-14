@@ -10,6 +10,7 @@ import {
   compareRoutes,
   expectedOf,
   routeKey,
+  walkCrossSite,
   walkRouteTable,
   type RouteCaller,
   type RouteRule,
@@ -370,6 +371,32 @@ describe('a change made with a session, from somewhere that is not this dashboar
       }
     }
     expect(answered).toEqual([]);
+  });
+
+  // The same two walks as one function, which is what an extension's routes
+  // are held to (packages/ee walks its own rows with it).
+  it('agrees with the walk an extension runs over its own routes', async () => {
+    // A fresh minute: registration is limited by address before it looks at
+    // who is asking, and the cases above have used this minute up.
+    at += 61_000;
+    harness.setNow(at);
+    expect(
+      await walkCrossSite({
+        app: harness.app,
+        rules: CORE_ROUTES,
+        params: { siteId: SITE_ID, teamId: TEAM_ID, token: SHARE_TOKEN, userId: targetId },
+        session: { cookie: harness.owner.cookie },
+      }),
+    ).toEqual([]);
+    // And it notices: a read route said to be a write is answered, not refused.
+    const noticed = await walkCrossSite({
+      app: harness.app,
+      rules: [{ method: 'POST', url: '/api/auth/login', needs: { kind: 'principal' } }],
+      params: {},
+      session: { cookie: harness.owner.cookie },
+    });
+    expect(noticed.length).toBe(6);
+    expect(noticed[0]).toContain('POST /api/auth/login from same-site: answered');
   });
 
   it('is taken from this dashboard: JSON, or nothing at all when the browser vouches it is same origin', async () => {

@@ -354,6 +354,75 @@ describe('ending sessions', () => {
   });
 });
 
+// A row on a site is not part of a team membership, so a team change leaves
+// it standing. "Removed" and still reading one site is the surprise this is
+// here to end: the answer and the log both say what is left.
+describe('the roles somebody still holds on single sites, after a change to their place in the team', () => {
+  it('are named in the answer and in the log when they are removed from the team', async () => {
+    const editor = await member('editor@test.example', 'editor');
+    await harness.store.setSiteMember({ siteId: SITE_ID, userId: editor.userId, role: 'viewer', identity: true });
+    await harness.store.setSiteMember({ siteId: SIBLING, userId: editor.userId, role: 'owner', identity: true });
+
+    const removed = await send('DELETE', `/api/teams/${TEAM_ID}/members/${editor.userId}`, harness.owner.cookie);
+    expect(removed.statusCode).toBe(200);
+    expect(envelope<unknown>(removed.body).meta).toMatchObject({
+      sessionsEnded: true,
+      siteRolesKept: [
+        { siteId: SIBLING, role: 'owner', identity: true },
+        { siteId: SITE_ID, role: 'viewer', identity: true },
+      ],
+    });
+    const row = (await harness.store.auditPage({ scope: { kind: 'team', id: TEAM_ID }, limit: 1 })).rows[0];
+    expect(row?.fields).toEqual([
+      'role: editor > none',
+      'sessions ended',
+      'site roles kept: 2',
+      `still owner on ${SIBLING}`,
+      `still viewer+identity on ${SITE_ID}`,
+    ]);
+
+    // Nothing was taken off by itself: out of the team, they sign in again and
+    // still read what those two rows give them.
+    harness.setNow(harness.now() + 61_000);
+    const again = await harness.signIn('editor@test.example', PASSWORD);
+    expect(await scopesOn(SITE_ID, again)).toEqual(['read:identity', 'read:stats']);
+    expect(await scopesOn(SIBLING, again)).toEqual(OWNER_SCOPES);
+  });
+
+  it('are named when they are lowered, and only those on sites of that team', async () => {
+    const editor = await member('editor@test.example', 'editor');
+    await harness.store.createSite(testSite({ id: 's_far', domains: ['far.example'], teamId: SPARE_TEAM }));
+    await harness.store.setSiteMember({ siteId: SITE_ID, userId: editor.userId, role: 'editor', identity: false });
+    await harness.store.setSiteMember({ siteId: 's_far', userId: editor.userId, role: 'viewer', identity: false });
+
+    const lowered = await send('PUT', `/api/teams/${TEAM_ID}/members/${editor.userId}`, harness.owner.cookie, {
+      role: 'viewer',
+    });
+    expect(envelope<unknown>(lowered.body).meta).toMatchObject({
+      siteRolesKept: [{ siteId: SITE_ID, role: 'editor', identity: false }],
+    });
+    const row = (await harness.store.auditPage({ scope: { kind: 'team', id: TEAM_ID }, limit: 1 })).rows[0];
+    expect(row?.fields).toEqual([
+      'role: editor > viewer',
+      'sessions ended',
+      'site roles kept: 1',
+      `still editor on ${SITE_ID}`,
+    ]);
+  });
+
+  it('are an empty list when there are none, and for a change to a row on a site', async () => {
+    const viewer = await member('viewer@test.example', 'viewer');
+    const raised = await send('PUT', `/api/teams/${TEAM_ID}/members/${viewer.userId}`, harness.owner.cookie, {
+      role: 'editor',
+    });
+    expect(envelope<unknown>(raised.body).meta).toMatchObject({ siteRolesKept: [] });
+    const onSite = await send('PUT', `/api/sites/${SITE_ID}/members/${viewer.userId}`, harness.owner.cookie, {
+      role: 'viewer',
+    });
+    expect(envelope<unknown>(onSite.body).meta).toMatchObject({ siteRolesKept: [] });
+  });
+});
+
 describe('the keys somebody made, when they stop being an admin', () => {
   async function ownerWithKey(): Promise<Person & { keyId: string; token: string }> {
     const second = await member('second@test.example', 'owner');
@@ -517,8 +586,8 @@ describe('an account another application signs in', () => {
   const SECRET = 'test-sso-secret-not-a-real-key-000000';
   let staffCookie: string;
 
-  // Arrived the way such an account does: through the exchange, as a viewer.
-  beforeEach(async () => {
+  // An arrival through the exchange, the way such an account signs in.
+  async function arrive(role: Role, teamId = TEAM_ID, sub = 'staff_9'): Promise<string> {
     const arrived = await harness.app.inject({
       method: 'POST',
       url: '/api/sso',
@@ -526,10 +595,10 @@ describe('an account another application signs in', () => {
         token: signHs256(
           SECRET,
           ssoClaimsFor({
-            sub: 'staff_9',
-            email: 'staff@test.example',
-            teamId: TEAM_ID,
-            role: 'viewer',
+            sub,
+            email: `${sub}@test.example`,
+            teamId,
+            role,
             now: harness.now(),
             lifetimeSeconds: 300,
           }),
@@ -537,10 +606,14 @@ describe('an account another application signs in', () => {
       },
     });
     expect(arrived.statusCode).toBe(200);
-    staffCookie = `${arrived.cookies[0]?.name}=${arrived.cookies[0]?.value}`;
+    return `${arrived.cookies[0]?.name}=${arrived.cookies[0]?.value}`;
+  }
+
+  beforeEach(async () => {
+    staffCookie = await arrive('viewer');
   });
 
-  it('is shown as managed there, and is not given a role, a site or a removal from here', async () => {
+  it('is shown as managed there, and is not given a role or a site from here', async () => {
     const list = await get(`/api/teams/${TEAM_ID}/members`, harness.owner.cookie);
     const staff = envelope<{ members: { userId: string; managed: boolean }[] }>(list.body).data?.members.find(
       (row) => row.userId === STAFF,
@@ -549,7 +622,7 @@ describe('an account another application signs in', () => {
 
     for (const response of [
       await send('PUT', `/api/teams/${TEAM_ID}/members/${STAFF}`, harness.owner.cookie, { role: 'owner' }),
-      await send('DELETE', `/api/teams/${TEAM_ID}/members/${STAFF}`, harness.owner.cookie),
+      await send('PUT', `/api/teams/${TEAM_ID}/members/${STAFF}`, harness.owner.cookie, { role: 'viewer' }),
       await send('PUT', `/api/sites/${SITE_ID}/members/${STAFF}`, harness.owner.cookie, { role: 'editor' }),
     ]) {
       expectFailure(response, 409, 'MANAGED_BY_SSO');
@@ -560,6 +633,54 @@ describe('an account another application signs in', () => {
       identity: false,
     });
     expect(await harness.store.siteGrantsForUser(STAFF)).toEqual([]);
+  });
+
+  // A removal gives nothing that could outlive what the other application
+  // takes away, and it is the one way an owner here can sign out, now,
+  // somebody that application has let go. So it works like any other.
+  it('can be removed from here, which signs it out at once', async () => {
+    expect((await get('/api/me', staffCookie)).statusCode).toBe(200);
+    const removed = await send('DELETE', `/api/teams/${TEAM_ID}/members/${STAFF}`, harness.owner.cookie);
+    expect(removed.statusCode).toBe(200);
+    expect(envelope<unknown>(removed.body).meta).toMatchObject({ sessionsEnded: true });
+    expectFailure(await get('/api/me', staffCookie), 401, 'UNAUTHENTICATED');
+    expect((await harness.store.team(TEAM_ID))?.members.some((row) => row.userId === STAFF)).toBe(false);
+    const row = (await harness.store.auditPage({ scope: { kind: 'team', id: TEAM_ID }, limit: 1 })).rows[0];
+    expect(row).toMatchObject({
+      action: 'member:remove',
+      target: STAFF,
+      fields: ['role: viewer > none', 'sessions ended'],
+      actor: { kind: 'session', id: harness.owner.userId },
+    });
+  });
+
+  it('is put back by its next arrival, as the other application says', async () => {
+    await send('DELETE', `/api/teams/${TEAM_ID}/members/${STAFF}`, harness.owner.cookie);
+    harness.setNow(harness.now() + 61_000);
+    const back = await arrive('editor');
+    expect(await scopesOn(SITE_ID, back)).toEqual(['read:stats', 'write:events']);
+    expect((await harness.store.team(TEAM_ID))?.members.find((row) => row.userId === STAFF)).toEqual({
+      userId: STAFF,
+      role: 'editor',
+      identity: false,
+    });
+    // The cookie from before the removal is still not a session.
+    expectFailure(await get('/api/me', staffCookie), 401, 'UNAUTHENTICATED');
+  });
+
+  it('is still held by the last-owner rule: the only owner of a team is not removed this way either', async () => {
+    harness.setNow(harness.now() + 61_000);
+    await arrive('owner', 't_elsewhere', 'chief_1');
+    // An owner of that team has to be the one asking, and there is only one:
+    // the account itself.
+    harness.setNow(harness.now() + 61_000);
+    const chief = await arrive('owner', 't_elsewhere', 'chief_1');
+    expectFailure(
+      await send('DELETE', '/api/teams/t_elsewhere/members/sso_chief_1', chief),
+      409,
+      'LAST_OWNER',
+    );
+    expect((await get('/api/me', chief)).statusCode).toBe(200);
   });
 
   it('gets nothing from a row on a site even if one is there', async () => {
