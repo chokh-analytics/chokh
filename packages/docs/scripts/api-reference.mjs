@@ -21,9 +21,19 @@ delete process.env.SSO_SECRET;
 // invented for this page, so a signed value is the same on every run.
 process.env.SESSION_SECRET = 'an-invented-session-secret-for-the-docs-0000';
 
-const { buildApp, CORE_ROUTE_DOCS, CORE_ROUTES, routeKey } = await import('@chokh/server');
+const { buildApp, CORE_ROUTE_DOCS, CORE_ROUTES, loadExtensions, routeKey } = await import('@chokh/server');
 const { createMemoryStore } = await import('@chokh/server/store/memory');
-const { EE_ROUTE_DOCS, EE_ROUTES } = await import('@chokh/ee');
+
+// The paid routes, asked of the server's own loader, the one seam that may
+// reach packages/ee (scripts/ee-boundary.mjs holds that). A reference without
+// them would be wrong without saying so, so a build of the core alone has none.
+const loaded = await loadExtensions();
+if (loaded.reason !== 'loaded') {
+  throw new Error(`packages/ee did not load (${loaded.reason}): build it first, pnpm --filter "@chokh/ee..." build`);
+}
+const PAID = loaded.extensions.flatMap((extension) => (extension.reference === undefined ? [] : [extension.reference]));
+const EE_ROUTES = PAID.flatMap((reference) => reference.routes);
+const EE_ROUTE_DOCS = PAID.flatMap((reference) => reference.docs);
 
 // The invented install every example comes from.
 export const DEMO = {

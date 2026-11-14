@@ -33,7 +33,3 @@ export { buildExtension } from './extension.js';
 export { PING_FEATURE } from './routes/ee.routes.js';
 export { ALERTS_FEATURE } from './alerts/conditions.js';
 export { DIGESTS_FEATURE } from './digests/period.js';
-// The paid routes and what the API reference says about each, for the docs
-// site's generator.
-export { EE_ROUTES } from './routes/route-table.js';
-export { EE_ROUTE_DOCS } from './routes/route-docs.js';

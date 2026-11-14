@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { ApiDeps } from '../lib/api-deps.js';
+import type { RouteDocGroup } from '../routes/route-docs.js';
+import type { RouteRule } from '../routes/route-table.js';
 
 // The seam between the MIT core and packages/ee, declared by the core and
 // implemented by nothing in it.
@@ -53,4 +55,8 @@ export interface ServerExtension {
   // What the extension knows about this install's licence. The last extension
   // to offer one wins; with no extensions the core answers unlicensed().
   license?: LicenseStatusProvider;
+  // The extension's routes and what the API reference says about each, so
+  // the docs site documents them by asking the loader, as the server does,
+  // and nothing outside this seam imports packages/ee.
+  reference?: { routes: readonly RouteRule[]; docs: readonly RouteDocGroup[] };
 }

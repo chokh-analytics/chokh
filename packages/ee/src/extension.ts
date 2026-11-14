@@ -6,7 +6,9 @@ import { readDeliveryEnv, readOidcEnv, type DeliveryEnv, type OidcEnv } from './
 import type { OidcClient } from './oidc/client.js';
 import { OIDC_FEATURE } from './oidc/oidc.routes.js';
 import { createLicenseState, type LicenseState } from './license/state.js';
+import { EE_ROUTE_DOCS } from './routes/route-docs.js';
 import { registerEeRoutes } from './routes/ee.routes.js';
+import { EE_ROUTES } from './routes/route-table.js';
 
 // The extension, built from a licence state somebody chose.
 //
@@ -81,5 +83,5 @@ export function buildExtension(
     });
   }
 
-  return { name: '@chokh/ee', register, license };
+  return { name: '@chokh/ee', register, license, reference: { routes: EE_ROUTES, docs: EE_ROUTE_DOCS } };
 }

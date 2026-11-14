@@ -148,9 +148,6 @@ importers:
 
   packages/docs:
     devDependencies:
-      '@chokh/ee':
-        specifier: workspace:*
-        version: link:../ee
       '@chokh/next':
         specifier: workspace:*
         version: link:../next

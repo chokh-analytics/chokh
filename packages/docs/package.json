@@ -16,7 +16,6 @@
     "site:generate": "node scripts/generate.mjs"
   },
   "devDependencies": {
-    "@chokh/ee": "workspace:*",
     "@chokh/next": "workspace:*",
     "@chokh/react": "workspace:*",
     "@chokh/sdk-node": "workspace:*",
