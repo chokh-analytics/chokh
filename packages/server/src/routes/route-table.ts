@@ -23,6 +23,8 @@ export type RouteNeed =
   | { kind: 'share' }
   // Somebody: a session or a key, whatever it may do.
   | { kind: 'principal' }
+  // A person, signed in, whatever they may do. Never a key.
+  | { kind: 'person' }
   // A scope on the site in the path. With `person`, held by somebody signed
   // in and not by a key: a key that holds the scope is refused for being one.
   | { kind: 'site'; scope: Scope; person?: true }
@@ -285,6 +287,9 @@ export function expectedOf(rule: RouteRule, caller: RouteCaller, licensed = true
       return 'allowed';
     case 'principal':
       return caller.principal === null ? UNAUTHENTICATED : afterScope;
+    case 'person':
+      if (caller.principal === null) return UNAUTHENTICATED;
+      return caller.principal === 'session' ? afterScope : FORBIDDEN;
     case 'site':
       if (caller.principal === null) return UNAUTHENTICATED;
       if (caller.scopes === null) return { status: 403, code: 'SITE_FORBIDDEN' };

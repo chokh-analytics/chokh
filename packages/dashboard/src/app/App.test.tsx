@@ -869,3 +869,46 @@ describe('a sign-in from another application that was refused', () => {
     ).toBeInTheDocument();
   });
 });
+
+// The button for single sign-on is drawn on the sign-in page only when the
+// install has it switched on: a sign-in page is read by strangers, and says
+// nothing about what an install has or has not paid for.
+describe('single sign-on on the sign-in page', () => {
+  it('is not there when the install says it is off, or has no paid half at all', async () => {
+    at('/login');
+    serve({ '/api/me': () => refusal(401, 'UNAUTHENTICATED') });
+    const first = render(<App />);
+    await screen.findByRole('button', { name: 'Sign in' });
+    expect(screen.queryByRole('link', { name: 'Sign in with single sign-on' })).toBeNull();
+    first.unmount();
+
+    serve({
+      '/api/me': () => refusal(401, 'UNAUTHENTICATED'),
+      '/api/ee/oidc': () => envelope({ enabled: false }),
+    });
+    render(<App />);
+    await screen.findByRole('button', { name: 'Sign in' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('link', { name: 'Sign in with single sign-on' })).toBeNull();
+  });
+
+  it('is a link to the start of the flow when it is on, carrying where the person was going', async () => {
+    at('/login?next=%2Fs_test%2Fsources');
+    serve({
+      '/api/me': () => refusal(401, 'UNAUTHENTICATED'),
+      '/api/ee/oidc': () => envelope({ enabled: true }),
+    });
+    render(<App />);
+    const link = await screen.findByRole('link', { name: 'Sign in with single sign-on' });
+    expect(link.getAttribute('href')).toBe('/api/ee/oidc/start?next=%2Fs_test%2Fsources');
+  });
+
+  it('says what to do when the provider vouched for somebody no account is connected to', async () => {
+    at('/login?sso=OIDC_UNKNOWN_IDENTITY');
+    serve({ '/api/me': () => refusal(401, 'UNAUTHENTICATED') });
+    render(<App />);
+    expect(
+      await screen.findByText(/No account here is connected to that sign-in/),
+    ).toBeInTheDocument();
+  });
+});

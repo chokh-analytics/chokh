@@ -75,3 +75,29 @@
   font: inherit;
   text-decoration: underline;
 }
+
+/* The other way in, when the install has one: drawn as the quieter of two
+ * buttons, and it is a link because it leaves the page. */
+.other {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.other:hover {
+  border-color: var(--muted);
+}
+
+.other:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

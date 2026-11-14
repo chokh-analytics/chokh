@@ -102,6 +102,10 @@ export const ACCESS_ACTIONS = [
   'team:create',
   'team:delete',
   'site:move',
+  // An account connected to an outside identity it can sign in by, or
+  // disconnected from one. Written by packages/ee too.
+  'identity:link',
+  'identity:unlink',
 ] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 

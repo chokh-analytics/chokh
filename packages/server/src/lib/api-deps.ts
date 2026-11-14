@@ -4,7 +4,10 @@ import type { OnceOnly } from '../services/once.js';
 import type { SessionCodec } from '../services/auth.service.js';
 import type { ShareCodec } from '../services/share.service.js';
 import type { AccountStore, AnalyticsStore } from '../store/AnalyticsStore.js';
+import type { preHandlerHookHandler } from 'fastify';
+
 import type { AuditCursorCodec } from './audit-cursor.js';
+import type { Sealer } from './seal.js';
 import type { WindowCounter } from './window-counter.js';
 
 // Everything the API routes are handed, in one place, so app.ts builds it once
@@ -28,6 +31,14 @@ export interface ApiDeps {
   // Signs the audit log's cursor, so a page is only ever carried on from a
   // listing whose opening was recorded.
   auditCursor: AuditCursorCodec;
+  // A sealer for one named purpose, keyed from the session secret: a cookie a
+  // browser carries for a few minutes and can neither read nor change. For an
+  // extension that sends a browser away and has to recognise it coming back.
+  seal(purpose: string): Sealer;
+  // The limits by address as hooks, on the counters the core's own routes
+  // use: signing in by any route counts against one count, and so does using
+  // an invitation by any route.
+  attempts: { signIn: preHandlerHookHandler; invitation: preHandlerHookHandler };
   limits: { authAttempts: number; shareReads: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };

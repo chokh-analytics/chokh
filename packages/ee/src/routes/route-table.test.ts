@@ -69,14 +69,20 @@ interface Install {
   owner: string;
   callers: RouteCaller[];
   registered: { method: string; url: string }[];
+  // Moves the app's clock on a minute. The routes somebody uses before they
+  // are signed in are limited by address, and the walk asks each of them as
+  // eight callers from one address.
+  nextMinute(): void;
 }
 
 async function install(extension: ServerExtension): Promise<Install> {
   const store = createMemoryStore();
   const registered: { method: string; url: string }[] = [];
+  let at = Date.now();
   const app = await buildApp({
     store,
     extensions: [extension],
+    now: () => at,
     onRoute: (route) => registered.push(route),
   });
   await app.ready();
@@ -162,6 +168,9 @@ async function install(extension: ServerExtension): Promise<Install> {
     app,
     owner,
     registered,
+    nextMinute: () => {
+      at += 61_000;
+    },
     callers: [
       { name: 'nobody', headers: {}, principal: null, scopes: null, ownsTeam: false, ownsAnyTeam: false },
       session('a viewer of the team', viewer, 'viewer'),
@@ -206,6 +215,9 @@ describe('the paid routes, with a licence', () => {
         rules: EE_ROUTES,
         callers: here.callers,
         params: { siteId: SITE_ID, teamId: TEAM_ID },
+        before: (rule) => {
+          if (rule.needs.kind === 'public') here.nextMinute();
+        },
       }),
     ).toEqual([]);
   });
@@ -240,10 +252,23 @@ describe('the paid routes, asked from somewhere that is not this dashboard', () 
     ).toEqual([]);
   });
 
-  it('name no route that is entered from another application', () => {
-    // Held the way the core's list is: adding a row here is a decision, and
-    // this is the line that has to change with it.
-    expect(EE_ROUTES.filter((rule) => rule.crossSite === true).map(routeKey)).toEqual([]);
+  it('name the one route that is entered from another site, and the one that begins a sign-in from its body', () => {
+    // Held the way the core's lists are: adding a row to either is a
+    // decision, and these are the lines that have to change with it. The
+    // callback is where a browser arrives from the identity provider, and it
+    // is a read as far as the method goes; what protects it is the flow's
+    // sealed cookie, which oidc.routes.test.ts holds.
+    expect(EE_ROUTES.filter((rule) => rule.crossSite === true).map(routeKey)).toEqual([
+      'GET /api/ee/oidc/callback',
+    ]);
+    expect(EE_ROUTES.filter((rule) => rule.startsSession === true).map(routeKey)).toEqual([
+      'POST /api/ee/oidc/invite',
+    ]);
+    expect(
+      EE_ROUTES.filter((rule) => rule.crossSite === true).every(
+        (rule) => rule.method === 'GET' && rule.needs.kind === 'public',
+      ),
+    ).toBe(true);
   });
 });
 
@@ -267,6 +292,9 @@ describe('the paid routes, with no licence', () => {
         callers: here.callers,
         params: { siteId: SITE_ID, teamId: TEAM_ID },
         licensed: false,
+        before: (rule) => {
+          if (rule.needs.kind === 'public') here.nextMinute();
+        },
       }),
     ).toEqual([]);
   });

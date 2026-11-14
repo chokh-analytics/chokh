@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readDeliveryEnv, readLicenseKey } from './env.js';
+import { readDeliveryEnv, readLicenseKey, readOidcEnv } from './env.js';
 
 // The one reader this package has. Empty means unset, a bad URL is refused at
 // boot rather than at the moment somebody needed a message, and a trailing
@@ -53,5 +53,44 @@ describe('readDeliveryEnv', () => {
     expect(() => readDeliveryEnv({ CHOKH_SMTP_URL: 'https://mail.example.test' })).toThrow(/smtp/);
     expect(() => readDeliveryEnv({ CHOKH_SMTP_URL: 'not a url' })).toThrow();
     expect(() => readDeliveryEnv({ CHOKH_PUBLIC_URL: 'analytics.example.test' })).toThrow();
+  });
+});
+
+// Signing in through an identity provider is four values, all of them or it
+// is off, and what is said about the ones that are missing is their names.
+describe('readOidcEnv', () => {
+  const ALL = {
+    CHOKH_OIDC_ISSUER: 'https://id.example.test/',
+    CHOKH_OIDC_CLIENT_ID: 'a-client',
+    CHOKH_OIDC_CLIENT_SECRET: 'an-invented-secret-for-a-test',
+    CHOKH_PUBLIC_URL: 'https://analytics.example.test/',
+  };
+
+  it('reads all four, with the slash off the end of both addresses', () => {
+    expect(readOidcEnv(ALL)).toEqual({
+      config: {
+        issuer: 'https://id.example.test',
+        clientId: 'a-client',
+        clientSecret: 'an-invented-secret-for-a-test',
+        publicUrl: 'https://analytics.example.test',
+      },
+    });
+  });
+
+  it('is off with any one missing, and names it without repeating a value', () => {
+    for (const name of Object.keys(ALL) as (keyof typeof ALL)[]) {
+      const read = readOidcEnv({ ...ALL, [name]: '' });
+      expect(read).toEqual({ missing: [name] });
+      expect(JSON.stringify(read)).not.toContain('an-invented-secret-for-a-test');
+    }
+    expect(readOidcEnv({})).toEqual({
+      missing: ['CHOKH_OIDC_ISSUER', 'CHOKH_OIDC_CLIENT_ID', 'CHOKH_OIDC_CLIENT_SECRET', 'CHOKH_PUBLIC_URL'],
+    });
+  });
+
+  it('reads an issuer that is not an address as missing', () => {
+    expect(readOidcEnv({ ...ALL, CHOKH_OIDC_ISSUER: 'id.example.test' })).toEqual({
+      missing: ['CHOKH_OIDC_ISSUER'],
+    });
   });
 });

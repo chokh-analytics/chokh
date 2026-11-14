@@ -17,7 +17,23 @@ export {
   type LicenseStatusProvider,
   type ServerExtension,
 } from './plugins/extensions.js';
-export { requirePrincipal, requireSiteScope } from './plugins/auth.js';
+export {
+  attachPrincipal,
+  requirePerson,
+  requirePrincipal,
+  requireSiteScope,
+  requireThisDashboard,
+} from './plugins/auth.js';
+// What packages/ee needs to sign somebody in by an outside identity
+// (AN-TEAM01): the one function that starts a session, the sealed cookie, the
+// check that sends a browser a page and a program the envelope, and an
+// invitation used by somebody an identity provider vouched for. None of it
+// knows a protocol.
+export { clearCookie, readCookie, startSession, writeCookie } from './lib/session-cookie.js';
+export type { Sealer } from './lib/seal.js';
+export { wantsHtml } from './lib/wants-html.js';
+export { acceptInvitation, lookupInvitation } from './services/invitations.service.js';
+export { isSsoManaged } from './services/sso-accounts.js';
 // What packages/ee needs to make and delete teams and move a site between
 // them under the core's own rules (AN-TEAM01): the owner check the member
 // routes make, the grant order, the audit rows and the store's refusals.

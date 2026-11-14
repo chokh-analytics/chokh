@@ -5,6 +5,7 @@ import { api, type InvitationPreview, type InvitationScope, type PublicUser } fr
 import { ChokhError, type Client } from '../lib/client.js';
 import { formatDateLong } from '../lib/format.js';
 import { forgetInviteToken, inviteToken, onInviteToken } from '../lib/invite-token.js';
+import { navigation } from '../lib/leave.js';
 import { format, messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
 import { Field } from '../ui/Field.js';
@@ -57,8 +58,18 @@ export interface InviteProps {
 type Loaded =
   | { state: 'reading' }
   | { state: 'refused'; message: string }
-  | { state: 'ready'; preview: InvitationPreview; user: PublicUser | null }
+  | { state: 'ready'; preview: InvitationPreview; user: PublicUser | null; oidc: boolean }
   | { state: 'done' };
+
+// Whether this install signs people in through an identity provider. An
+// install with no paid half answers 404, which is "no".
+async function oidcIsOn(client: Client): Promise<boolean> {
+  try {
+    return (await api.oidcStatus(client)).data.enabled;
+  } catch {
+    return false;
+  }
+}
 
 export function Invite({ client, onAccepted }: InviteProps): JSX.Element {
   // The module keeps it; this component only borrows it.
@@ -93,13 +104,14 @@ export function Invite({ client, onAccepted }: InviteProps): JSX.Element {
     asked.current = token;
     void (async () => {
       try {
-        const [preview, user] = await Promise.all([
+        const [preview, user, oidc] = await Promise.all([
           api.lookupInvitation(client, token),
           whoIsHere(client),
+          oidcIsOn(client),
         ]);
         // An answer about a link that has since been replaced is not shown.
         if (asked.current !== token) return;
-        setLoaded({ state: 'ready', preview: preview.data.invitation, user });
+        setLoaded({ state: 'ready', preview: preview.data.invitation, user, oidc });
       } catch (error) {
         if (asked.current !== token) return;
         setLoaded({ state: 'refused', message: problemOf(error) });
@@ -187,7 +199,7 @@ export function Invite({ client, onAccepted }: InviteProps): JSX.Element {
     );
   }
 
-  const { preview, user } = loaded;
+  const { preview, user, oidc } = loaded;
   const what = format(
     preview.scope.kind === 'team' ? messages.invite.whatTeam : messages.invite.whatSite,
     {
@@ -244,7 +256,7 @@ export function Invite({ client, onAccepted }: InviteProps): JSX.Element {
         onClick={() =>
           void run(async () => {
             await api.signOut(client);
-            setLoaded({ state: 'ready', preview, user: null });
+            setLoaded({ state: 'ready', preview, user: null, oidc });
           })
         }
       >
@@ -347,5 +359,26 @@ export function Invite({ client, onAccepted }: InviteProps): JSX.Element {
         {busy ? messages.invite.accepting : messages.invite.createAndAccept}
       </Button>
     </form>,
+    oidc && (
+      <div key="oidc" className={styles.form}>
+        <p className={styles.text}>{messages.invite.oidcHelp}</p>
+        <Button
+          block
+          disabled={busy}
+          onClick={() =>
+            void run(async () => {
+              // The token goes in a body, once more, and the server answers
+              // where to send the browser. It is forgotten here as the page
+              // is left: the server holds it, sealed, for the way back.
+              const begun = await api.oidcInvite(client, token);
+              forgetInviteToken();
+              navigation.leave(begun.data.url);
+            })
+          }
+        >
+          {messages.invite.oidc}
+        </Button>
+      </div>
+    ),
   ]);
 }

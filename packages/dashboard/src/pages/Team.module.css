@@ -327,3 +327,8 @@
   font-weight: 600;
   color: var(--ink);
 }
+
+/* Buttons that are not inside a form, level with the card's text. */
+.inset {
+  padding: 0 var(--s3) var(--s3);
+}

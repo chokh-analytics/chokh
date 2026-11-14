@@ -252,6 +252,12 @@ describe('the route table', () => {
     const register = row('POST /api/auth/register');
     expect(expectedOf(register, nobody)).toEqual({ status: 403, code: 'FORBIDDEN' });
     expect(expectedOf(register, stranger)).toBe('allowed');
+    // A person, whatever they may do, and never a key.
+    const person: RouteRule = { method: 'POST', url: '/api/x', needs: { kind: 'person' } };
+    const aKey = callers.find((caller) => caller.principal === 'key') as RouteCaller;
+    expect(expectedOf(person, nobody)).toEqual({ status: 401, code: 'UNAUTHENTICATED' });
+    expect(expectedOf(person, aKey)).toEqual({ status: 403, code: 'FORBIDDEN' });
+    expect(expectedOf(person, viewer)).toBe('allowed');
     // A person who owns some team, whichever: the stranger owns another one.
     const anyOwner: RouteRule = { method: 'POST', url: '/api/x', needs: { kind: 'anyTeamOwner' } };
     expect(expectedOf(anyOwner, nobody)).toEqual({ status: 401, code: 'UNAUTHENTICATED' });

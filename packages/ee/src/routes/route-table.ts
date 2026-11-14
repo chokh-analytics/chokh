@@ -2,6 +2,7 @@ import type { RouteRule } from '@chokh/server';
 
 import { ALERTS_FEATURE } from '../alerts/conditions.js';
 import { DIGESTS_FEATURE } from '../digests/period.js';
+import { OIDC_FEATURE } from '../oidc/oidc.routes.js';
 import { TEAMS_FEATURE } from '../teams/teams.routes.js';
 import { PING_FEATURE } from './ee.routes.js';
 
@@ -62,4 +63,35 @@ export const EE_ROUTES: readonly RouteRule[] = [
     feature: TEAMS_FEATURE,
     body: ({ params }) => ({ teamId: params['teamId'] }),
   },
+
+  // Signing in through an identity provider. Four of these are open to
+  // anybody, because whoever uses them is not signed in yet: they answer that
+  // the feature is off where it is, which is a fact about the install and not
+  // a refusal of the caller. The callback is where a browser arrives from the
+  // provider, another site, by design; what protects it is the sealed cookie
+  // of the flow that browser began, and a case holds that. The one that uses
+  // an invitation begins a sign-in from what is in its body, so it is held to
+  // coming from this dashboard like the core's three.
+  { method: 'GET', url: '/api/ee/oidc', needs: { kind: 'public' }, feature: OIDC_FEATURE },
+  { method: 'GET', url: '/api/ee/oidc/start', needs: { kind: 'public' }, feature: OIDC_FEATURE },
+  {
+    method: 'GET',
+    url: '/api/ee/oidc/callback',
+    needs: { kind: 'public' },
+    feature: OIDC_FEATURE,
+    crossSite: true,
+  },
+  {
+    method: 'POST',
+    url: '/api/ee/oidc/invite',
+    needs: { kind: 'public' },
+    feature: OIDC_FEATURE,
+    startsSession: true,
+    body: () => ({ token: 'chi_a-token-nothing-answers-to-0000000000' }),
+  },
+  // The three a signed-in person uses about their own account. A person, and
+  // never a key.
+  { method: 'POST', url: '/api/ee/oidc/link', needs: { kind: 'person' }, feature: OIDC_FEATURE },
+  { method: 'GET', url: '/api/ee/oidc/identity', needs: { kind: 'person' }, feature: OIDC_FEATURE },
+  { method: 'DELETE', url: '/api/ee/oidc/identity', needs: { kind: 'person' }, feature: OIDC_FEATURE },
 ];

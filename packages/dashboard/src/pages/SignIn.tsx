@@ -3,6 +3,7 @@ import { useSearch } from 'wouter';
 
 import { api } from '../lib/api.js';
 import { ChokhError, type Client } from '../lib/client.js';
+import { useOidc } from '../lib/queries.js';
 import { messages } from '../messages/en.js';
 import { Button } from '../ui/Button.js';
 import { Field } from '../ui/Field.js';
@@ -29,6 +30,14 @@ function ssoNotice(code: string | null): string | null {
   }
   if (code === 'TOKEN_EXPIRED') {
     return messages.auth.ssoExpired;
+  }
+  // An arrival from an identity provider that nobody here is connected to,
+  // and one that did not begin in this browser: each has its own way on.
+  if (code === 'OIDC_UNKNOWN_IDENTITY') {
+    return messages.auth.oidcUnknown;
+  }
+  if (code === 'OIDC_STATE' || code === 'OIDC_REPLAYED') {
+    return messages.auth.oidcState;
   }
   // The exchange would have lowered the last owner of a team, which a team is
   // never left without (AN-TEAM01). A different sentence, because the way out
@@ -59,6 +68,10 @@ export function SignIn({
 
   const registering = mode === 'register';
   const sso = ssoNotice(new URLSearchParams(search).get('sso'));
+  // Whether this install signs people in through an identity provider. The
+  // button is drawn only when it does: a sign-in page is read by strangers,
+  // and says nothing about what an install has or has not switched on.
+  const oidc = useOidc(client);
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -145,6 +158,17 @@ export function SignIn({
                 ? messages.auth.create
                 : messages.auth.signIn}
           </Button>
+
+          {!registering && oidc.data?.data.enabled === true && (
+            // A link and not a button: it goes somewhere, and the server
+            // sends the browser on to the provider from there.
+            <a
+              className={styles.other}
+              href={api.oidcStartUrl(client, new URLSearchParams(search).get('next'))}
+            >
+              {messages.auth.oidcButton}
+            </a>
+          )}
 
           {onModeChange !== undefined && (
             <p className={styles.aside}>

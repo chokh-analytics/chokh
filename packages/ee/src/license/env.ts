@@ -87,3 +87,70 @@ export function readDeliveryEnv(source: NodeJS.ProcessEnv = process.env): Delive
     publicUrl: parsed.CHOKH_PUBLIC_URL,
   };
 }
+
+// Signing in through an OpenID Connect provider (AN-TEAM01). Four values and
+// all four or nothing: the issuer, this install's client id and secret at
+// that issuer, and the address this install is reached at, which is where the
+// provider sends a browser back to. That address is configuration and never
+// a request's Host header, which is the caller's to write.
+//
+// Read here and nowhere else. The client secret goes from the environment to
+// the one request that exchanges a code, and is never stored, logged, shown
+// or handed to the dashboard.
+const oidcIssuer = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/+$/, ''))
+    .optional(),
+);
+
+export interface OidcEnv {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  publicUrl: string;
+}
+
+// The configuration when all of it is there, or the names of the variables
+// that are missing. Names only: a boot line may say which variable to set and
+// never what one held.
+export function readOidcEnv(
+  source: NodeJS.ProcessEnv = process.env,
+): { config: OidcEnv } | { missing: string[] } {
+  // Each on its own: an issuer that is not an address is that one value
+  // missing, and says nothing about the other three.
+  const issuer = oidcIssuer.safeParse(source['CHOKH_OIDC_ISSUER']);
+  const values = {
+    CHOKH_OIDC_ISSUER: issuer.success ? issuer.data : undefined,
+    CHOKH_OIDC_CLIENT_ID: optional.parse(source['CHOKH_OIDC_CLIENT_ID']),
+    CHOKH_OIDC_CLIENT_SECRET: optional.parse(source['CHOKH_OIDC_CLIENT_SECRET']),
+  };
+  const publicUrl = readDeliveryEnv(source).publicUrl;
+  const missing = [
+    ['CHOKH_OIDC_ISSUER', values.CHOKH_OIDC_ISSUER],
+    ['CHOKH_OIDC_CLIENT_ID', values.CHOKH_OIDC_CLIENT_ID],
+    ['CHOKH_OIDC_CLIENT_SECRET', values.CHOKH_OIDC_CLIENT_SECRET],
+    ['CHOKH_PUBLIC_URL', publicUrl],
+  ]
+    .filter(([, value]) => value === undefined)
+    .map(([name]) => name as string);
+  if (
+    missing.length > 0 ||
+    values.CHOKH_OIDC_ISSUER === undefined ||
+    values.CHOKH_OIDC_CLIENT_ID === undefined ||
+    values.CHOKH_OIDC_CLIENT_SECRET === undefined ||
+    publicUrl === undefined
+  ) {
+    return { missing };
+  }
+  return {
+    config: {
+      issuer: values.CHOKH_OIDC_ISSUER,
+      clientId: values.CHOKH_OIDC_CLIENT_ID,
+      clientSecret: values.CHOKH_OIDC_CLIENT_SECRET,
+      publicUrl,
+    },
+  };
+}

@@ -60,6 +60,8 @@ process that has been up for a month.
 | `src/alerts/deliver.ts` | Email, Telegram and the signed webhook behind one interface |
 | `src/alerts/messages.ts` | Every sentence an alert says |
 | `src/teams/teams.routes.ts` | Making a team, deleting one, moving a site between two |
+| `src/oidc/client.ts` | The provider's end of a sign-in: discovery, the code exchange, and what an ID token has to say to be believed |
+| `src/oidc/oidc.routes.ts` | The flow: leaving, coming back, connecting an account, using an invitation |
 
 ### The public keys are empty
 
@@ -298,6 +300,87 @@ looks again after its own write: between the two looks every order of the
 steps is seen by one of them, and whichever sees it puts the team back as it
 was. The deletion then answers `409 TEAM_HAS_SITES`. The one loss is the
 invitations that were waiting on the team, which went with it.
+
+## Single sign-on (OpenID Connect)
+
+Behind the feature `oidc`, and switched on by four values, all of them or it
+is off:
+
+```
+CHOKH_OIDC_ISSUER=https://id.example.com
+CHOKH_OIDC_CLIENT_ID=...
+CHOKH_OIDC_CLIENT_SECRET=...
+CHOKH_PUBLIC_URL=https://analytics.example.com
+```
+
+Register `<CHOKH_PUBLIC_URL>/api/ee/oidc/callback` with the provider as the
+redirect address. It is built from `CHOKH_PUBLIC_URL` and never from a
+request's `Host` header. If some of the four are set and not all, one line at
+boot names the ones that are missing, never a value. The client secret goes
+from the environment to the one request that exchanges a code: it is never
+stored, logged, shown or sent to the dashboard.
+
+**Who somebody is** is the pair the provider vouches for, its issuer and its
+subject for the person. **Never the address in a token, verified or not.** So
+a sign-in by an identity no account is connected to signs in nobody and makes
+nothing, and an account comes to be connected in one of two ways, both
+somebody's own act:
+
+- It connects itself, signed in, from the Team page (`POST /api/ee/oidc/link`).
+  The return has to arrive in the session that began it.
+- It is made from an invitation, by somebody who chose single sign-on on the
+  invitation page (`POST /api/ee/oidc/invite`). The account gets the
+  invitation's address, never the provider's, and no password.
+
+An address that already has an account is never entered by an invitation and a
+provider: that account signs in and connects itself.
+
+```
+GET    /api/ee/oidc            anybody: { enabled }, which is all the sign-in page needs
+GET    /api/ee/oidc/start      anybody: sends the browser to the provider
+GET    /api/ee/oidc/callback   where the provider sends it back
+POST   /api/ee/oidc/invite     anybody holding an invitation: { token } in, { url } out
+POST   /api/ee/oidc/link       a person signed in: { url } out
+GET    /api/ee/oidc/identity   a person signed in: { enabled, connected, canDisconnect }
+DELETE /api/ee/oidc/identity   a person signed in: disconnect
+```
+
+**The flow** is the authorization code flow with PKCE (`S256`), a `state` and
+a `nonce`, each 32 random bytes. They travel with the browser in one cookie:
+sealed (AES-256-GCM under a key derived from the session secret, so the
+browser can neither read nor change it), `HttpOnly`, `SameSite=Lax`, ten
+minutes, sent to the callback's path and nowhere else. The callback is a `GET`
+that ends in a session, and that cookie is what protects it: a return that
+arrives in a browser that did not begin a flow has none and is refused before
+the provider is asked anything. The `state` is spent when it is used, so a
+return replayed in the same browser is refused as well.
+
+**The ID token** is verified by [`jose`](https://github.com/panva/jose)
+(6.2.17, MIT, no dependencies, pinned exactly), which is told: asymmetric
+algorithms only; the issuer, which also has to be the one the provider's own
+discovery document declares; the audience, and the authorized party when a
+token names one; the nonce; not expired, not issued in the future, not older
+than ten minutes, with a minute for two clocks to differ. A key id it has not
+seen makes it read the provider's keys again, at most once in thirty seconds.
+Discovery, keys and the token endpoint are reached over `https` only (plain
+`http` on a loopback address, for a test), with a five second limit and no
+redirect followed. No token from the provider is kept once the callback has
+answered; the session is the ordinary cookie.
+
+**Nobody is locked out by it.** The password route is not touched: a team
+that has an owner with a password keeps one (the core's rule), so a provider
+that is down, or a key that has lapsed, leaves every account with a password
+able to sign in. An account made from an invitation by single sign-on has no
+password, so its identity is its only way in and cannot be disconnected
+(`409 ONLY_WAY_IN`).
+
+Connecting and disconnecting are written to the audit log
+(`identity:link`, `identity:unlink`), with the issuer and never the subject.
+
+The provider in the tests is started inside the test process on a loopback
+port, with keys generated for the run, and can be told to lie about each
+thing above. `pnpm --filter @chokh/ee run test:browser` runs the flow in a
+real browser with the provider and the server on two sites.
 
 ## The fixture route
 

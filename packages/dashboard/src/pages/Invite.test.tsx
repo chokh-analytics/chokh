@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvitationPreview, InvitationScope } from '../lib/api.js';
 import { createClient } from '../lib/client.js';
 import { forgetInviteToken } from '../lib/invite-token.js';
+import { navigation } from '../lib/leave.js';
 import { Invite } from './Invite.js';
 import { NOW, ok, refused, serve, type Call } from './access.test-utils.js';
 
@@ -35,6 +36,8 @@ interface World {
   me?: { id: string; email: string } | null;
   accept?: (call: Call) => Response;
   login?: (call: Call) => Response;
+  // Whether the install signs people in through an identity provider.
+  oidc?: boolean;
 }
 
 function world(given: World = {}): () => Call[] {
@@ -59,6 +62,10 @@ function world(given: World = {}): () => Call[] {
         );
       case 'POST /api/auth/login':
         return given.login?.(call) ?? ok({ user: { id: 'u_ada', email: 'ada@test.example' } });
+      case 'GET /api/ee/oidc':
+        return given.oidc === undefined ? undefined : ok({ enabled: given.oidc });
+      case 'POST /api/ee/oidc/invite':
+        return ok({ url: 'https://provider.example/authorize?state=abc' });
       case 'POST /api/auth/logout':
         me = null;
         return ok({ signedOut: true });
@@ -291,5 +298,38 @@ describe('somebody signed in as another account', () => {
     expect(calls().some((call) => call.path === '/api/auth/logout')).toBe(true);
     // The link is still in hand after signing out.
     expect(calls().filter((call) => call.path === '/api/invitations/lookup')).toHaveLength(1);
+  });
+});
+
+describe('single sign-on on the invitation page', () => {
+  it('is not offered where the install does not have it', async () => {
+    withToken();
+    world();
+    open();
+    await screen.findByLabelText('Choose a password');
+    expect(screen.queryByRole('button', { name: 'Use single sign-on instead' })).toBeNull();
+  });
+
+  it('sends the token in a body, forgets it, and leaves for where the server says', async () => {
+    withToken();
+    const calls = world({ oidc: true });
+    const left: string[] = [];
+    vi.spyOn(navigation, 'leave').mockImplementation((url) => void left.push(url));
+    open();
+    await userEvent.click(await screen.findByRole('button', { name: 'Use single sign-on instead' }));
+    await waitFor(() => expect(left).toEqual(['https://provider.example/authorize?state=abc']));
+    const sent = calls().find((call) => call.path === '/api/ee/oidc/invite');
+    expect(sent).toMatchObject({ method: 'POST', body: { token: TOKEN } });
+    expectTokenKeptOut(calls());
+    // Nothing was accepted here: the provider's answer decides that.
+    expect(calls().some((call) => call.path === '/api/invitations/accept')).toBe(false);
+  });
+
+  it('is not offered to an address that already has an account, which signs in to it first', async () => {
+    withToken();
+    world({ oidc: true, preview: preview({ accountExists: true }) });
+    open();
+    await screen.findByLabelText('Password');
+    expect(screen.queryByRole('button', { name: 'Use single sign-on instead' })).toBeNull();
   });
 });

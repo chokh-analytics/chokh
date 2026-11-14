@@ -17,8 +17,10 @@ import { describeCondition } from '../alerts/messages.js';
 import { DIGESTS_FEATURE, createDigestSchema, digestParamsSchema, periodFor } from '../digests/period.js';
 import { sendDigest, startDigestTick } from '../digests/run.js';
 import { requireLicense } from '../license/guard.js';
-import type { DeliveryEnv } from '../license/env.js';
+import type { DeliveryEnv, OidcEnv } from '../license/env.js';
 import type { LicenseState } from '../license/state.js';
+import type { OidcClient } from '../oidc/client.js';
+import { registerOidcRoutes } from '../oidc/oidc.routes.js';
 import { registerTeamRoutes } from '../teams/teams.routes.js';
 
 // Every paid route, in one file, the way the core keeps its own in one file:
@@ -41,6 +43,10 @@ export interface EeRouteDeps {
   // Whether register starts the five-minute tick. The server does; a test
   // that only wants the routes does not.
   tick: boolean;
+  // Signing in through an identity provider: its configuration, or null when
+  // the install has none.
+  oidc: OidcEnv | null;
+  oidcClient?: OidcClient;
 }
 
 // What the store refuses with, turned into the envelope's status. Only the
@@ -79,6 +85,14 @@ export async function registerEeRoutes(
   // (AN-TEAM01). In a file of its own, with the same two hooks in the same
   // order on each route.
   registerTeamRoutes(app, deps, state);
+
+  // Signing in through an OpenID Connect provider (AN-TEAM01), in a file of
+  // its own. Registered whether or not the install is configured for it: an
+  // install that is not answers that it is off.
+  registerOidcRoutes(app, deps, state, {
+    config: ee.oidc,
+    ...(ee.oidcClient === undefined ? {} : { client: ee.oidcClient }),
+  });
 
   // The frame's own health probe, and the feature AN-EE01 is verified against.
   //

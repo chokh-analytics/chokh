@@ -565,6 +565,13 @@ jobs:
       # audited a page that actually had the dashboard in it.
       - run: pnpm --filter @chokh/dashboard run a11y
 
+      # Signing in through an identity provider (AN-TEAM01), in the browser
+      # this job has just installed: the provider and the server on two sites,
+      # so the cookie the flow depends on is proved to make the trip there and
+      # back, and a return in a browser that did not begin the flow is proved
+      # to sign in nobody. The provider is started inside the test.
+      - run: pnpm --filter @chokh/ee run test:browser
+
       - name: The audit, whatever it said
         if: always()
         uses: actions/upload-artifact@v4

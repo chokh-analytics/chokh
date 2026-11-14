@@ -1,4 +1,4 @@
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { SESSION_COOKIE } from '../services/auth.service.js';
 import type { StoredUser } from '../store/AnalyticsStore.js';
@@ -31,4 +31,33 @@ export function startSession(
     secure: deps.cookie.secure,
     maxAge: Math.floor(deps.session.ttlMs / 1000),
   });
+}
+
+// A cookie of an extension's own, with the attributes every cookie here has:
+// not readable by a script, sent on a navigation back from another site and
+// on nothing else that crosses one, and only over TLS where the install is
+// served over it. The extension chooses the name, the path it is sent to and
+// how long it lasts; it does not get to choose to be looser than that.
+export function writeCookie(
+  deps: Pick<ApiDeps, 'cookie'>,
+  reply: FastifyReply,
+  name: string,
+  value: string,
+  options: { path: string; maxAgeSeconds: number },
+): void {
+  void reply.setCookie(name, value, {
+    path: options.path,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: deps.cookie.secure,
+    maxAge: options.maxAgeSeconds,
+  });
+}
+
+export function readCookie(request: FastifyRequest, name: string): string | undefined {
+  return request.cookies[name];
+}
+
+export function clearCookie(reply: FastifyReply, name: string, path: string): void {
+  void reply.clearCookie(name, { path });
 }

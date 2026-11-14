@@ -79,6 +79,11 @@ export const messages = {
     ssoLastOwner:
       'That sign-in was refused: it would have lowered the last owner of a team, and a team always keeps one. Sign in here with your password instead.',
     signedOut: 'You are signed out.',
+    // Drawn only on an install that has it switched on.
+    oidcButton: 'Sign in with single sign-on',
+    oidcUnknown:
+      'No account here is connected to that sign-in. Sign in with your password and connect it on the Team page, or use the invitation you were sent.',
+    oidcState: 'That sign-in did not begin in this browser, or took too long. Start it again here.',
   },
 
   range: {
@@ -1214,6 +1219,18 @@ export const messages = {
     moveNone: 'To move this site, you would need to own another team to move it to.',
     moveOwnerOnly: 'Only an owner of the team a site is in moves it.',
     moved: 'Moved to {team}.',
+    // Single sign-on, which is part of Chokh Pro.
+    ssoTitle: 'Single sign-on',
+    ssoLede:
+      'Sign in through the identity provider your organisation already uses (OpenID Connect). An account is connected by its owner, here, or made from an invitation: nobody is let in because of an address alone.',
+    ssoNotConnected: 'Your account is not connected yet.',
+    ssoConnected: 'Your account is connected. You can sign in with single sign-on, or with your password.',
+    ssoConnectedOnly:
+      'Your account signs in with single sign-on only. It has no password, so it stays connected.',
+    ssoConnect: 'Connect my account',
+    ssoWorking: 'Opening the provider',
+    ssoDisconnect: 'Disconnect',
+    ssoDisconnected: 'Disconnected.',
     moveKeysTitle: 'Keys on this site',
     moveKeysLede:
       'These were made by people who will not administer the site once it has moved. A key goes on working until it is revoked; revoking one the site still uses stops it collecting.',
@@ -1264,6 +1281,8 @@ export const messages = {
     actionTeamCreate: 'Made a team',
     actionTeamDelete: 'Deleted a team',
     actionSiteMove: 'Moved a site to another team',
+    actionIdentityLink: 'Connected single sign-on',
+    actionIdentityUnlink: 'Disconnected single sign-on',
     actorKey: 'Key {id}',
     actorAccount: 'Account {id}',
     hidden: 'Hidden',
@@ -1295,6 +1314,8 @@ export const messages = {
     passwordHelp: 'At least 12 characters.',
     passwordShort: 'A password is at least 12 characters.',
     createAndAccept: 'Make the account and accept',
+    oidc: 'Use single sign-on instead',
+    oidcHelp: 'Your organisation signs you in, and no password is kept here.',
     existing: 'An account with this address already exists. Sign in as {email} to accept.',
     currentPassword: 'Password',
     signInAndAccept: 'Sign in and accept',

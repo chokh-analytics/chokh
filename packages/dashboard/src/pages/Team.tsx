@@ -30,6 +30,7 @@ import { Card } from '../ui/Card.js';
 import { Field, SelectField } from '../ui/Field.js';
 import { EmptyState, ErrorState, Skeleton } from '../ui/State.js';
 import { Panel } from './TeamPanel.js';
+import { SignOn } from './SignOn.js';
 import { Teams } from './Teams.js';
 import styles from './Team.module.css';
 
@@ -812,6 +813,11 @@ export function Team(): JSX.Element {
           <Teams />
         </div>
       )}
+      {/* For everybody signed in, also somebody who administers nothing: an
+          account connects itself, whatever its role. */}
+      <div className={page.stack}>
+        <SignOn />
+      </div>
     </div>
   );
 }

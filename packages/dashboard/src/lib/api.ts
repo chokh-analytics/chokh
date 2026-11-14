@@ -792,6 +792,31 @@ export const api = {
       ...(revokeKeys === undefined ? {} : { revokeKeys }),
     }),
 
+  // Single sign-on through an identity provider (AN-TEAM01), part of Chokh
+  // Pro. The first is open to anybody and says one thing, on or off, so the
+  // sign-in page knows whether to draw a button; an install with no paid half
+  // answers 404, which reads as off.
+  oidcStatus: (client: Client): Promise<Answer<{ enabled: boolean }>> => client.get('/api/ee/oidc'),
+
+  // Not a JSON read: the browser navigates to it and is sent to the provider.
+  oidcStartUrl: (client: Client, next: string | null): string =>
+    client.url('/api/ee/oidc/start', next === null ? {} : { next }),
+
+  // Each answers where to send the browser, having left the cookie that will
+  // recognise it coming back.
+  oidcLink: (client: Client): Promise<Answer<{ url: string }>> => client.post('/api/ee/oidc/link'),
+
+  oidcInvite: (client: Client, token: string): Promise<Answer<{ url: string }>> =>
+    client.post('/api/ee/oidc/invite', { token }),
+
+  oidcIdentity: (
+    client: Client,
+  ): Promise<Answer<{ enabled: boolean; connected: boolean; canDisconnect: boolean }>> =>
+    client.get('/api/ee/oidc/identity'),
+
+  oidcDisconnect: (client: Client): Promise<Answer<{ connected: boolean }>> =>
+    client.delete('/api/ee/oidc/identity'),
+
   // One page of a site's audit log or a team's. Opening it (no cursor) is
   // itself written to the log, so nothing calls this on a timer or on focus.
   audit: (

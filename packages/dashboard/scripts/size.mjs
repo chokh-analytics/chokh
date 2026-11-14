@@ -73,7 +73,12 @@ const BUDGETS = [
   // carries, the two links in the site menu, the twelve API calls and the
   // four query hooks, and the first import that takes an invitation's token
   // out of the address bar; the pages themselves are three chunks of their own.
-  { name: 'app', pattern: /^index-.*\.js$/, bytes: 48 * 1024 },
+  // Raised to 49 KB the same day by the commit that spent it, single sign-on
+  // (AN-TEAM01): measured at 49,677 B with more than one team under it, the
+  // forty strings of the two paid cards, the sign-in page's button and the
+  // invitation page's, in the one messages file; the six API calls; and the
+  // sign-in page asking whether to draw the button.
+  { name: 'app', pattern: /^index-.*\.js$/, bytes: 49 * 1024 },
   // The world outlines, downloaded by Realtime and Geo and by nothing else.
   // Measured 2026-09-20 at 39,923 B.
   { name: 'map', pattern: /^map-.*\.js$/, bytes: 44 * 1024 },

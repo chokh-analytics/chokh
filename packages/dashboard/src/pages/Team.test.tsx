@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Invitation, ListedMember } from '../lib/api.js';
+import { navigation } from '../lib/leave.js';
 import { NOW, ok, refused, serve, show, type Call } from './access.test-utils.js';
 import { Team } from './Team.js';
 
@@ -58,6 +59,8 @@ interface World {
   siteInvitations?: Invitation[];
   // What this install may run. No key unless a case says otherwise.
   features?: string[];
+  // Single sign-on: off unless a case says what the account's state is.
+  identity?: { connected: boolean; canDisconnect: boolean };
   // Anything that is not one of the reads.
   write?: (call: Call) => Response | undefined;
 }
@@ -74,6 +77,12 @@ function world(given: World = {}): () => Call[] {
           return ok({ invitations: given.teamInvitations ?? [] });
         case '/api/sites/s_test/invitations':
           return ok({ invitations: given.siteInvitations ?? [] });
+        case '/api/ee/oidc':
+          return ok({ enabled: given.identity !== undefined });
+        case '/api/ee/oidc/identity':
+          return given.identity === undefined
+            ? refused(403, 'LICENSE_REQUIRED')
+            : ok({ enabled: true, ...given.identity });
         case '/api/license':
           return ok({
             licensed: given.features !== undefined,
@@ -108,7 +117,7 @@ afterEach(() => {
 });
 
 describe('who the Team page is for', () => {
-  it('tells somebody without admin who sees it, and asks the server nothing', async () => {
+  it('tells somebody without admin who sees it, and asks the server nothing about who is here', async () => {
     const calls = world();
     render(show(<Team />, { team: 'viewer' }));
     expect(screen.getByText(/Only an owner of this site, or of the team it belongs to/)).toBeInTheDocument();
@@ -116,7 +125,9 @@ describe('who the Team page is for', () => {
     // The way to the other two pages is still there.
     expect(screen.getByRole('navigation', { name: 'About this site' })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(calls()).toEqual([]);
+    // The one thing asked is whether the install has single sign-on, which
+    // is open to anybody and is about their own account.
+    expect(calls().map((call) => call.path)).toEqual(['/api/ee/oidc']);
   });
 
   it('gives an owner of one site that site, and not the team', async () => {
@@ -130,6 +141,7 @@ describe('who the Team page is for', () => {
       'This site only, Progsity',
     ]);
     expect(calls().map((call) => call.path).sort()).toEqual([
+      '/api/ee/oidc',
       '/api/license',
       '/api/sites/s_test/invitations',
       '/api/sites/s_test/members',
@@ -478,7 +490,9 @@ describe('more than one team', () => {
   ];
 
   function paid(calls: Call[]): Call[] {
-    return calls.filter((call) => call.path.startsWith('/api/ee/'));
+    return calls.filter(
+      (call) => call.path.startsWith('/api/ee/teams') || call.path.startsWith('/api/ee/sites'),
+    );
   }
 
   it('is named and described on an install with no key, with nothing in it to fill in', async () => {
@@ -618,5 +632,71 @@ describe('more than one team', () => {
     expect(await within(teams).findByText('The licence key on this install has expired.')).toBeInTheDocument();
     expect(within(teams).getByText('Part of Chokh Pro')).toBeInTheDocument();
     expect(within(teams).queryByRole('textbox')).toBeNull();
+  });
+});
+
+// Single sign-on is part of Chokh Pro, and the Team page is where somebody
+// signed in reads about it (rule 10). With it on, this is where an account
+// connects itself.
+describe('single sign-on', () => {
+  it('is named and described where it is off, with nothing to press, for a viewer too', async () => {
+    world();
+    render(show(<Team />, { team: 'viewer' }));
+    const sso = card('Single sign-on');
+    expect(within(sso).getByText('Part of Chokh Pro')).toBeInTheDocument();
+    expect(within(sso).getByText(/nobody is let in because of an address alone/)).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(sso).queryByRole('button')).toBeNull();
+  });
+
+  it('connects the account that is signed in by sending the browser where the server says', async () => {
+    const calls = world({
+      identity: { connected: false, canDisconnect: false },
+      write: (call) =>
+        call.path === '/api/ee/oidc/link'
+          ? ok({ url: 'https://provider.example/authorize?state=abc' })
+          : undefined,
+    });
+    const left: string[] = [];
+    vi.spyOn(navigation, 'leave').mockImplementation((url) => void left.push(url));
+    render(show(<Team />, { team: 'viewer' }));
+    const sso = card('Single sign-on');
+    expect(await within(sso).findByText('Your account is not connected yet.')).toBeInTheDocument();
+    await userEvent.click(within(sso).getByRole('button', { name: 'Connect my account' }));
+    await waitFor(() => expect(left).toEqual(['https://provider.example/authorize?state=abc']));
+    // A POST with a body, which is what makes it this dashboard's own request.
+    expect(calls().find((call) => call.path === '/api/ee/oidc/link')).toMatchObject({
+      method: 'POST',
+      body: {},
+    });
+  });
+
+  it('disconnects an account that has a password, and not one whose only way in it is', async () => {
+    let connected = true;
+    const calls = world({
+      identity: { connected: true, canDisconnect: true },
+      write: (call) => {
+        if (call.path === '/api/ee/oidc/identity' && call.method === 'DELETE') {
+          connected = false;
+          return ok({ connected: false });
+        }
+        return undefined;
+      },
+    });
+    const first = render(show(<Team />));
+    const sso = card('Single sign-on');
+    expect(await within(sso).findByText(/You can sign in with single sign-on, or with your password/)).toBeInTheDocument();
+    await userEvent.click(within(sso).getByRole('button', { name: 'Disconnect' }));
+    expect(await within(sso).findByRole('status')).toHaveTextContent('Disconnected.');
+    expect(connected).toBe(false);
+    expect(calls().some((call) => call.method === 'DELETE' && call.path === '/api/ee/oidc/identity')).toBe(true);
+    first.unmount();
+
+    vi.unstubAllGlobals();
+    world({ identity: { connected: true, canDisconnect: false } });
+    render(show(<Team />));
+    const only = card('Single sign-on');
+    expect(await within(only).findByText(/It has no password, so it stays connected/)).toBeInTheDocument();
+    expect(within(only).getByRole('button', { name: 'Disconnect' })).toBeDisabled();
   });
 });

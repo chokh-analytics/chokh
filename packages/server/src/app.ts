@@ -29,6 +29,8 @@ import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
 import { createShareCodec } from './services/share.service.js';
 import { createAuditCursorCodec } from './lib/audit-cursor.js';
+import { createSealer } from './lib/seal.js';
+import { limitAttempts } from './plugins/auth.js';
 import { createSessionCodec } from './services/auth.service.js';
 import type { Bus } from './services/bus.js';
 import { createDedupe } from './services/dedupe.js';
@@ -200,16 +202,23 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     ipOptions,
   );
 
+  const authLimit = createWindowCounter(MINUTE_MS);
+  const inviteLimit = createWindowCounter(MINUTE_MS);
   const apiDeps: ApiDeps = {
     store,
     session: createSessionCodec(session.secret, env.SESSION_TTL_HOURS * HOUR_MS),
     bus,
     once,
-    authLimit: createWindowCounter(MINUTE_MS),
+    authLimit,
     shareLimit: createWindowCounter(MINUTE_MS),
-    inviteLimit: createWindowCounter(MINUTE_MS),
+    inviteLimit,
     shareCodec: createShareCodec(session.secret),
     auditCursor: createAuditCursorCodec(session.secret),
+    seal: (purpose) => createSealer(session.secret, purpose),
+    attempts: {
+      signIn: limitAttempts(env.AUTH_RATE_LIMIT, authLimit, ipOptions, now),
+      invitation: limitAttempts(env.AUTH_RATE_LIMIT, inviteLimit, ipOptions, now, 'invite'),
+    },
     limits: { authAttempts: env.AUTH_RATE_LIMIT, shareReads: env.SHARE_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },

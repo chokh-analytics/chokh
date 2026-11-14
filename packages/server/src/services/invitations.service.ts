@@ -335,6 +335,13 @@ export interface AcceptInvitationInput {
   // registration's rule.
   password?: string;
   name?: string;
+  // For an address with no account yet, in place of a password: the outside
+  // identity the new account will sign in by, already proved to whoever is
+  // calling (packages/ee, after an identity provider vouched for it). The
+  // account is made with no password and linked to it. Never used to find an
+  // account: an address that has one is accepted by that account, signed in,
+  // exactly as without this.
+  identity?: { issuer: string; subject: string };
   route: string;
 }
 
@@ -394,8 +401,16 @@ export async function acceptInvitation(
         'That invitation is for another address. Sign out, then open it again',
       );
     }
-    if (input.password === undefined) {
+    if (input.password === undefined && input.identity === undefined) {
       return refuse(400, 'PASSWORD_REQUIRED', 'Choose a password of at least 12 characters');
+    }
+    // Before anything is spent: an identity somebody already signs in by is
+    // theirs, and is not a way to make a second account.
+    if (
+      input.identity !== undefined &&
+      (await store.userByIdentity(input.identity.issuer, input.identity.subject)) !== null
+    ) {
+      return refuse(409, 'IDENTITY_TAKEN', 'Another account already signs in by that identity');
     }
   }
 
@@ -428,6 +443,21 @@ export async function acceptInvitation(
       // invitation is spent and nothing was given; whoever sent it sends
       // another.
       return made;
+    }
+    if (input.identity !== undefined && input.password === undefined) {
+      const linked = await attempt(() =>
+        store.linkIdentity({
+          issuer: input.identity?.issuer ?? '',
+          subject: input.identity?.subject ?? '',
+          userId,
+          linkedAt: deps.now(),
+        }),
+      );
+      if (!linked.ok) {
+        // Two arrivals by one identity at the same instant, and the other
+        // took it. The invitation is spent, like the case above.
+        return linked;
+      }
     }
   }
 

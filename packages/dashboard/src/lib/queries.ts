@@ -660,3 +660,15 @@ export function useAuditLog(
     enabled,
   });
 }
+
+// Whether this install signs people in through an identity provider. Asked by
+// the sign-in page before anybody is signed in, so it is open, and a failure
+// (an install with no paid half answers 404) is simply "no".
+export function useOidc(client: Client) {
+  return useQuery({
+    queryKey: ['oidc'],
+    queryFn: () => api.oidcStatus(client),
+    staleTime: ME_STALE_MS,
+    retry: false,
+  });
+}

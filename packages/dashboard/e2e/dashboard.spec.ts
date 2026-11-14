@@ -1281,6 +1281,11 @@ test.describe.serial('teams, invitations and the audit log', () => {
     await expect(teams.getByRole('textbox')).toHaveCount(0);
     await expect(teams.getByRole('button')).toHaveCount(0);
 
+    // The same for single sign-on: named, labelled, nothing to press.
+    const sso = page.getByRole('region', { name: 'Single sign-on' });
+    await expect(sso.getByText('Part of Chokh Pro', { exact: true })).toBeVisible();
+    await expect(sso.getByRole('button')).toHaveCount(0);
+
     // The form, from the keyboard: an address, and Enter.
     const form = page.getByRole('region', { name: 'Invite somebody' });
     await form.getByLabel('Their email').fill(INVITED);
@@ -1306,6 +1311,11 @@ test.describe.serial('teams, invitations and the audit log', () => {
     // The person it was sent to, in a browser of their own with nothing in it.
     const context = await browser.newContext(NOBODY);
     const guest = await context.newPage();
+    // The sign-in page of an install that has no single sign-on says nothing
+    // about it: a sign-in page is read by strangers.
+    await guest.goto('/login');
+    await expect(guest.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    await expect(guest.getByRole('link', { name: 'Sign in with single sign-on' })).toHaveCount(0);
     const asked: { url: string; body: string | null }[] = [];
     guest.on('request', (request) => asked.push({ url: request.url(), body: request.postData() }));
     await guest.goto(link);
