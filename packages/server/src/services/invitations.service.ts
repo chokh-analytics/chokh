@@ -12,7 +12,7 @@ import {
   type Role,
   type StoredUser,
 } from '../store/AnalyticsStore.js';
-import { recordAccessChange } from './audit.service.js';
+import { recordAccessChange, type AccessAction } from './audit.service.js';
 import { hashPassword } from './auth.service.js';
 import {
   changeSiteMembership,
@@ -432,7 +432,7 @@ export async function acceptInvitation(
   }
 
   const actor: AuditRecord['actor'] = { kind: 'session', id: userId, email: invitation.email };
-  const cause = { action: 'invite:accept', note: `invitation ${invitation.id}` };
+  const cause = { action: 'invite:accept' as const, note: `invitation ${invitation.id}` };
   const to = { role: invitation.role, identity: invitation.identity };
   const joined =
     invitation.scope.kind === 'team'
@@ -471,7 +471,7 @@ async function acceptOnSite(
   to: { role: Role; identity: boolean },
   actor: AuditRecord['actor'],
   route: string,
-  cause: { action: string; note: string },
+  cause: { action: AccessAction; note: string },
 ): Promise<InvitationOutcome<object>> {
   const site = await deps.store.site(siteId);
   if (site === null) {

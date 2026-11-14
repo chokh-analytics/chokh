@@ -72,6 +72,10 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   UNSUPPORTED_GOAL: 400,
   INVALID_FUNNEL: 400,
   INVALID_INVITATION: 400,
+  // A page of the audit log asked for in a way the store does not answer, or
+  // carried on from a cursor its adapter did not write.
+  INVALID_AUDIT_QUERY: 400,
+  INVALID_CURSOR: 400,
   INVALID_BRANCHES: 400,
 };
 

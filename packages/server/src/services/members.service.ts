@@ -15,7 +15,7 @@ import type {
   TeamMember,
   TeamMemberChange,
 } from '../store/AnalyticsStore.js';
-import { recordAccessChange } from './audit.service.js';
+import { recordAccessChange, type AccessAction } from './audit.service.js';
 
 // Changing who may reach a team or a site (AN-TEAM01).
 //
@@ -207,7 +207,7 @@ interface Follow {
   userId: string;
   actor: AuditRecord['actor'];
   scope: AccessScope;
-  action: string;
+  action: AccessAction;
   route: string;
   lowered: boolean;
   keys: KeySummary[];
@@ -275,7 +275,7 @@ async function follow(input: Follow): Promise<MembershipChange> {
 // an invitation being used. The audit row then says so instead of saying a
 // member was set.
 export interface ChangeCause {
-  action: string;
+  action: AccessAction;
   // Said in the row beside what changed: which invitation, never its token.
   note: string;
 }

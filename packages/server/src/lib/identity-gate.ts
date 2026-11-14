@@ -1,5 +1,6 @@
 import type {
   Attributes,
+  AuditEntry,
   RealtimeSnapshot,
   RealtimeVisitor,
   UserProfile,
@@ -87,4 +88,51 @@ export function identityFieldsOfUser(profile: UserProfile): string[] {
   if (profile.ips.length > 0) found.add('ips');
   if (profile.traits !== undefined) found.add('traits');
   return [...found].sort();
+}
+
+// A page of the audit log (AN-TEAM01), and the accounts its rows name.
+//
+// The log is a record of who looked at whom and who was let in, so it is made
+// of exactly what this gate exists for. Three things in it say who somebody
+// is:
+//
+// - a row's target: the visitor or the userId a read was about, what somebody
+//   searched the directory for, the address an invitation was sent to, the
+//   account a role was given to;
+// - the address in a row's actor, kept from the moment it was written;
+// - the accounts the page resolves ids to, each an address and a name.
+//
+// Without read:identity all three are taken out, of every row, whatever the
+// row's action: there is no kind of row whose target is let through. What is
+// left is still a log: when, what was done, by which account or key (its id),
+// through which route, and what changed.
+export interface AuditAccount {
+  email: string;
+  name?: string;
+}
+
+export interface AuditRows {
+  rows: AuditEntry[];
+  // By account id.
+  accounts: Record<string, AuditAccount>;
+}
+
+export function gateAuditPage(page: AuditRows, allowed: boolean): Gated<AuditRows> {
+  if (allowed) {
+    const found = new Set<string>();
+    for (const row of page.rows) {
+      if (row.target !== undefined) found.add('target');
+      if (row.actor.email !== undefined) found.add('email');
+    }
+    for (const account of Object.values(page.accounts)) {
+      found.add('email');
+      if (account.name !== undefined) found.add('name');
+    }
+    return { value: page, fields: [...found].sort() };
+  }
+  const rows = page.rows.map((row): AuditEntry => {
+    const { target: _target, ...rest } = row;
+    return { ...rest, actor: { kind: row.actor.kind, id: row.actor.id } };
+  });
+  return { value: { rows, accounts: {} }, fields: [] };
 }

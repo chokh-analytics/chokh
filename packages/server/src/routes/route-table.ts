@@ -123,6 +123,8 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   rule('GET', '/api/teams/:teamId/invitations', teamOwner),
   rule('POST', '/api/teams/:teamId/invitations', teamOwner),
   rule('DELETE', '/api/teams/:teamId/invitations/:invitationId', teamOwner),
+  // The team's log. Read only: no row under this path is anything but a GET.
+  rule('GET', '/api/teams/:teamId/audit', teamOwner),
 
   // What somebody holding an invitation link uses: no session, the token in
   // the body, limited by address.
@@ -151,6 +153,8 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   rule('GET', `${SITE}/invitations`, adminPerson),
   rule('POST', `${SITE}/invitations`, adminPerson),
   rule('DELETE', `${SITE}/invitations/:invitationId`, adminPerson),
+  // The site's log: admin, a person or a key. Read only, like the team's.
+  rule('GET', `${SITE}/audit`, admin),
 
   // The public share: the owner's two routes, then the reader's.
   rule('PUT', `${SITE}/share`, admin),

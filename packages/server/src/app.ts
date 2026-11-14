@@ -28,6 +28,7 @@ import { registerApiRoutes } from './routes/api.routes.js';
 import { registerCollectRoutes } from './routes/collect.routes.js';
 import { registerHealthRoutes } from './routes/health.routes.js';
 import { createShareCodec } from './services/share.service.js';
+import { createAuditCursorCodec } from './lib/audit-cursor.js';
 import { createSessionCodec } from './services/auth.service.js';
 import type { Bus } from './services/bus.js';
 import { createDedupe } from './services/dedupe.js';
@@ -208,6 +209,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     shareLimit: createWindowCounter(MINUTE_MS),
     inviteLimit: createWindowCounter(MINUTE_MS),
     shareCodec: createShareCodec(session.secret),
+    auditCursor: createAuditCursorCodec(session.secret),
     limits: { authAttempts: env.AUTH_RATE_LIMIT, shareReads: env.SHARE_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },

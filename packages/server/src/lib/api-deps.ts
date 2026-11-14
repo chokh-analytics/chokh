@@ -4,6 +4,7 @@ import type { OnceOnly } from '../services/once.js';
 import type { SessionCodec } from '../services/auth.service.js';
 import type { ShareCodec } from '../services/share.service.js';
 import type { AccountStore, AnalyticsStore } from '../store/AnalyticsStore.js';
+import type { AuditCursorCodec } from './audit-cursor.js';
 import type { WindowCounter } from './window-counter.js';
 
 // Everything the API routes are handed, in one place, so app.ts builds it once
@@ -24,6 +25,9 @@ export interface ApiDeps {
   // counter of their own so a sign-in and an invitation do not share a limit.
   inviteLimit: WindowCounter;
   shareCodec: ShareCodec;
+  // Signs the audit log's cursor, so a page is only ever carried on from a
+  // listing whose opening was recorded.
+  auditCursor: AuditCursorCodec;
   limits: { authAttempts: number; shareReads: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };

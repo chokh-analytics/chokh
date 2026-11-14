@@ -17,6 +17,10 @@ import {
   createRevokeTeamInvitationController,
 } from '../controllers/invitations.controller.js';
 import {
+  createSiteAuditController,
+  createTeamAuditController,
+} from '../controllers/audit.controller.js';
+import {
   createListSiteMembersController,
   createListTeamMembersController,
   createRemoveSiteMemberController,
@@ -185,6 +189,10 @@ export async function registerApiRoutes(
     createRemoveTeamMemberController(deps),
   );
   app.patch('/api/teams/:teamId', { preHandler: signedIn }, createRenameTeamController(deps));
+  // The team's own log (AN-TEAM01): who was let in, lowered or removed, and
+  // what was sent. Read by a person who owns the team. A read, and the only
+  // route the team's log has.
+  app.get('/api/teams/:teamId/audit', { preHandler: signedIn }, createTeamAuditController(deps));
 
   // Invitations to a team (AN-TEAM01): sent, listed and taken back by a
   // person who owns it, the same check the member routes make.
@@ -254,6 +262,14 @@ export async function registerApiRoutes(
     { preHandler: [scope('admin'), requirePerson()] },
     createRemoveSiteMemberController(deps),
   );
+
+  // The site's log (AN-TEAM01): who read which person's address, name or
+  // traits and when, and who was let in to the site. admin, and a key may hold
+  // it: reading the log decides nothing about who gets in, and a backend that
+  // keeps its own record of who looked at whom needs to read this one. What a
+  // caller sees of each row is the identity gate's, and opening the log is
+  // itself a row. A read, and the only route the site's log has.
+  app.get('/api/sites/:siteId/audit', { preHandler: scope('admin') }, createSiteAuditController(deps));
 
   // Invitations to one site: the same two things, admin and a person.
   app.get(

@@ -168,6 +168,8 @@ success envelope. A failure on either is the ordinary envelope.
 | `POST /api/invitations/accept` | the token, in the body | Use it, once: a new account with a password of its own, or the account that already has the address, signed in |
 | `GET /api/sites/:siteId/members` | `admin`, a person | The roles held on this one site |
 | `PUT`/`DELETE /api/sites/:siteId/members/:userId` | `admin`, a person | Give, change or take away a role on this one site |
+| `GET /api/sites/:siteId/audit` | `admin`, a person or a key | The site's log, newest first. Opening it is itself a row; who a row is about needs `read:identity` as well |
+| `GET /api/teams/:teamId/audit` | owner of the team, a person | The team's log: its members and the invitations to it |
 | `GET /api/sites/:siteId/stats/aggregate` | `read:stats` | Totals for a range |
 | `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=minute\|hour\|day\|week\|month` |
 | `GET /api/sites/:siteId/stats/breakdown` | `read:stats` | `dim=page\|referrer\|country\|…` |
@@ -783,6 +785,80 @@ The log has no TTL, because "who looked at this person" is asked months later.
   wants to find.
 - A read that revealed nothing personal writes nothing. A snapshot of anonymous
   visitors names nobody.
+
+### Reading the audit log
+
+Two logs, because two audiences were promised different things, and a row is in
+one and never both:
+
+| Route | What it holds | Who reads it |
+| --- | --- | --- |
+| `GET /api/sites/:siteId/audit` | Every read of an address, a name or a trait on that site, and every change to who may reach the site | `admin` on that site, a person or a key |
+| `GET /api/teams/:teamId/audit` | Every change to who is in the team, and every invitation to it | A person who owns that team |
+
+These two `GET`s are all there is. No route changes a row or removes one, and
+the store's contract has no method that could. The log is kept for ever.
+
+A page is newest first, 50 rows unless `limit` says otherwise, 200 at most:
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "id": "8841",
+        "siteId": "s_shop",
+        "ts": 1789732800000,
+        "actor": { "kind": "session", "id": "u_7c1f", "email": "owner@example.com" },
+        "action": "read:identity",
+        "kind": "identity",
+        "route": "GET /api/sites/:siteId/visitors/:visitorId",
+        "target": "v_3f9a",
+        "fields": ["ips", "userId"]
+      }
+    ],
+    "accounts": { "u_7c1f": { "email": "owner@example.com", "name": "Ada" } },
+    "next": "WzE3ODk3MzI4MDAwMDAsIjg4NDEiLDE3ODk3MzI5MDAwMDBd.3k…"
+  },
+  "meta": { "identity": true, "limit": 50 }
+}
+```
+
+`kind` is one of `identity` (somebody read who a visitor is), `access`
+(`member:set`, `member:remove`, `member:refused`, `invite:create`,
+`invite:revoke`, `invite:accept`), `log` (somebody opened this log) and `other`
+(an action this version does not know). `accounts` is who the ids on the page
+are now, looked up once for the page: whoever acted, and whoever a change of
+access was made to. The target of a read is a visitor of the site and is never
+looked up among accounts.
+
+Filters, all optional and all combined: `from` and `to` (milliseconds, from an
+instant up to and not including another), `actor` (the id of the account or the
+key), `kind`, and `target` (exactly this visitor, user, account or address:
+"who looked at this person" is the question the log is for).
+
+**Opening the log is itself recorded.** A read with no `cursor` writes one
+`read:audit` row, with who opened it, through which route, the target when one
+was asked for, and what the page carried. A later page of the same listing
+writes none, the way a stream is one row for the act. So that there is no way
+to read the log that does not begin with a recorded opening, `next` is signed
+and is good for one thing only: carrying on the listing it came from, for the
+caller who opened it, with the same filters, for an hour from the opening.
+Anything else is `400 INVALID_CURSOR`, and after the hour `400 CURSOR_EXPIRED`:
+open the log again. A client should therefore not reload the first page on a
+timer or on focus; each reload is a row.
+
+**The log is behind the identity gate.** A caller with `admin` and without
+`read:identity` (in practice a key: a person with `admin` is an owner, and an
+owner holds both) reads every row with who it is about taken out: no `target`
+on any row whatever its action, no address in `actor`, and `accounts` empty.
+What is left is still a log: when, what, by which account or key, through
+which route, what changed. Asking by `target` without the scope is
+`403 SCOPE_REQUIRED`. `meta.identity` says which of the two the answer is.
+
+No token, hash or password is in any row, because none is ever written to one:
+an invitation is named by its id and a key by its id and name.
 
 ### The realtime stream
 

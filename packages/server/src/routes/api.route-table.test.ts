@@ -285,6 +285,47 @@ describe('the route table', () => {
     const noHook = await walk([{ method: 'GET', url: '/health', needs: { kind: 'principal' } }]);
     expect(noHook).toContain('GET /health as nobody: should be refused 401 UNAUTHENTICATED, answered 200');
   }, 60_000);
+
+  // The audit log is read and never written to from outside: its rows come
+  // from the acts themselves. The store has no method that changes or removes
+  // one, and this is the other half: no route under either log's path is
+  // anything but the one GET.
+  it('gives the audit log two reads and nothing that writes', async () => {
+    const underTheLog = (url: string) => /\/audit(\/|$)/.test(url);
+    // HEAD is the framework's own shadow of each GET, and reads.
+    const real = (route: { method: string }) => route.method.toUpperCase() !== 'HEAD';
+    expect(
+      registered
+        .filter((route) => underTheLog(route.url) && real(route))
+        .map(routeKey)
+        .sort(),
+    ).toEqual([
+      'GET /api/sites/:siteId/audit',
+      'GET /api/teams/:teamId/audit',
+    ]);
+    expect(CORE_ROUTES.filter((rule) => underTheLog(rule.url)).map((rule) => rule.method)).toEqual([
+      'GET',
+      'GET',
+    ]);
+    for (const url of [`/api/sites/${SITE_ID}/audit`, `/api/teams/${TEAM_ID}/audit`]) {
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+        const response = await harness.app.inject({
+          method,
+          url,
+          headers: { cookie: harness.owner.cookie, 'content-type': 'application/json' },
+          payload: '{}',
+        });
+        expect(response.statusCode).toBe(404);
+      }
+      // Nor one row at a time.
+      const one = await harness.app.inject({
+        method: 'DELETE',
+        url: `${url}/1`,
+        headers: { cookie: harness.owner.cookie },
+      });
+      expect(one.statusCode).toBe(404);
+    }
+  });
 });
 
 // A change made with a session has to come from this dashboard (AN-TEAM01,
