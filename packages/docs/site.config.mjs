@@ -25,6 +25,7 @@ export const site = {
     { section: 'Start here', pages: ['index', 'quickstart'] },
     { section: 'Guides', pages: ['nextjs', 'server-events', 'first-party'] },
     { section: 'Running it', pages: ['self-hosting', 'environment'] },
+    { section: 'Reference', pages: ['api'] },
     { section: 'The project', pages: ['licence'] },
   ],
 };

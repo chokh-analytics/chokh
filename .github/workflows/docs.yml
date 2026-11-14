@@ -56,7 +56,11 @@ jobs:
       # packages it uses: a renamed option fails this, not a reader.
       - run: pnpm --filter @chokh/docs site:examples
 
-      # The pages generated from the code are what the code says today.
+      # The pages generated from the code are what the code says today. The
+      # API reference is generated from the server's and packages/ee's route
+      # tables and their answers, so those are built first.
+      - run: pnpm --filter "@chokh/ee..." build
+
       - run: pnpm --filter @chokh/docs site:generate --check
 
       - run: pnpm --filter @chokh/docs site

@@ -94,13 +94,13 @@ const flowSchema = z.object({
   next: z.string().optional(),
 });
 
-const callbackSchema = z.object({
+export const callbackSchema = z.object({
   code: z.string().min(1).max(2048).optional(),
   state: z.string().min(1).max(512).optional(),
   error: z.string().max(200).optional(),
 });
 
-const inviteSchema = z.object({ token: z.string().min(20).max(200) });
+export const inviteSchema = z.object({ token: z.string().min(20).max(200) });
 
 export interface OidcRouteDeps {
   // Null when the install is not configured for it.

@@ -4,7 +4,7 @@
 //
 //   pnpm --filter @chokh/docs site            # served under /chokh/
 //   DOCS_BASE=/ pnpm --filter @chokh/docs site
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -151,6 +151,9 @@ for (const page of pages) {
   }
 }
 writeFileSync(join(DIST, 'search-index.json'), JSON.stringify(search));
+
+// The OpenAPI file the API reference page links to, as generated.
+copyFileSync(join(GENERATED, 'openapi.json'), join(DIST, 'openapi.json'));
 
 writeFileSync(
   join(DIST, 'favicon.svg'),

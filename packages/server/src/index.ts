@@ -59,4 +59,6 @@ export {
   type RouteRule,
   type RouteWalk,
 } from './routes/route-table.js';
+// What the API reference says about each route, held to the table above.
+export { CORE_ROUTE_DOCS, type RouteDoc, type RouteDocGroup } from './routes/route-docs.js';
 export type { AuthDeps } from './services/auth.service.js';

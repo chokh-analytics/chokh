@@ -55,7 +55,17 @@ ${table(paid)}
 `;
 }
 
-const PAGES = { 'environment.md': environmentPage };
+// The API reference records the real server's answers first, once, for both
+// the page and the OpenAPI file.
+const { recordExamples } = await import('./api-reference.mjs');
+const { apiPage, openApi } = await import('./api-page.mjs');
+const examples = await recordExamples();
+
+const PAGES = {
+  'environment.md': environmentPage,
+  'api.md': () => apiPage(examples),
+  'openapi.json': () => `${JSON.stringify(openApi(examples), null, 2)}\n`,
+};
 
 let stale = 0;
 mkdirSync(GENERATED, { recursive: true });

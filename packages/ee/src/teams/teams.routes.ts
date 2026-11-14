@@ -42,9 +42,9 @@ const CREATE_ROUTE = 'POST /api/ee/teams';
 const DELETE_ROUTE = 'DELETE /api/ee/teams/:teamId';
 const MOVE_ROUTE = 'PUT /api/ee/sites/:siteId/team';
 
-const createTeamSchema = z.object({ name: z.string().trim().min(1).max(120) });
+export const createTeamSchema = z.object({ name: z.string().trim().min(1).max(120) });
 
-const moveSiteSchema = z.object({
+export const moveSiteSchema = z.object({
   teamId: z.string().min(1).max(64),
   // The answer to the question a move asks when somebody made keys on the
   // site and will not hold admin on it afterwards. Left out, it is asked.
