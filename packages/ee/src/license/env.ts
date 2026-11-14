@@ -97,13 +97,14 @@ export function readDeliveryEnv(source: NodeJS.ProcessEnv = process.env): Delive
 // Read here and nowhere else. The client secret goes from the environment to
 // the one request that exchanges a code, and is never stored, logged, shown
 // or handed to the dashboard.
+// Kept exactly as it is written, slash at the end or not. An issuer is a name
+// that is compared, character for character, with what the provider says in
+// its discovery document and in every token, and some providers' names end
+// in a slash (Auth0's does). Tidying it here would make such a provider one
+// this install could never use.
 const oidcIssuer = z.preprocess(
   (value) => (value === '' ? undefined : value),
-  z
-    .string()
-    .url()
-    .transform((value) => value.replace(/\/+$/, ''))
-    .optional(),
+  z.string().url().optional(),
 );
 
 export interface OidcEnv {

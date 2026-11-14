@@ -14,6 +14,8 @@ import {
   type Harness,
 } from './api.test-utils.js';
 import { AUDIT_LISTING_MS } from '../lib/audit-cursor.js';
+import { signHs256 } from '../lib/jwt.js';
+import { ssoClaimsFor } from '../services/sso.service.js';
 import type {
   AccessScope,
   AuditEntry,
@@ -601,6 +603,73 @@ describe('read without read:identity', () => {
       [INVITED, USER, USER, VISITOR, viewer.userId].sort(),
     );
     expect(body.data?.rows[0]?.actor.email).toBe(OWNER_EMAIL);
+  });
+
+  // The id of whoever acted is this install's own for an account made here,
+  // and says nothing. For an account another application signs in it is that
+  // application's name for the person, and here that name is an address.
+  it('puts a stand-in where whoever acted is somebody another application signs in, and is not asked about one', async () => {
+    const sub = 'ada.lovelace@corp.example';
+    harness.setNow(harness.now() + MINUTE);
+    const arrived = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${signHs256(
+        'test-sso-secret-not-a-real-key-000000',
+        ssoClaimsFor({
+          sub,
+          email: 'ada@mail.corp.example',
+          teamId: TEAM_ID,
+          role: 'viewer',
+          identity: true,
+          now: harness.now(),
+          lifetimeSeconds: 300,
+        }),
+      )}`,
+    });
+    expect(arrived.statusCode).toBe(303);
+    const theirs = { cookie: `${arrived.cookies[0]?.name}=${arrived.cookies[0]?.value}` };
+    // They look at a visitor and at a named person: two rows by one account.
+    const site = `/api/sites/${SITE_ID}`;
+    expect((await read(`${site}/visitors/${VISITOR}`, theirs)).statusCode).toBe(200);
+    expect((await read(`${site}/users/${USER}`, theirs)).statusCode).toBe(200);
+    harness.setNow(harness.now() + MINUTE);
+
+    // What there is to hide: the owner sees the id as it is.
+    const whole = await page(`${SITE_LOG}?actor=${encodeURIComponent(`sso_${sub}`)}`);
+    expect(whole.rows.map((row) => row.actor.id)).toEqual([`sso_${sub}`, `sso_${sub}`]);
+
+    const authorization = await harness.key(['admin']);
+    const response = await read(`${SITE_LOG}?to=${harness.now()}`, { authorization });
+    expect(response.statusCode).toBe(200);
+    for (const personal of [sub, 'corp.example', 'ada.lovelace', 'ada@mail']) {
+      expect(response.body).not.toContain(personal);
+    }
+    const rows = envelope<Page>(response.body).data?.rows ?? [];
+    const standIns = rows.map((row) => row.actor.id).filter((id) => id.startsWith('sso~'));
+    // Both rows, and the same stand-in on both: still one somebody.
+    expect(standIns).toHaveLength(2);
+    expect(new Set(standIns).size).toBe(1);
+    expect(standIns[0]).toMatch(/^sso~[A-Za-z0-9_-]{22}$/);
+    // The owner's id, which this install made, is as it was.
+    expect(rows.some((row) => row.actor.id === harness.owner.userId)).toBe(true);
+    // The same account is the same stand-in on another read, and another page.
+    const again = await read(`${SITE_LOG}?to=${harness.now()}&limit=1`, { authorization });
+    const second = await read(`${SITE_LOG}?to=${harness.now() + 1}`, { authorization });
+    expect(envelope<Page>(again.body).data?.rows[0]?.actor.id).toBe(standIns[0]);
+    expect(second.body).toContain(standIns[0]);
+
+    // Asking the log about that account names a person: refused before the
+    // store is asked, and not recorded as an opening.
+    const opened = (await stored(SITE_SCOPE, 'read:audit')).length;
+    const asked = await read(`${SITE_LOG}?actor=${encodeURIComponent(`sso_${sub}`)}`, { authorization });
+    expectFailure(asked, 403, 'SCOPE_REQUIRED');
+    expect(await stored(SITE_SCOPE, 'read:audit')).toHaveLength(opened);
+    // An account this install made, and a key, can be asked about.
+    expect((await read(`${SITE_LOG}?actor=${harness.owner.userId}`, { authorization })).statusCode).toBe(200);
+    // And with the scope, so can that one.
+    const both = await harness.key(['admin', 'read:identity']);
+    const seen = await read(`${SITE_LOG}?actor=${encodeURIComponent(`sso_${sub}`)}`, { authorization: both });
+    expect(envelope<Page>(seen.body).data?.rows).toHaveLength(2);
   });
 
   it('holds nothing an invitation link is made of, for any reader', async () => {

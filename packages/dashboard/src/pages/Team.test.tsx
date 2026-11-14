@@ -61,6 +61,9 @@ interface World {
   features?: string[];
   // Single sign-on: off unless a case says what the account's state is.
   identity?: { connected: boolean; canDisconnect: boolean };
+  // The feature off, and the account connected all the same (a key that
+  // lapsed after it connected).
+  lapsed?: { connected: boolean; canDisconnect: boolean };
   // Anything that is not one of the reads.
   write?: (call: Call) => Response | undefined;
 }
@@ -80,9 +83,10 @@ function world(given: World = {}): () => Call[] {
         case '/api/ee/oidc':
           return ok({ enabled: given.identity !== undefined });
         case '/api/ee/oidc/identity':
-          return given.identity === undefined
-            ? refused(403, 'LICENSE_REQUIRED')
-            : ok({ enabled: true, ...given.identity });
+          if (given.identity !== undefined) return ok({ enabled: true, ...given.identity });
+          // Asked with or without a key: reading one's own connection is not
+          // the paid thing. An install with no paid half answers 404.
+          return given.lapsed === undefined ? undefined : ok({ enabled: false, ...given.lapsed });
         case '/api/license':
           return ok({
             licensed: given.features !== undefined,
@@ -125,9 +129,9 @@ describe('who the Team page is for', () => {
     // The way to the other two pages is still there.
     expect(screen.getByRole('navigation', { name: 'About this site' })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    // The one thing asked is whether the install has single sign-on, which
-    // is open to anybody and is about their own account.
-    expect(calls().map((call) => call.path)).toEqual(['/api/ee/oidc']);
+    // What is asked is about their own account and nobody else: whether the
+    // install has single sign-on, and whether this account is connected.
+    expect(calls().map((call) => call.path).sort()).toEqual(['/api/ee/oidc', '/api/ee/oidc/identity']);
   });
 
   it('gives an owner of one site that site, and not the team', async () => {
@@ -142,6 +146,7 @@ describe('who the Team page is for', () => {
     ]);
     expect(calls().map((call) => call.path).sort()).toEqual([
       '/api/ee/oidc',
+      '/api/ee/oidc/identity',
       '/api/license',
       '/api/sites/s_test/invitations',
       '/api/sites/s_test/members',
@@ -643,10 +648,38 @@ describe('single sign-on', () => {
     world();
     render(show(<Team />, { team: 'viewer' }));
     const sso = card('Single sign-on');
-    expect(within(sso).getByText('Part of Chokh Pro')).toBeInTheDocument();
+    expect(await within(sso).findByText('Part of Chokh Pro')).toBeInTheDocument();
     expect(within(sso).getByText(/nobody is let in because of an address alone/)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(within(sso).queryByRole('button')).toBeNull();
+  });
+
+  // A key that lapsed takes nothing away, and that includes being able to
+  // shut a door: with the feature off, an account that is connected is told
+  // so and can disconnect, under the labelled feature.
+  it('offers a connected account the way out where the feature is off', async () => {
+    let disconnected = false;
+    world({
+      lapsed: { connected: true, canDisconnect: true },
+      write: (call) => {
+        if (call.path === '/api/ee/oidc/identity' && call.method === 'DELETE') {
+          disconnected = true;
+          return ok({ connected: false });
+        }
+        return undefined;
+      },
+    });
+    render(show(<Team />, { team: 'viewer' }));
+    const sso = card('Single sign-on');
+    expect(await within(sso).findByText('Part of Chokh Pro')).toBeInTheDocument();
+    expect(
+      await within(sso).findByText(/You can sign in with single sign-on, or with your password/),
+    ).toBeInTheDocument();
+    // Nothing to connect with: that is the paid thing.
+    expect(within(sso).queryByRole('button', { name: 'Connect my account' })).toBeNull();
+    await userEvent.click(within(sso).getByRole('button', { name: 'Disconnect' }));
+    expect(await within(sso).findByRole('status')).toHaveTextContent('Disconnected.');
+    expect(disconnected).toBe(true);
   });
 
   it('connects the account that is signed in by sending the browser where the server says', async () => {

@@ -14,6 +14,9 @@ export default defineConfig({
     globalSetup: ['../../scripts/fresh-dist.mjs'],
     env: {
       LOG_LEVEL: 'silent',
+      // Invented, for the one case that needs an account another application
+      // signs in. Never a real key.
+      SSO_SECRET: 'test-sso-secret-not-a-real-key-000000',
     },
   },
 });

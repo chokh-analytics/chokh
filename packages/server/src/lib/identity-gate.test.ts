@@ -232,8 +232,12 @@ describe('gateAuditPage', () => {
   ];
   const accounts = { u_1: { email: 'owner@test.example', name: 'Owner' } };
 
+  // An id this install made says nothing about anybody; one another
+  // application chose may.
+  const standIn = (id: string): string => (id.startsWith('sso_') ? 'sso~stand-in' : id);
+
   it('leaves the page whole for a caller who may see it, and says what it carried', () => {
-    const gated = gateAuditPage({ rows, accounts }, true);
+    const gated = gateAuditPage({ rows, accounts }, true, standIn);
     expect(gated.value).toEqual({ rows, accounts });
     expect(gated.fields).toEqual(['email', 'name', 'target']);
   });
@@ -243,11 +247,11 @@ describe('gateAuditPage', () => {
       ...row,
       actor: { kind: row.actor.kind, id: row.actor.id },
     }));
-    expect(gateAuditPage({ rows: bare, accounts: {} }, true).fields).toEqual([]);
+    expect(gateAuditPage({ rows: bare, accounts: {} }, true, standIn).fields).toEqual([]);
   });
 
   it('takes out every target, every address and every account without the scope', () => {
-    const gated = gateAuditPage({ rows, accounts }, false);
+    const gated = gateAuditPage({ rows, accounts }, false, standIn);
     expect(gated.fields).toEqual([]);
     expect(gated.value.accounts).toEqual({});
     expect(gated.value.rows).toEqual([
@@ -272,5 +276,29 @@ describe('gateAuditPage', () => {
     ]);
     // The rows it was given are not changed under the caller.
     expect(rows[0]?.target).toBe('ada@test.example');
+  });
+
+  it('puts a stand-in where the id of whoever acted is another application name for them', () => {
+    const managed: AuditEntry = {
+      id: '3',
+      siteId: 's_test',
+      ts: NOW,
+      actor: { kind: 'session', id: 'sso_ada@corp.example', email: 'ada@corp.example' },
+      action: 'read:identity',
+      route: 'GET /api/sites/:siteId/visitors/:visitorId',
+      target: 'v_1',
+      fields: ['ips'],
+    };
+    const hidden = gateAuditPage({ rows: [managed, ...rows], accounts }, false, standIn);
+    expect(hidden.value.rows.map((row) => row.actor)).toEqual([
+      { kind: 'session', id: 'sso~stand-in' },
+      { kind: 'session', id: 'u_1' },
+      { kind: 'key', id: 'k_1' },
+    ]);
+    expect(JSON.stringify(hidden.value)).not.toContain('corp.example');
+    // A caller who may see it sees the id as it is.
+    expect(gateAuditPage({ rows: [managed], accounts }, true, standIn).value.rows[0]?.actor.id).toBe(
+      'sso_ada@corp.example',
+    );
   });
 });

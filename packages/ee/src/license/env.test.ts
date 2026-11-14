@@ -66,10 +66,15 @@ describe('readOidcEnv', () => {
     CHOKH_PUBLIC_URL: 'https://analytics.example.test/',
   };
 
-  it('reads all four, with the slash off the end of both addresses', () => {
+  // The issuer is a name that is compared character for character with what
+  // the provider says of itself, and some providers' names end in a slash.
+  it('reads all four, the issuer exactly as it is written and the public address without its slash', () => {
+    expect(readOidcEnv({ ...ALL, CHOKH_OIDC_ISSUER: 'https://id.example.test' })).toMatchObject({
+      config: { issuer: 'https://id.example.test' },
+    });
     expect(readOidcEnv(ALL)).toEqual({
       config: {
-        issuer: 'https://id.example.test',
+        issuer: 'https://id.example.test/',
         clientId: 'a-client',
         clientSecret: 'an-invented-secret-for-a-test',
         publicUrl: 'https://analytics.example.test',

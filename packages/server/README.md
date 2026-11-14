@@ -857,6 +857,16 @@ What is left is still a log: when, what, by which account or key, through
 which route, what changed. Asking by `target` without the scope is
 `403 SCOPE_REQUIRED`. `meta.identity` says which of the two the answer is.
 
+One id in a row can itself say who somebody is: the `actor.id` of an account
+another application signs in, which is `sso_` and that application's own name
+for the person (nothing stops an install using an address there). For a caller
+without `read:identity` it is replaced by a stand-in, `sso~` and 22 characters:
+keyed, so it cannot be turned back or checked against a guess without the
+server's secret, and the same for the same account on every row and every
+page, so the log still says two rows were the same somebody. An id this
+install made (`u_`, a key's) says nothing and stays. Asking by `actor` naming
+an `sso_` account is asking about a named person and needs the scope too.
+
 No token, hash or password is in any row, because none is ever written to one:
 an invitation is named by its id and a key by its id and name.
 
@@ -961,6 +971,10 @@ gets a row. When an arrival lowers somebody, the sessions they had are ended
 before the new one is made. It cannot ask about the keys they made, so it
 keeps them and the row names them. Whoever holds `SSO_SECRET` can make an
 owner of any team, by design: treat it as the install's root credential.
+
+A token names one team, and the exchange adds a place in the team it names and
+never takes one away: somebody who arrives with a token for a second team is
+in both from then on, until an owner removes them from the first.
 
 ### There is no CORS
 

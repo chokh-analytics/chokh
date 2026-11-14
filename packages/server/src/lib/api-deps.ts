@@ -4,7 +4,7 @@ import type { OnceOnly } from '../services/once.js';
 import type { SessionCodec } from '../services/auth.service.js';
 import type { ShareCodec } from '../services/share.service.js';
 import type { AccountStore, AnalyticsStore } from '../store/AnalyticsStore.js';
-import type { preHandlerHookHandler } from 'fastify';
+import type { FastifyRequest, preHandlerHookHandler } from 'fastify';
 
 import type { AuditCursorCodec } from './audit-cursor.js';
 import type { Sealer } from './seal.js';
@@ -35,10 +35,25 @@ export interface ApiDeps {
   // browser carries for a few minutes and can neither read nor change. For an
   // extension that sends a browser away and has to recognise it coming back.
   seal(purpose: string): Sealer;
-  // The limits by address as hooks, on the counters the core's own routes
-  // use: signing in by any route counts against one count, and so does using
-  // an invitation by any route.
-  attempts: { signIn: preHandlerHookHandler; invitation: preHandlerHookHandler };
+  // Limits by address, for an extension.
+  //
+  // `invitation` is the hook the core's own invitation routes use, on their
+  // counter: using an invitation by any route counts against one count.
+  //
+  // `count` is a count of the extension's own, taken when the extension
+  // chooses and not before: one more for this request's address in the named
+  // bucket, and whether that is still within the limit. Never the password
+  // route's counter. A route that any page can make a browser request must
+  // not be able to use up the attempts somebody has left to sign in with
+  // their password, so there is no way to count against those from here.
+  attempts: {
+    invitation: preHandlerHookHandler;
+    count(request: FastifyRequest, bucket: string, limit: number): boolean;
+  };
+  // A stand-in for an id that says who somebody is, for a caller who may not
+  // be told: the same for the same id every time, and not turned back without
+  // the server's secret.
+  auditStandIn(id: string): string;
   limits: { authAttempts: number; shareReads: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };

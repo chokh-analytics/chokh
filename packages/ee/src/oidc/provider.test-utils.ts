@@ -98,7 +98,9 @@ function json(response: ServerResponse, status: number, body: unknown): void {
 }
 
 export async function startProvider(
-  options: { now?: () => number; host?: string } = {},
+  // `slash`: a provider whose issuer ends in one, as Auth0's does, in its
+  // discovery document and in every token.
+  options: { now?: () => number; host?: string; slash?: boolean } = {},
 ): Promise<TestProvider> {
   const now = options.now ?? Date.now;
   let signing = await pair();
@@ -113,7 +115,8 @@ export async function startProvider(
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
-  const issuer = `http://${options.host ?? '127.0.0.1'}:${port}`;
+  const base = `http://${options.host ?? '127.0.0.1'}:${port}`;
+  const issuer = options.slash === true ? `${base}/` : base;
 
   async function idToken(granted: Granted): Promise<string> {
     const at = Math.floor(now() / 1000);
@@ -147,14 +150,14 @@ export async function startProvider(
   }
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url ?? '/', issuer);
+    const url = new URL(request.url ?? '/', base);
     if (url.pathname === '/.well-known/openid-configuration') {
       provider.calls.discovery += 1;
       return json(response, 200, {
         issuer: provider.discoveryIssuer ?? issuer,
-        authorization_endpoint: `${issuer}/authorize`,
-        token_endpoint: `${issuer}/token`,
-        jwks_uri: `${issuer}/keys`,
+        authorization_endpoint: `${base}/authorize`,
+        token_endpoint: `${base}/token`,
+        jwks_uri: `${base}/keys`,
         token_endpoint_auth_methods_supported: ['client_secret_basic'],
       });
     }
@@ -225,7 +228,7 @@ export async function startProvider(
       const url = new URL(text);
       const redirectUri = url.searchParams.get('redirect_uri') ?? '';
       if (
-        url.origin !== issuer ||
+        url.origin !== base ||
         url.pathname !== '/authorize' ||
         url.searchParams.get('response_type') !== 'code' ||
         url.searchParams.get('client_id') !== clientId ||

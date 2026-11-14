@@ -1,6 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type {
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+  RouteShorthandOptions,
+} from 'fastify';
 import {
   acceptInvitation,
   attachPrincipal,
@@ -15,6 +20,7 @@ import {
   requirePerson,
   requirePrincipal,
   requireThisDashboard,
+  safeNextPath,
   startSession,
   wantsHtml,
   writeCookie,
@@ -42,7 +48,8 @@ import { OidcError, createOidcClient, type OidcClient, type OidcFlow, type OidcI
 //
 // The browser is sent away and comes back, and what ties the return to the
 // departure is a cookie: sealed (lib/seal.ts in the core), httpOnly, ten
-// minutes, sent to the callback's path and nowhere else. It holds the state
+// minutes, sent to the callback's path and nowhere else. A start that a
+// browser says another site began is not a departure at all. It holds the state
 // the provider must echo, the nonce the ID token must carry, the PKCE
 // verifier the code is exchanged with, and what the flow is for. A callback
 // that arrives in a browser that did not begin a flow has no such cookie and
@@ -104,12 +111,43 @@ export interface OidcRouteDeps {
   client?: OidcClient;
 }
 
-// Only ever a path of this dashboard, the rule the SSO exchange keeps.
-function safeNext(next: unknown): string | undefined {
-  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') && next.length < 512
-    ? next
-    : undefined;
+// How many times a minute one address may begin a sign-in here, and come back
+// from one. A count of this feature's own, never the password route's: a
+// start is a GET that any page can make a browser send, and it must not be
+// able to use up the attempts somebody has left to sign in with a password.
+// Sized for an office behind one address at nine in the morning: a sign-in is
+// two counts, so this is thirty people a minute.
+export const OIDC_ATTEMPTS = 60;
+const BUCKET = 'oidc';
+
+// A request the browser says another site began. A browser sends the header
+// to https and to localhost; a program sends none, and so does a browser on
+// plain http, which the core's own rule says the same of.
+function fromAnotherSite(request: FastifyRequest): boolean {
+  const site = request.headers['sec-fetch-site'];
+  return site !== undefined && site !== 'same-origin' && site !== 'none';
 }
+
+// These two routes are logged by their path alone. The line Fastify writes
+// for a request carries its address, query and all, and here the query holds
+// what a provider sent back (a code and a state) and where somebody was
+// going. A code is spent and useless without the verifier, so this is not a
+// way in; it is still nothing a log should keep.
+const pathOnly = {
+  // What Fastify's own line says of a request, with the query taken off.
+  req(request: FastifyRequest): Record<string, unknown> {
+    return {
+      method: request.method,
+      url: request.url.split('?')[0],
+      host: request.host,
+      remoteAddress: request.ip,
+      remotePort: request.socket.remotePort,
+    };
+  },
+};
+// The framework takes serializers for one route, and its types say so for a
+// plugin and not for a route, so the option is typed here.
+const QUIET = { logSerializers: pathOnly } as RouteShorthandOptions;
 
 function sameText(left: string, right: string): boolean {
   const a = Buffer.from(left);
@@ -201,14 +239,31 @@ export function registerOidcRoutes(
   app.get('/api/ee/oidc', () => ok({ enabled: live() !== null }));
 
   // Send the browser to the provider to sign in.
+  //
+  // From this dashboard, or typed: a start that the browser says another
+  // site began begins nothing. No flow, no cookie, and no count against the
+  // address, so a page elsewhere cannot spend this address's sign-ins by
+  // pointing a browser here. The person is sent to the sign-in page, where
+  // the button is.
   app.get(
     '/api/ee/oidc/start',
-    { preHandler: deps.attempts.signIn },
+    QUIET,
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (live() === null) {
         return refuse(request, reply, 404, 'OIDC_OFF', OFF);
       }
-      const next = safeNext((request.query as { next?: unknown }).next);
+      if (fromAnotherSite(request)) {
+        if (wantsHtml(request.headers.accept)) {
+          return reply.code(303).redirect('/login', 303);
+        }
+        return reply
+          .code(403)
+          .send(fail('CROSS_SITE_REQUEST', 'A sign-in is begun from this dashboard'));
+      }
+      if (!deps.attempts.count(request, BUCKET, OIDC_ATTEMPTS)) {
+        return refuse(request, reply, 429, 'RATE_LIMITED', 'Too many sign-ins from this address, wait a minute');
+      }
+      const next = safeNextPath((request.query as { next?: unknown }).next);
       try {
         const url = await depart(reply, { intent: 'signin', ...(next === undefined ? {} : { next }) });
         return await reply.code(302).redirect(url, 302);
@@ -288,7 +343,7 @@ export function registerOidcRoutes(
   // Where the provider sends the browser back.
   app.get(
     CALLBACK_PATH,
-    { preHandler: [deps.attempts.signIn, attachPrincipal(auth)] },
+    { ...QUIET, preHandler: attachPrincipal(auth) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const provider = live();
       if (provider === null || config === null) {
@@ -309,6 +364,13 @@ export function registerOidcRoutes(
         return refuse(request, reply, 400, 'OIDC_STATE', 'That sign-in did not begin in this browser');
       }
       const flow: Flow = opened.data;
+      // Counted here and not before. A return this browser never began was
+      // refused above and cost the address nothing; from here on the provider
+      // is about to be asked, and how often one address may make that happen
+      // is what the count bounds.
+      if (!deps.attempts.count(request, BUCKET, OIDC_ATTEMPTS)) {
+        return refuse(request, reply, 429, 'RATE_LIMITED', 'Too many sign-ins from this address, wait a minute');
+      }
       if (query.data.error !== undefined || query.data.code === undefined) {
         return refuse(request, reply, 400, 'OIDC_DENIED', 'The identity provider did not sign anybody in');
       }
@@ -403,9 +465,13 @@ export function registerOidcRoutes(
 
   // Whether the account signed in is connected, and whether it could be
   // disconnected.
+  //
+  // These two ask for no licence. Reading one's own connection, and taking
+  // away a way in to one's own account, are not the paid thing: a key that
+  // lapsed takes nothing away, and that includes being able to shut a door.
   app.get(
     '/api/ee/oidc/identity',
-    { preHandler: [requirePrincipal(auth), requirePerson(), requireLicense(state, OIDC_FEATURE)] },
+    { preHandler: [requirePrincipal(auth), requirePerson()] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const principal = request.principal;
       if (principal === null) {
@@ -430,7 +496,7 @@ export function registerOidcRoutes(
   // with no password that gave up its identity could never be entered again.
   app.delete(
     '/api/ee/oidc/identity',
-    { preHandler: [requirePrincipal(auth), requirePerson(), requireLicense(state, OIDC_FEATURE)] },
+    { preHandler: [requirePrincipal(auth), requirePerson()] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const principal = request.principal;
       if (principal === null) {

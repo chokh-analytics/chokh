@@ -203,8 +203,13 @@ describe('the paid routes, with a licence', () => {
     const keys = EE_ROUTES.map(routeKey);
     expect(new Set(keys).size).toBe(keys.length);
     // Every paid row names its feature: a row without one would never be
-    // asked for a licence by the walk below.
-    expect(EE_ROUTES.filter((rule) => rule.feature === undefined)).toEqual([]);
+    // asked for a licence by the walk below. Two rows name none on purpose
+    // and are held here: somebody reading their own connection to an identity
+    // provider, and disconnecting from it, with or without a key.
+    expect(EE_ROUTES.filter((rule) => rule.feature === undefined).map(routeKey)).toEqual([
+      'GET /api/ee/oidc/identity',
+      'DELETE /api/ee/oidc/identity',
+    ]);
   });
 
   it('holds every paid route to its row for every kind of caller', async () => {

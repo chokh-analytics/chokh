@@ -1,3 +1,4 @@
+import { MAX_NEXT, SAFE_NEXT } from '../lib/safe-next.js';
 import { z } from 'zod';
 
 import {
@@ -41,8 +42,8 @@ export const ssoQuerySchema = z.object({
   // behind an authentication hop is how a sign-in link becomes a phishing link.
   next: z
     .string()
-    .max(512)
-    .regex(/^\/(?!\/)[\w\-./?=&%#]*$/, 'next has to be a path of this dashboard')
+    .max(MAX_NEXT)
+    .regex(SAFE_NEXT, 'next has to be a path of this dashboard')
     .optional(),
 });
 

@@ -315,7 +315,14 @@ CHOKH_PUBLIC_URL=https://analytics.example.com
 
 Register `<CHOKH_PUBLIC_URL>/api/ee/oidc/callback` with the provider as the
 redirect address. It is built from `CHOKH_PUBLIC_URL` and never from a
-request's `Host` header. If some of the four are set and not all, one line at
+request's `Host` header.
+
+**Copy the issuer exactly as the provider's own discovery document states
+it**, the slash at the end included when it has one (Auth0's does:
+`https://tenant.auth0.com/`). An issuer is a name that is compared character
+for character with what the provider says in that document and in every
+token; with one slash more or less it is a different issuer, and sign-in
+answers `OIDC_UNAVAILABLE`. If some of the four are set and not all, one line at
 boot names the ones that are missing, never a value. The client secret goes
 from the environment to the one request that exchanges a code: it is never
 stored, logged, shown or sent to the dashboard.
@@ -341,9 +348,35 @@ GET    /api/ee/oidc/start      anybody: sends the browser to the provider
 GET    /api/ee/oidc/callback   where the provider sends it back
 POST   /api/ee/oidc/invite     anybody holding an invitation: { token } in, { url } out
 POST   /api/ee/oidc/link       a person signed in: { url } out
-GET    /api/ee/oidc/identity   a person signed in: { enabled, connected, canDisconnect }
-DELETE /api/ee/oidc/identity   a person signed in: disconnect
+GET    /api/ee/oidc/identity   a person signed in, key or no key: { enabled, connected, canDisconnect }
+DELETE /api/ee/oidc/identity   a person signed in, key or no key: disconnect
 ```
+
+The last two ask for no licence. Reading one's own connection, and taking
+away a way in to one's own account, are never the paid thing: a key that
+lapsed takes nothing away, and that includes being able to shut a door.
+
+**Where it lands afterwards.** `start` takes `next`, a path of this dashboard
+to go to once signed in. It is held to the rule the core keeps for its own
+exchange (`packages/server/src/lib/safe-next.ts`): an allow-list of
+characters and not a prefix, because a browser reads `/\host` and a path with
+a tab or a line break in it as another host. Anything else lands on `/`.
+
+**How often.** A sign-in is counted by address on a count of its own, 60 a
+minute (a sign-in is a departure and a return, so thirty people a minute from
+one office). It is never the password route's count: `start` is a `GET` that
+any page can make a browser send, and it must not be able to use up the
+attempts somebody has left to sign in with a password. For the same reason a
+`start` that the browser says another site began (`Sec-Fetch-Site` present
+and neither `same-origin` nor `none`) begins no flow, sets no cookie and is
+not counted: a browser is sent to `/login`, where the button is, and a
+program gets `403 CROSS_SITE_REQUEST`. And a return is counted only once its
+cookie has opened and its state has matched, so a return this browser never
+began costs the address nothing.
+
+**In the log.** These two routes are logged by their path alone: the query of
+one holds where somebody was going and the query of the other what the
+provider sent back, and neither belongs in a log line.
 
 **The flow** is the authorization code flow with PKCE (`S256`), a `state` and
 a `nonce`, each 32 random bytes. They travel with the browser in one cookie:
@@ -373,6 +406,11 @@ that is down, or a key that has lapsed, leaves every account with a password
 able to sign in. An account made from an invitation by single sign-on has no
 password, so its identity is its only way in and cannot be disconnected
 (`409 ONLY_WAY_IN`).
+
+Removing somebody from a team does not delete their account or their
+connection: it ends their sessions and takes away what the team gave them.
+They can still sign in, to an account that reads nothing, until they are
+invited again.
 
 Connecting and disconnecting are written to the audit log
 (`identity:link`, `identity:unlink`), with the issuer and never the subject.

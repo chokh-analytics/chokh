@@ -148,7 +148,12 @@ export function createOidcClient(config: OidcEnv, now: () => number = Date.now):
     if (known !== null && now() - known.at < DISCOVERY_MS) {
       return known;
     }
-    const where = allowedEndpoint(`${config.issuer}/.well-known/openid-configuration`);
+    // The one place the slash at the end of an issuer is taken off: to build
+    // the address its configuration is published at. Everywhere it is
+    // compared, it is compared as it was configured.
+    const where = allowedEndpoint(
+      `${config.issuer.replace(/\/+$/, '')}/.well-known/openid-configuration`,
+    );
     if (where === null) {
       throw new OidcError('OIDC_UNAVAILABLE', 'The issuer has to be an https address');
     }
@@ -162,8 +167,9 @@ export function createOidcClient(config: OidcEnv, now: () => number = Date.now):
     } catch {
       throw new OidcError('OIDC_UNAVAILABLE', 'The identity provider published no configuration');
     }
-    // What it says it is has to be what this install was told it is. A
-    // document that names another issuer is another provider answering.
+    // What it says it is has to be what this install was told it is,
+    // exactly, a slash at the end included. A document that names another
+    // issuer is another provider answering.
     if (document['issuer'] !== config.issuer) {
       throw new OidcError('OIDC_UNAVAILABLE', 'The identity provider names a different issuer');
     }

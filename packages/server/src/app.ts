@@ -30,7 +30,8 @@ import { registerHealthRoutes } from './routes/health.routes.js';
 import { createShareCodec } from './services/share.service.js';
 import { createAuditCursorCodec } from './lib/audit-cursor.js';
 import { createSealer } from './lib/seal.js';
-import { limitAttempts } from './plugins/auth.js';
+import { createStandIn } from './lib/stand-in.js';
+import { addressOf, limitAttempts } from './plugins/auth.js';
 import { createSessionCodec } from './services/auth.service.js';
 import type { Bus } from './services/bus.js';
 import { createDedupe } from './services/dedupe.js';
@@ -204,6 +205,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
 
   const authLimit = createWindowCounter(MINUTE_MS);
   const inviteLimit = createWindowCounter(MINUTE_MS);
+  // Counts an extension takes for itself, apart from every count of the
+  // core's own.
+  const extensionLimit = createWindowCounter(MINUTE_MS);
   const apiDeps: ApiDeps = {
     store,
     session: createSessionCodec(session.secret, env.SESSION_TTL_HOURS * HOUR_MS),
@@ -216,9 +220,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     auditCursor: createAuditCursorCodec(session.secret),
     seal: (purpose) => createSealer(session.secret, purpose),
     attempts: {
-      signIn: limitAttempts(env.AUTH_RATE_LIMIT, authLimit, ipOptions, now),
       invitation: limitAttempts(env.AUTH_RATE_LIMIT, inviteLimit, ipOptions, now, 'invite'),
+      count: (request, bucket, limit) => {
+        const at = now();
+        return extensionLimit.hit(`${bucket}:${addressOf(request, ipOptions, at)}`, at) <= limit;
+      },
     },
+    auditStandIn: createStandIn(session.secret),
     limits: { authAttempts: env.AUTH_RATE_LIMIT, shareReads: env.SHARE_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },

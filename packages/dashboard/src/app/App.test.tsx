@@ -2,7 +2,7 @@ import { act, render, renderHook, screen, waitFor, within } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from './App.js';
+import { App, safeNext } from './App.js';
 import { createQueryClient } from '../lib/queries.js';
 import { NOW_TICK_MS, roundedNow, useNow } from './useNow.js';
 
@@ -910,5 +910,35 @@ describe('single sign-on on the sign-in page', () => {
     expect(
       await screen.findByText(/No account here is connected to that sign-in/),
     ).toBeInTheDocument();
+  });
+});
+
+// Where /login sends somebody back to, and what the sign-in page hands the
+// server for single sign-on: the server's own rule, character for character.
+describe('where a sign-in may land', () => {
+  it('is a path of this dashboard, with its query', () => {
+    for (const path of ['/s_test', '/s_test/sources?range=30d', '/s_test/pages?filters=page%3D%3D%2Fpricing']) {
+      expect(safeNext(path)).toBe(path);
+    }
+  });
+
+  it('is never something a browser reads as another host, and never the sign-in page itself', () => {
+    for (const leaving of [
+      '/\\evil.example',
+      '/\t/evil.example',
+      '/\r/evil.example',
+      '/\n/evil.example',
+      '//evil.example/',
+      'https://evil.example/',
+      'javascript:alert(1)',
+      '/login',
+      '/login?next=%2Fs_test',
+    ]) {
+      expect(safeNext(leaving)).toBeNull();
+    }
+    for (const leaving of ['/\\evil.example', '/\t/evil.example', '/\r/evil.example', '/\n/evil.example']) {
+      expect(new URL(leaving, 'https://dash.example/login').origin).toBe('https://evil.example');
+    }
+    expect(safeNext(null)).toBeNull();
   });
 });

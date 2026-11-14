@@ -90,8 +90,11 @@ export const EE_ROUTES: readonly RouteRule[] = [
     body: () => ({ token: 'chi_a-token-nothing-answers-to-0000000000' }),
   },
   // The three a signed-in person uses about their own account. A person, and
-  // never a key.
+  // never a key. Connecting is the paid thing. Reading one's own connection
+  // and disconnecting are not: they name no feature, so the walk holds them
+  // to answering with no licence at all. Taking away a way in to one's own
+  // account is never something a key that lapsed should stand in the way of.
   { method: 'POST', url: '/api/ee/oidc/link', needs: { kind: 'person' }, feature: OIDC_FEATURE },
-  { method: 'GET', url: '/api/ee/oidc/identity', needs: { kind: 'person' }, feature: OIDC_FEATURE },
-  { method: 'DELETE', url: '/api/ee/oidc/identity', needs: { kind: 'person' }, feature: OIDC_FEATURE },
+  { method: 'GET', url: '/api/ee/oidc/identity', needs: { kind: 'person' } },
+  { method: 'DELETE', url: '/api/ee/oidc/identity', needs: { kind: 'person' } },
 ];

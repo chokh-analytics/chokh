@@ -233,6 +233,21 @@ export function requireSiteScope(deps: AuthDeps, scope: Scope): preHandlerHookHa
   };
 }
 
+// The address a request is counted against: the client's, read the one way
+// every limit here reads it.
+export function addressOf(request: FastifyRequest, ipOptions: ClientIpOptions, at: number): string {
+  return clientIp(
+    {
+      ip: request.ip,
+      peer: request.socket.remoteAddress,
+      header: request.headers[ipOptions.realIpHeader],
+      signature: request.headers['x-chokh-forwarded-sig'],
+      now: at,
+    },
+    ipOptions,
+  );
+}
+
 // The gate in front of signing in.
 //
 // Login, registration and both SSO forms are the routes where an address gets to
@@ -253,17 +268,7 @@ export function limitAttempts(
   // other than a promise and never calls done leaves the request hanging.
   return async function attemptsHook(request: FastifyRequest, reply: FastifyReply) {
     const at = now();
-    const address = clientIp(
-      {
-        ip: request.ip,
-        peer: request.socket.remoteAddress,
-        header: request.headers[ipOptions.realIpHeader],
-        signature: request.headers['x-chokh-forwarded-sig'],
-        now: at,
-      },
-      ipOptions,
-    );
-    if (counter.hit(`${bucket}:${address}`, at) > limit) {
+    if (counter.hit(`${bucket}:${addressOf(request, ipOptions, at)}`, at) > limit) {
       return reply
         .code(429)
         .send(fail('RATE_LIMITED', 'Too many attempts from this address, wait a minute'));

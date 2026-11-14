@@ -7,6 +7,7 @@ import { gateAuditPage, type AuditAccount } from '../lib/identity-gate.js';
 import type { Principal } from '../lib/scopes.js';
 import { attempt, type Outcome } from '../lib/store-error.js';
 import type { AuditKind } from '../schemas/audit.schema.js';
+import { isSsoManaged } from './sso-accounts.js';
 import type {
   AccessScope,
   AccountStore,
@@ -187,6 +188,7 @@ export interface AuditLogRead {
 export interface AuditLogDeps {
   store: AccountStore;
   auditCursor: AuditCursorCodec;
+  auditStandIn(id: string): string;
   now(): number;
 }
 
@@ -236,6 +238,15 @@ export async function readAuditLog(
       'Asking the log about one target is asking about a named person, so it needs the read:identity scope',
     );
   }
+  // The same for who acted, when the account asked about is one another
+  // application signs in: its id is that application's name for a person.
+  if (read.actorId !== undefined && isSsoManaged(read.actorId) && !read.allowed) {
+    return refuse(
+      403,
+      'SCOPE_REQUIRED',
+      'Asking the log about an account another application signs in names a person, so it needs the read:identity scope',
+    );
+  }
   const now = deps.now();
   const listing: AuditListing = {
     scope: read.scope,
@@ -276,7 +287,9 @@ export async function readAuditLog(
       accounts[user.id] = { email: user.email, ...(user.name === undefined ? {} : { name: user.name }) };
     }
   }
-  const gated = gateAuditPage({ rows: found.data.rows, accounts }, read.allowed);
+  const gated = gateAuditPage({ rows: found.data.rows, accounts }, read.allowed, (id) =>
+    isSsoManaged(id) ? deps.auditStandIn(id) : id,
+  );
 
   if (read.cursor === undefined) {
     // After the page was read, so an opening does not show itself, and awaited

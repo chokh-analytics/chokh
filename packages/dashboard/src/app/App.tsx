@@ -204,8 +204,18 @@ function SiteFrame({
 // Where /login sends somebody back to. Only ever a path of this dashboard,
 // because a next that leaves it is how a trusted link becomes a phishing link,
 // which is the rule the SSO exchange keeps on the server.
+//
+// The same rule the server keeps (packages/server/src/lib/safe-next.ts), and
+// the same shape: an allow-list of characters and not a prefix. A browser
+// takes a backslash for a slash and drops a tab, a carriage return and a
+// line feed before it reads an address, so "starts with one slash" lets
+// through `/\host`, which leaves. Here the router would refuse to go rather
+// than leave, but this is also what the sign-in page hands the server when
+// it builds the link for single sign-on, and one rule is one rule.
+const SAFE_NEXT = /^\/(?!\/)[\w\-./?=&%#]*$/;
+
 export function safeNext(next: string | null): string | null {
-  if (next === null || !next.startsWith('/') || next.startsWith('//')) {
+  if (next === null || next.length > 512 || !SAFE_NEXT.test(next)) {
     return null;
   }
   return next.startsWith('/login') ? null : next;

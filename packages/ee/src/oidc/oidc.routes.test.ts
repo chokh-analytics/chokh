@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { buildApp, type ServerExtension } from '@chokh/server';
+import { signHs256 } from '@chokh/server/jwt';
+import { ssoClaimsFor } from '@chokh/server/sso';
 import { createMemoryStore } from '@chokh/server/store/memory';
 import { defaultSiteSettings } from '@chokh/server/store';
 import type { AuditEntry } from '@chokh/store';
@@ -9,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildExtension } from '../extension.js';
 import { ALL_FEATURES, type LicensePayload } from '../license/payload.js';
 import { publicKeyToBase64, signLicense } from '../license/token.js';
+import { OIDC_ATTEMPTS } from './oidc.routes.js';
 import { startProvider, type Lie, type TestProvider } from './provider.test-utils.js';
 
 // Signing in through an identity provider, over HTTP against the real server
@@ -57,18 +60,25 @@ interface Install {
 }
 
 async function install(
-  options: { licensed?: boolean; configured?: boolean; issuer?: string } = {},
+  options: {
+    licensed?: boolean;
+    configured?: boolean;
+    // The issuer as this install was told it, when that is not the provider's.
+    issuer?: (provider: TestProvider) => string;
+    // A provider whose own name ends in a slash.
+    slash?: boolean;
+  } = {},
 ): Promise<Install> {
   let at = Date.now();
   const now = (): number => at;
-  const provider = await startProvider({ now });
+  const provider = await startProvider({ now, ...(options.slash === true ? { slash: true } : {}) });
 
   let extension: ServerExtension;
   const oidc =
     options.configured === false
       ? null
       : {
-          issuer: options.issuer ?? provider.issuer,
+          issuer: options.issuer?.(provider) ?? provider.issuer,
           clientId: provider.clientId,
           clientSecret: provider.clientSecret,
           publicUrl: PUBLIC_URL,
@@ -378,7 +388,24 @@ describe('who somebody is', () => {
     await connect();
     const inside = await here.depart(here.ask('GET', '/api/ee/oidc/start?next=%2Fs_test%2Fsources'));
     expect((await here.arrive(inside.url, inside.flow)).location).toBe('/s_test/sources');
-    for (const outside of ['https://evil.example/', '//evil.example/', 'javascript:alert(1)']) {
+    for (const outside of [
+      'https://evil.example/',
+      '//evil.example/',
+      'javascript:alert(1)',
+      // Each of these begins with one slash and not two, and a browser reads
+      // each as //evil.example: it takes a backslash for a slash, and drops a
+      // tab, a carriage return and a line feed before it reads anything.
+      '/\\evil.example',
+      '/\t/evil.example',
+      '/\r/evil.example',
+      '/\n/evil.example',
+    ]) {
+      // Where a browser would go, were it sent there from the callback.
+      if (outside.startsWith('/') && !outside.startsWith('//')) {
+        expect(new URL(outside, 'https://chokh.test/api/ee/oidc/callback').origin).toBe(
+          'https://evil.example',
+        );
+      }
       const leaving = await here.depart(
         here.ask('GET', `/api/ee/oidc/start?next=${encodeURIComponent(outside)}`),
       );
@@ -543,7 +570,7 @@ describe('a provider that is not what it was configured as', () => {
   });
 
   it('is not asked anything over plain http unless it is on this machine', async () => {
-    here = await install({ issuer: 'http://provider.example' });
+    here = await install({ issuer: () => 'http://provider.example' });
     const start = await here.ask('GET', '/api/ee/oidc/start');
     expect([start.status, start.code]).toEqual([502, 'OIDC_UNAVAILABLE']);
     expect(here.provider.calls.discovery).toBe(0);
@@ -743,8 +770,200 @@ describe('what never leaves', () => {
       expect(leaving.url).not.toContain(secret);
       expect(back.body).not.toContain(secret);
     }
-    // The code and the state are in the callback's address, which is the
-    // protocol; nothing kept afterwards holds a token from the provider.
+    // Nothing kept afterwards holds a token from the provider.
     expect(JSON.stringify(await here.store.identitiesForUser(here.owner.userId))).not.toContain('eyJ');
+  });
+
+  // The line the framework writes for a request carries its address, query
+  // and all. On these two routes the query holds what the provider sent back
+  // and where somebody was going, so they are logged by their path alone.
+  it('the code, the state and where somebody was going are in no log line', async () => {
+    here = await install();
+    await connect();
+    const leaving = await here.depart(here.ask('GET', '/api/ee/oidc/start?next=%2Fs_test%2Fsources'));
+    const back = new URL(here.provider.authorize(leaving.url));
+    const code = back.searchParams.get('code') ?? 'missing';
+    const state = back.searchParams.get('state') ?? 'missing';
+    here.minutes(2);
+    const arrived = await here.ask('GET', `${back.pathname}${back.search}`, { cookie: leaving.flow });
+    expect([arrived.status, arrived.location]).toEqual([303, '/s_test/sources']);
+
+    const lines = here.log.filter((line) => line.includes('/api/ee/oidc/'));
+    // Both requests were logged, as their paths.
+    expect(lines.some((line) => line.includes('"url":"/api/ee/oidc/start"'))).toBe(true);
+    expect(lines.some((line) => line.includes('"url":"/api/ee/oidc/callback"'))).toBe(true);
+    const written = here.log.join('\n');
+    for (const kept of [code, state, 's_test%2Fsources', 'next=', 'code=', 'state=']) {
+      expect(written).not.toContain(kept);
+    }
+  });
+});
+
+// An issuer is a name, compared character for character. Auth0's ends in a
+// slash, in its discovery document and in every token.
+describe('an issuer that ends in a slash', () => {
+  it('signs somebody in when it is configured exactly as the provider states it', async () => {
+    here = await install({ slash: true });
+    expect(here.provider.issuer.endsWith('/')).toBe(true);
+    await connect();
+    expect((await signIn()).status).toBe(303);
+    expect((await here.store.identitiesForUser(here.owner.userId))[0]?.issuer).toBe(here.provider.issuer);
+  });
+
+  it('is not the same issuer without its slash, nor with one it does not have: exact is the rule', async () => {
+    here = await install({ slash: true, issuer: (provider) => provider.issuer.replace(/\/$/, '') });
+    const without = await here.ask('GET', '/api/ee/oidc/start');
+    expect([without.status, without.code]).toEqual([502, 'OIDC_UNAVAILABLE']);
+    expect(without.cookies[FLOW]).toBeUndefined();
+    await here.close();
+
+    here = await install({ issuer: (provider) => `${provider.issuer}/` });
+    const added = await here.ask('GET', '/api/ee/oidc/start');
+    expect([added.status, added.code]).toEqual([502, 'OIDC_UNAVAILABLE']);
+    // The configuration was found, by its address without the slash, and was
+    // not believed: it names another issuer.
+    expect(here.provider.calls.discovery).toBe(1);
+  });
+});
+
+// A start is a GET, and any page can make a browser send one. It must not be
+// a way to use up the attempts an address has left to sign in with a
+// password, and it must not be a way to use up this feature's own.
+describe('how often', () => {
+  const login = () =>
+    here.ask('POST', '/api/auth/login', { payload: { email: OWNER_EMAIL, password: PASSWORD } });
+
+  it('a start another site began begins nothing, sets nothing and counts nothing', async () => {
+    here = await install();
+    here.minutes(2);
+    for (const site of ['cross-site', 'same-site']) {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const program = await here.ask('GET', '/api/ee/oidc/start', { headers: { 'sec-fetch-site': site } });
+        expect([program.status, program.code]).toEqual([403, 'CROSS_SITE_REQUEST']);
+        expect(program.cookies[FLOW]).toBeUndefined();
+      }
+    }
+    // A browser is sent to the sign-in page, where the button is.
+    const browser = await here.ask('GET', '/api/ee/oidc/start', {
+      headers: { 'sec-fetch-site': 'cross-site', accept: 'text/html' },
+    });
+    expect([browser.status, browser.location]).toEqual([303, '/login']);
+    expect(browser.cookies[FLOW]).toBeUndefined();
+    // And ten returns this browser never began.
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      expect((await here.ask('GET', '/api/ee/oidc/callback?code=x&state=y')).code).toBe('OIDC_STATE');
+    }
+    // Nothing was asked of the provider on account of any of it.
+    expect(here.provider.calls).toEqual({ discovery: 0, keys: 0, token: 0 });
+
+    // The password still signs in from this address, in the same minute.
+    expect((await login()).status).toBe(200);
+    // And the count of this feature is where it was: every one of its starts
+    // is still there to be used, and the one after them is not.
+    for (let attempt = 0; attempt < OIDC_ATTEMPTS; attempt += 1) {
+      expect((await here.ask('GET', '/api/ee/oidc/start', { headers: { 'sec-fetch-site': 'same-origin' } })).status).toBe(302);
+    }
+    const over = await here.ask('GET', '/api/ee/oidc/start');
+    expect([over.status, over.code]).toEqual([429, 'RATE_LIMITED']);
+  });
+
+  it('using every sign-in this feature allows leaves the password its own', async () => {
+    here = await install();
+    here.minutes(2);
+    for (let attempt = 0; attempt < OIDC_ATTEMPTS + 5; attempt += 1) {
+      await here.ask('GET', '/api/ee/oidc/start');
+    }
+    expect((await here.ask('GET', '/api/ee/oidc/start')).code).toBe('RATE_LIMITED');
+    expect((await login()).status).toBe(200);
+  });
+
+  it('one address makes the provider answer a bounded number of times a minute', async () => {
+    here = await install();
+    await connect();
+    here.minutes(2);
+    const asked = here.provider.calls.token;
+    let signedIn = 0;
+    let refused = 0;
+    for (let attempt = 0; attempt < OIDC_ATTEMPTS; attempt += 1) {
+      const start = await here.ask('GET', '/api/ee/oidc/start');
+      if (start.status !== 302) {
+        refused += 1;
+        continue;
+      }
+      const back = new URL(here.provider.authorize(start.location ?? ''));
+      const answer = await here.ask('GET', `${back.pathname}${back.search}`, {
+        cookie: `${FLOW}=${start.cookies[FLOW]?.value ?? ''}`,
+      });
+      if (answer.status === 303) signedIn += 1;
+    }
+    // A sign-in is a departure and a return, so half the count is people.
+    expect(signedIn).toBe(OIDC_ATTEMPTS / 2);
+    expect(refused).toBe(OIDC_ATTEMPTS / 2);
+    expect(here.provider.calls.token - asked).toBe(OIDC_ATTEMPTS / 2);
+    // A minute later the address may again.
+    here.minutes(2);
+    expect((await here.ask('GET', '/api/ee/oidc/start')).status).toBe(302);
+  });
+});
+
+// Taking away a way in to one's own account is a safety act, and is never
+// the paid thing: a key that lapsed takes nothing away, and that includes
+// being able to shut a door.
+describe('with no licence key', () => {
+  it('an account still reads its own connection and can still disconnect', async () => {
+    here = await install({ licensed: false });
+    await here.store.linkIdentity({
+      issuer: here.provider.issuer,
+      subject: 'provider-user-1',
+      userId: here.owner.userId,
+      linkedAt: Date.now(),
+    });
+    const status = await here.ask('GET', '/api/ee/oidc/identity', { cookie: here.owner.cookie });
+    expect([status.status, status.data]).toEqual([
+      200,
+      { enabled: false, connected: true, canDisconnect: true },
+    ]);
+    // Still a person, and still held to this dashboard.
+    const elsewhere = await here.ask('DELETE', '/api/ee/oidc/identity', {
+      cookie: here.owner.cookie,
+      headers: { 'sec-fetch-site': 'cross-site' },
+    });
+    expect([elsewhere.status, elsewhere.code]).toEqual([403, 'CROSS_SITE_REQUEST']);
+    expect((await here.ask('DELETE', '/api/ee/oidc/identity')).status).toBe(401);
+
+    const gone = await here.ask('DELETE', '/api/ee/oidc/identity', { cookie: here.owner.cookie });
+    expect([gone.status, gone.data]).toEqual([200, { connected: false }]);
+    expect(await here.store.identitiesForUser(here.owner.userId)).toEqual([]);
+    expect(await here.rows('identity:unlink')).toHaveLength(1);
+    // Connecting is the paid thing, and is still refused for the key.
+    const link = await here.ask('POST', '/api/ee/oidc/link', { cookie: here.owner.cookie, payload: {} });
+    expect([link.status, link.code]).toEqual([403, 'LICENSE_REQUIRED']);
+  });
+});
+
+describe('an account another application signs in', () => {
+  it('is not connected here: it is that application that says how it signs in', async () => {
+    here = await install();
+    here.minutes(2);
+    const arrived = await here.ask(
+      'GET',
+      `/api/sso?token=${signHs256(
+        'test-sso-secret-not-a-real-key-000000',
+        ssoClaimsFor({
+          sub: 'staff_9',
+          email: 'staff9@elsewhere.example',
+          teamId: TEAM_ID,
+          role: 'viewer',
+          now: Date.now() + 2 * MINUTE,
+          lifetimeSeconds: 300,
+        }),
+      )}`,
+    );
+    expect(arrived.status).toBe(303);
+    const managed = `${SESSION}=${arrived.cookies[SESSION]?.value ?? ''}`;
+    const link = await here.ask('POST', '/api/ee/oidc/link', { cookie: managed, payload: {} });
+    expect([link.status, link.code]).toEqual([409, 'MANAGED_BY_SSO']);
+    expect(link.cookies[FLOW]).toBeUndefined();
+    expect(await here.store.identitiesForUser('sso_staff_9')).toEqual([]);
   });
 });

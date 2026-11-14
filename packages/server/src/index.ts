@@ -31,6 +31,7 @@ export {
 // knows a protocol.
 export { clearCookie, readCookie, startSession, writeCookie } from './lib/session-cookie.js';
 export type { Sealer } from './lib/seal.js';
+export { safeNextPath } from './lib/safe-next.js';
 export { wantsHtml } from './lib/wants-html.js';
 export { acceptInvitation, lookupInvitation } from './services/invitations.service.js';
 export { isSsoManaged } from './services/sso-accounts.js';

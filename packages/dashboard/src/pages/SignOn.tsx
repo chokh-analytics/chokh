@@ -28,7 +28,11 @@ function problemOf(error: unknown): string {
   return error instanceof ChokhError ? error.message : messages.states.error;
 }
 
-function Connection(): JSX.Element {
+// `on`: whether the install has single sign-on switched on. With it off, an
+// account that is connected is still told so and can still disconnect:
+// taking away a way in to one's own account needs no licence. An account
+// that is not connected has nothing to do here until it is on.
+function Connection({ on }: { on: boolean }): JSX.Element | null {
   const { client } = useApp();
   const queryClient = useQueryClient();
   const identity = useQuery({
@@ -55,15 +59,20 @@ function Connection(): JSX.Element {
   }
 
   if (identity.isPending) {
-    return <p className={styles.lede}>{messages.states.loading}</p>;
+    return on ? <p className={styles.lede}>{messages.states.loading}</p> : null;
   }
   const state = identity.data?.data;
   if (state === undefined) {
-    return (
+    // With it off, an install that has no paid half at all answers 404 here,
+    // and that is not something to report to somebody reading a description.
+    return on ? (
       <p className={styles.problem} role="alert">
         {problemOf(identity.error)}
       </p>
-    );
+    ) : null;
+  }
+  if (!on && !state.connected) {
+    return null;
   }
 
   return (
@@ -128,7 +137,17 @@ export function SignOn(): JSX.Element {
   return (
     <Card title={messages.team.ssoTitle}>
       <p className={styles.lede}>{messages.team.ssoLede}</p>
-      {oidc.data?.data.enabled === true ? <Connection /> : <ProFeature title={messages.team.ssoTitle} />}
+      {/* Nothing is said until the install has answered: a card that reads
+          "part of Chokh Pro" for a moment on an install that has it would be
+          saying something untrue. */}
+      {oidc.isPending ? null : oidc.data?.data.enabled === true ? (
+        <Connection on />
+      ) : (
+        <>
+          <ProFeature title={messages.team.ssoTitle} />
+          <Connection on={false} />
+        </>
+      )}
     </Card>
   );
 }

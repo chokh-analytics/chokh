@@ -102,10 +102,20 @@ export function identityFieldsOfUser(profile: UserProfile): string[] {
 // - the address in a row's actor, kept from the moment it was written;
 // - the accounts the page resolves ids to, each an address and a name.
 //
-// Without read:identity all three are taken out, of every row, whatever the
-// row's action: there is no kind of row whose target is let through. What is
-// left is still a log: when, what was done, by which account or key (its id),
-// through which route, and what changed.
+// - the id of whoever acted, when the account is one another application
+//   signs in: that id is `sso_` and the other application's own name for the
+//   person, and nothing stops an install using an address or a username for
+//   it.
+//
+// Without read:identity the first three are taken out, of every row, whatever
+// the row's action: there is no kind of row whose target is let through. The
+// fourth is replaced by a stand-in (`actorId`, which the caller supplies:
+// keyed, the same for the same account on every page, and not turned back
+// without the server's secret), so the log still says that two rows were the
+// same somebody and does not say who. An id this install made itself (`u_`,
+// a key's) says nothing about anybody and stays. What is left is still a log:
+// when, what was done, by which account or key, through which route, and what
+// changed.
 export interface AuditAccount {
   email: string;
   name?: string;
@@ -117,7 +127,12 @@ export interface AuditRows {
   accounts: Record<string, AuditAccount>;
 }
 
-export function gateAuditPage(page: AuditRows, allowed: boolean): Gated<AuditRows> {
+export function gateAuditPage(
+  page: AuditRows,
+  allowed: boolean,
+  // The id to show a caller who may not be told who acted.
+  actorId: (id: string) => string,
+): Gated<AuditRows> {
   if (allowed) {
     const found = new Set<string>();
     for (const row of page.rows) {
@@ -132,7 +147,7 @@ export function gateAuditPage(page: AuditRows, allowed: boolean): Gated<AuditRow
   }
   const rows = page.rows.map((row): AuditEntry => {
     const { target: _target, ...rest } = row;
-    return { ...rest, actor: { kind: row.actor.kind, id: row.actor.id } };
+    return { ...rest, actor: { kind: row.actor.kind, id: actorId(row.actor.id) } };
   });
   return { value: { rows, accounts: {} }, fields: [] };
 }
