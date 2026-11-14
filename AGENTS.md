@@ -239,7 +239,11 @@ to run with a read-only token and no secrets.
 The gates run in CI's order on CI's state. `pnpm typecheck` comes before
 `pnpm build`, and `packages/ee` is written against `packages/server`, so a stale
 `dist` on a laptop hides a break that a fresh clone finds. Delete every `dist`
-before a run that is meant to prove anything.
+before a run that is meant to prove anything. The packages that read another's
+build under test (`server`, `ee`, `store-mongo`, `store-postgres`) refuse to
+run at all when that build is older than its source
+(`scripts/fresh-dist.mjs`): a stale `packages/store/dist` once ran the old
+conformance suite and passed, 246 cases where 290 had been written.
 
 The store conformance suite runs on a real database for each adapter, locally
 and in CI: `mongodb-memory-server`, a downloaded `mongod`, for MongoDB, and for

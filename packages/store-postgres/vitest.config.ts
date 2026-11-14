@@ -7,7 +7,10 @@ export default defineConfig({
     // One PostgreSQL for the whole run: CI's service container when
     // CHOKH_TEST_DATABASE_URL names it, otherwise one started here and stopped
     // when the run ends. Each test file works in a schema of its own.
-    globalSetup: ['src/testing/global-setup.ts'],
+    //
+    // And before that, fail if a workspace package this one reads from its
+    // build was built before its source last changed (scripts/fresh-dist.mjs).
+    globalSetup: ['../../scripts/fresh-dist.mjs', 'src/testing/global-setup.ts'],
     // Starting a database takes a while on a cold machine, and the conformance
     // suite seeds a world in a single beforeAll.
     testTimeout: 60_000,
