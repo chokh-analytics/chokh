@@ -84,13 +84,21 @@ export function crossSiteRefusal(
   if (principal?.kind !== 'session' || READS.has(request.method.toUpperCase())) {
     return null;
   }
+  return foreignRequestRefusal(request);
+}
+
+// The two checks themselves, for a request that is not a read, whoever is or
+// is not signed in on it.
+function foreignRequestRefusal(
+  request: Pick<FastifyRequest, 'method' | 'headers'>,
+): { status: number; code: string; message: string } | null {
   const site = request.headers['sec-fetch-site'];
   const fetchSite = Array.isArray(site) ? site[0] : site;
   if (fetchSite !== undefined && !SAME_ORIGIN.has(fetchSite.toLowerCase())) {
     return {
       status: 403,
       code: 'CROSS_SITE_REQUEST',
-      message: 'A change made with a session has to come from this dashboard',
+      message: 'A change made with a session, and a sign-in, has to come from this dashboard',
     };
   }
   if (request.method.toUpperCase() === 'POST') {
@@ -104,11 +112,40 @@ export function crossSiteRefusal(
       return {
         status: 415,
         code: 'JSON_REQUIRED',
-        message: 'A POST made with a session is sent as application/json',
+        message: 'A POST that signs in, or is made with a session, is sent as application/json',
       };
     }
   }
   return null;
+}
+
+// For a route that starts a session from what is in its body: signing in,
+// registering, using an invitation.
+//
+// The rule above looks at a request that carries a session, because that is
+// the request a neighbouring origin can borrow. These three are the other way
+// round: there is no session yet, and the danger is one being put there. A
+// form on a neighbouring origin, sent as text/plain (which the body parser
+// here reads as JSON), could post an address and a password of its own to the
+// sign-in route, or a token and a password of its own to the invitation
+// route, and the browser would be signed in to an account the neighbour
+// chose: the ordinary login CSRF. So on these routes the same two checks hold
+// with no session at all. The SSO exchange is not one of them: it is entered
+// from another application by design, and what it accepts is a token that
+// application signed.
+//
+// Which routes these are is said in the route table (startsSession), and a
+// case holds the list.
+export function requireThisDashboard(): preHandlerHookHandler {
+  // Async even though it does no waiting: a Fastify hook that returns something
+  // other than a promise and never calls done leaves the request hanging.
+  return async function thisDashboardHook(request: FastifyRequest, reply: FastifyReply) {
+    const refused = READS.has(request.method.toUpperCase()) ? null : foreignRequestRefusal(request);
+    if (refused !== null) {
+      return reply.code(refused.status).send(fail(refused.code, refused.message));
+    }
+    return undefined;
+  };
 }
 
 // Resolve whoever is asking, and refuse nobody. Registration needs it: the

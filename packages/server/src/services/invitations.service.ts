@@ -76,10 +76,16 @@ function refuse(status: number, code: string, message: string): { ok: false } & 
 // An invitation as a list shows it, with what it is at this moment.
 export interface ListedInvitation extends InvitationRecord {
   state: InvitationState;
+  // Whether the link would work if it were opened now: waiting, and sent by
+  // somebody who could still send it. Worked out when the list is read and
+  // written nowhere, so a list never says "waiting" for a link that answers
+  // 410 because its sender has since lost the right.
+  usable: boolean;
 }
 
-function listed(invitation: InvitationRecord, now: number): ListedInvitation {
-  return { ...invitation, state: invitationState(invitation, now) };
+function listed(invitation: InvitationRecord, now: number, senderMaySend: boolean): ListedInvitation {
+  const state = invitationState(invitation, now);
+  return { ...invitation, state, usable: state === 'pending' && senderMaySend };
 }
 
 // Whether an account already holds a place on the scope an invitation is to:
@@ -157,7 +163,8 @@ export async function createInvitation(
     at: now,
   });
   const { tokenHash: _tokenHash, ...record } = invitation;
-  return { ok: true, invitation: listed(record, now), token };
+  // Just made by somebody the route had checked may send it.
+  return { ok: true, invitation: listed(record, now, true), token };
 }
 
 export async function listInvitations(
@@ -165,7 +172,23 @@ export async function listInvitations(
   scope: AccessScope,
 ): Promise<ListedInvitation[]> {
   const now = deps.now();
-  return (await deps.store.openInvitations(scope)).map((invitation) => listed(invitation, now));
+  const open = await deps.store.openInvitations(scope);
+  // One look per sender, however many each sent.
+  const standing = new Map<string, boolean>();
+  for (const invitation of open) {
+    if (!standing.has(invitation.invitedBy)) {
+      standing.set(
+        invitation.invitedBy,
+        await maySend(
+          deps.store,
+          await holdingOf(deps.store, invitation.invitedBy),
+          invitation.invitedBy,
+          invitation.scope,
+        ),
+      );
+    }
+  }
+  return open.map((invitation) => listed(invitation, now, standing.get(invitation.invitedBy) ?? false));
 }
 
 export interface RevokeInvitationInput {
@@ -205,7 +228,7 @@ export async function revokeInvitation(
   });
   return {
     ok: true,
-    invitation: listed({ ...found, revokedAt: now, revokedBy: input.actor.id }, now),
+    invitation: listed({ ...found, revokedAt: now, revokedBy: input.actor.id }, now, false),
   };
 }
 
@@ -229,6 +252,15 @@ async function usable(
   }
   if (state === 'expired') {
     return refuse(410, 'INVITATION_EXPIRED', 'That invitation has expired. Ask for a new one');
+  }
+  // Where it is to still has to be there. Looked at here, before anything is
+  // spent, so a link to a site or a team that has gone is refused as that and
+  // leaves no account behind with nothing to belong to.
+  if (invitation.scope.kind === 'site' && (await store.site(invitation.scope.id)) === null) {
+    return refuse(404, 'UNKNOWN_SITE', 'The site that invitation was to is no longer there');
+  }
+  if (invitation.scope.kind === 'team' && (await store.team(invitation.scope.id)) === null) {
+    return refuse(404, 'UNKNOWN_TEAM', 'The team that invitation was to is no longer there');
   }
   // Never worth more than its sender, at the moment it is used. Somebody who
   // was an owner when they sent it and is not one now could not send it

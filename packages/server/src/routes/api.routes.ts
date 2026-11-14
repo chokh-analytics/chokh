@@ -108,6 +108,7 @@ import {
   requirePerson,
   requirePrincipal,
   requireSiteScope,
+  requireThisDashboard,
 } from '../plugins/auth.js';
 import { requireShare } from '../plugins/share.js';
 import { createWidgetController } from '../controllers/widget.controller.js';
@@ -139,13 +140,21 @@ export async function registerApiRoutes(
   const signedIn = requirePrincipal(auth);
   const scope = (name: Parameters<typeof requireSiteScope>[1]) => requireSiteScope(auth, name);
 
-  // Signing in. Open by necessity, limited by address.
+  // Signing in. Open by necessity, limited by address. The two that start a
+  // session from their body, and using an invitation further down, are held
+  // to coming from this dashboard before anything else is looked at: nobody
+  // is signed in yet, and the point is that a neighbouring origin cannot put
+  // a session of its own choosing there.
   app.post(
     '/api/auth/register',
-    { preHandler: [attempts, attachPrincipal(auth)] },
+    { preHandler: [requireThisDashboard(), attempts, attachPrincipal(auth)] },
     createRegisterController(deps),
   );
-  app.post('/api/auth/login', { preHandler: attempts }, createLoginController(deps));
+  app.post(
+    '/api/auth/login',
+    { preHandler: [requireThisDashboard(), attempts] },
+    createLoginController(deps),
+  );
   app.post('/api/auth/logout', { preHandler: signedIn }, createLogoutController(deps));
   app.get('/api/me', { preHandler: signedIn }, createMeController(deps));
   app.post('/api/sso', { preHandler: attempts }, createSsoPostController(deps));
@@ -210,7 +219,7 @@ export async function registerApiRoutes(
   app.post('/api/invitations/lookup', { preHandler: invites }, createLookupInvitationController(deps));
   app.post(
     '/api/invitations/accept',
-    { preHandler: [invites, attachPrincipal(auth)] },
+    { preHandler: [requireThisDashboard(), invites, attachPrincipal(auth)] },
     createAcceptInvitationController(deps),
   );
 

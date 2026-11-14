@@ -388,15 +388,28 @@ describe('a change made with a session, from somewhere that is not this dashboar
         session: { cookie: harness.owner.cookie },
       }),
     ).toEqual([]);
-    // And it notices: a read route said to be a write is answered, not refused.
+    // And it notices. The exchange is the one write that is meant to be
+    // reachable from anywhere: said to be an ordinary write, every way of
+    // asking it from the wrong place is answered instead of refused.
     const noticed = await walkCrossSite({
       app: harness.app,
-      rules: [{ method: 'POST', url: '/api/auth/login', needs: { kind: 'principal' } }],
+      rules: [{ method: 'POST', url: '/api/sso', needs: { kind: 'principal' } }],
       params: {},
       session: { cookie: harness.owner.cookie },
     });
     expect(noticed.length).toBe(6);
-    expect(noticed[0]).toContain('POST /api/auth/login from same-site: answered');
+    expect(noticed[0]).toContain('POST /api/sso from same-site: answered');
+  });
+
+  it('names the three routes that start a session from their body, and no other', () => {
+    expect(CORE_ROUTES.filter((rule) => rule.startsSession === true).map(routeKey)).toEqual([
+      'POST /api/auth/register',
+      'POST /api/auth/login',
+      'POST /api/invitations/accept',
+    ]);
+    // None of them is also marked as entered from another application: the
+    // two flags say opposite things.
+    expect(CORE_ROUTES.filter((rule) => rule.startsSession === true && rule.crossSite === true)).toEqual([]);
   });
 
   it('is taken from this dashboard: JSON, or nothing at all when the browser vouches it is same origin', async () => {

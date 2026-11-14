@@ -64,6 +64,11 @@ export interface RouteRule {
   // at all, so there is nothing for that rule to protect on them. The list is
   // short on purpose and a test holds it: adding a row here is a decision.
   crossSite?: true;
+  // Starts a session from what is in its body: signing in, registering,
+  // using an invitation. Held to coming from this dashboard with no session
+  // at all, so a neighbouring origin cannot sign a browser in to an account
+  // of its own choosing. A test holds this list too.
+  startsSession?: true;
 }
 
 const read: RouteNeed = { kind: 'site', scope: 'read:stats' };
@@ -80,7 +85,7 @@ function rule(
   method: RouteMethod,
   url: string,
   needs: RouteNeed,
-  extra: Pick<RouteRule, 'body' | 'stream' | 'crossSite'> = {},
+  extra: Pick<RouteRule, 'body' | 'stream' | 'crossSite' | 'startsSession'> = {},
 ): RouteRule {
   return { method, url, needs, ...extra };
 }
@@ -95,12 +100,13 @@ export const CORE_ROUTES: readonly RouteRule[] = [
 
   // Signing in.
   rule('POST', '/api/auth/register', { kind: 'register' }, {
+    startsSession: true,
     body: ({ serial }) => ({
       email: `probe-${serial}@route-table.test`,
       password: 'a-password-long-enough',
     }),
   }),
-  rule('POST', '/api/auth/login', open),
+  rule('POST', '/api/auth/login', open, { startsSession: true }),
   rule('POST', '/api/auth/logout', anybody),
   rule('GET', '/api/me', anybody),
   rule('POST', '/api/sso', open, { crossSite: true }),
@@ -121,7 +127,7 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   // What somebody holding an invitation link uses: no session, the token in
   // the body, limited by address.
   rule('POST', '/api/invitations/lookup', open),
-  rule('POST', '/api/invitations/accept', open),
+  rule('POST', '/api/invitations/accept', open, { startsSession: true }),
 
   // Sites.
   rule('GET', '/api/sites', anybody),
@@ -405,6 +411,13 @@ export interface CrossSiteWalk {
   session: Record<string, string>;
 }
 
+// Whether a row is one the rule about where a request comes from applies to:
+// a write a session can reach, or a route that starts a session.
+function heldToThisDashboard(rule: RouteRule): boolean {
+  if (rule.startsSession === true) return true;
+  return rule.method !== 'GET' && rule.needs.kind !== 'public' && rule.needs.kind !== 'share';
+}
+
 function answeredWith(response: { statusCode: number; body: string }): string {
   return `${response.statusCode} ${codeOf(response.body).code ?? ''}`.trim();
 }
@@ -421,11 +434,13 @@ function answeredWith(response: { statusCode: number; body: string }): string {
 // routes are walked with it too.
 export async function walkCrossSite(walk: CrossSiteWalk): Promise<string[]> {
   const disagreements: string[] = [];
+  // A route that starts a session is asked with none: the rule there holds
+  // for nobody in particular, which is the point of it.
   const ask = (rule: RouteRule, headers: Record<string, string>, body?: string) =>
     walk.app.inject({
       method: rule.method,
       url: pathOf(rule.url, walk.params),
-      headers: { ...walk.session, ...headers },
+      headers: { ...(rule.startsSession === true ? {} : walk.session), ...headers },
       ...(body === undefined ? {} : { payload: body }),
     });
   for (const rule of walk.rules) {
@@ -435,7 +450,7 @@ export async function walkCrossSite(walk: CrossSiteWalk): Promise<string[]> {
       }
       continue;
     }
-    if (rule.method === 'GET' || rule.needs.kind === 'public' || rule.needs.kind === 'share') {
+    if (!heldToThisDashboard(rule)) {
       continue;
     }
     for (const from of ['same-site', 'cross-site']) {

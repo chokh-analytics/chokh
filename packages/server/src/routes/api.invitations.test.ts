@@ -135,6 +135,7 @@ describe('sending an invitation', () => {
       createdAt: harness.now(),
       expiresAt: harness.now() + WEEK,
       state: 'pending',
+      usable: true,
     });
 
     // What is stored finds it by the hash, and holds the token nowhere.
@@ -488,6 +489,25 @@ describe('using an invitation', () => {
     expectFailure(await get(`/api/sites/${SIBLING}`, cookie), 403, 'SITE_FORBIDDEN');
   });
 
+  // Looked at before anything is spent: a link to a site that has gone is
+  // refused as that, the invitation is not used up, and no account is left
+  // behind with nothing to belong to.
+  it('to a site that is no longer there is refused without being spent, and makes no account', async () => {
+    const sent = await invite(SITE_INVITES, 'ada@test.example', 'viewer');
+    const site = harness.store.site.bind(harness.store);
+    harness.store.site = (siteId: string) => (siteId === SITE_ID ? Promise.resolve(null) : site(siteId));
+    try {
+      expectFailure(await lookup(sent.token), 404, 'UNKNOWN_SITE');
+      expectFailure(await accept(sent.token, { password: NEW_PASSWORD }), 404, 'UNKNOWN_SITE');
+    } finally {
+      harness.store.site = site;
+    }
+    expect(await harness.store.userByEmail('ada@test.example')).toBeNull();
+    expect((await harness.store.invitation(sent.id))?.acceptedAt).toBeUndefined();
+    // With the site there again, it is still theirs to use.
+    expect((await accept(sent.token, { password: NEW_PASSWORD })).statusCode).toBe(201);
+  });
+
   it('cannot be used once it has expired', async () => {
     const sent = await invite(TEAM_INVITES, 'ada@test.example', 'viewer');
     harness.setNow(harness.now() + WEEK - 1);
@@ -529,6 +549,12 @@ describe('an invitation is never worth more than whoever sent it', () => {
     const sent = await invite(TEAM_INVITES, 'ada@test.example', 'owner', second.cookie);
     await harness.store.changeTeamMember(TEAM_ID, second.userId, { role: 'editor', identity: false });
     expect((await harness.store.invitation(sent.id))?.revokedAt).toBeUndefined();
+    // The list says so: still waiting, and not a link that would work. Worked
+    // out when the list is read; nothing was written to say it.
+    const list = await get(TEAM_INVITES, harness.owner.cookie);
+    expect(envelope<{ invitations: unknown[] }>(list.body).data?.invitations).toEqual([
+      expect.objectContaining({ id: sent.id, state: 'pending', usable: false }),
+    ]);
 
     expectFailure(await lookup(sent.token), 410, 'INVITATION_REVOKED');
     expectFailure(await accept(sent.token, { password: NEW_PASSWORD }), 410, 'INVITATION_REVOKED');
@@ -536,6 +562,15 @@ describe('an invitation is never worth more than whoever sent it', () => {
     expect((await harness.store.team(TEAM_ID))?.members.filter((row) => row.role === 'owner')).toHaveLength(1);
     // Not spent by the refusal either.
     expect((await harness.store.invitation(sent.id))?.acceptedAt).toBeUndefined();
+
+    // And it is worth what its sender is worth at that moment, both ways:
+    // given the right back before it expires, the link works again.
+    await harness.store.changeTeamMember(TEAM_ID, second.userId, { role: 'owner', identity: true });
+    expect(
+      envelope<{ invitations: { usable: boolean }[] }>((await get(TEAM_INVITES, harness.owner.cookie)).body)
+        .data?.invitations[0]?.usable,
+    ).toBe(true);
+    expect((await accept(sent.token, { password: NEW_PASSWORD })).statusCode).toBe(201);
   });
 
   it('cannot be used when its sender was removed altogether, or lost admin on the one site it is to', async () => {
@@ -648,5 +683,97 @@ describe('the token of an invitation', () => {
       ],
     ]);
     expect(rows[0]?.route).toBe('POST /api/invitations/accept');
+  });
+});
+
+// The three routes that start a session from what is in their body: signing
+// in, registering, using an invitation. Nobody is signed in yet, and the
+// danger is one being put there: a form on a neighbouring origin, sent as
+// text/plain (which the body parser reads as JSON), posting a token and a
+// password of its own, so that the browser ends up signed in to an account
+// the neighbour chose. So these are held to coming from this dashboard with
+// no session at all.
+describe('a session started from a body, from somewhere that is not this dashboard', () => {
+  it('is refused for an invitation: not as a form, and not from a neighbouring origin', async () => {
+    const sent = await invite(TEAM_INVITES, 'ada@test.example', 'viewer');
+    const body = JSON.stringify({ token: sent.token, password: NEW_PASSWORD });
+    for (const headers of [
+      // What a form can send, which this server would otherwise read as JSON.
+      { 'content-type': 'text/plain' },
+      { 'content-type': 'application/x-www-form-urlencoded' },
+      // And JSON, from a script the browser says is not this origin.
+      { 'content-type': 'application/json', 'sec-fetch-site': 'same-site' },
+      { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+    ]) {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/invitations/accept',
+        headers,
+        payload: body,
+      });
+      expect([403, 415]).toContain(response.statusCode);
+      expect(['CROSS_SITE_REQUEST', 'JSON_REQUIRED']).toContain(envelope<unknown>(response.body).error?.code);
+      expect(response.cookies).toEqual([]);
+    }
+    // Nobody was made and nothing was spent.
+    expect(await harness.store.userByEmail('ada@test.example')).toBeNull();
+    expect((await harness.store.invitation(sent.id))?.acceptedAt).toBeUndefined();
+    // From this dashboard it works: JSON, and the browser saying same origin.
+    const accepted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/invitations/accept',
+      headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
+      payload: body,
+    });
+    expect(accepted.statusCode).toBe(201);
+  });
+
+  it('is refused for signing in and for registering the same way', async () => {
+    const credentials = JSON.stringify({ email: 'owner@test.example', password: PASSWORD });
+    for (const url of ['/api/auth/login', '/api/auth/register']) {
+      for (const [headers, status, code] of [
+        [{ 'content-type': 'text/plain' }, 415, 'JSON_REQUIRED'],
+        [{ 'content-type': 'application/json', 'sec-fetch-site': 'same-site' }, 403, 'CROSS_SITE_REQUEST'],
+        [{ 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' }, 403, 'CROSS_SITE_REQUEST'],
+      ] as const) {
+        const response = await harness.app.inject({ method: 'POST', url, headers, payload: credentials });
+        expectFailure(response, status, code);
+        expect(response.cookies).toEqual([]);
+      }
+    }
+    // Refused before it is counted: none of those used up the address's
+    // attempts, and the real thing still signs in.
+    harness.setNow(harness.now() + 61_000);
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await harness.app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        headers: { 'content-type': 'text/plain' },
+        payload: credentials,
+      });
+    }
+    expect(await harness.signIn('owner@test.example', PASSWORD)).toContain('chokh_session=');
+  });
+
+  it('leaves the exchange another application enters through as it was', async () => {
+    // Entered from another origin by design: a browser arriving from a
+    // neighbour, or a stranger, with a token that application signed.
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${signHs256(
+        'test-sso-secret-not-a-real-key-000000',
+        ssoClaimsFor({
+          sub: 'staff_5',
+          email: 'staff5@elsewhere.example',
+          teamId: SPARE_TEAM,
+          role: 'viewer',
+          now: harness.now(),
+          lifetimeSeconds: 300,
+        }),
+      )}`,
+      headers: { accept: 'text/html', 'sec-fetch-site': 'same-site' },
+    });
+    expect(response.statusCode).toBe(303);
+    expect(response.headers.location).toBe('/');
   });
 });

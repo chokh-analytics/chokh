@@ -715,7 +715,11 @@ worth little to anybody else:
 - It is never worth more than its sender. Whoever sent it has to still be
   allowed to send it when it is used, not only when it was made: lowering or
   removing them revokes what they sent, and an invitation whose sender lost
-  the right some other way answers `410 INVITATION_REVOKED` all the same.
+  the right some other way answers `410 INVITATION_REVOKED` all the same. It
+  is worth what its sender is worth at that moment, both ways: nothing is
+  written to say so, and it works again if the right comes back before it
+  expires. A list entry carries `usable`, worked out when the list is read, so
+  a list never says an invitation is waiting when its link would be refused.
 - The two routes a link's holder uses are limited by address like signing in,
   on a count of their own.
 
@@ -739,6 +743,13 @@ header is absent and the JSON rule is the one that holds: serve the dashboard
 over TLS. A key is held to neither: a key is
 presented on purpose. The SSO exchange is the one thing entered from another
 application by design, and it reads no session.
+
+The three routes that start a session from what is in their body (signing in,
+registering, using an invitation) are held to the same two checks with no
+session at all. Otherwise a form on a neighbouring origin could post an address
+and a password of its own, or an invitation's token and a password of its own,
+and leave the browser signed in to an account the neighbour chose. A refusal
+there is not counted against the address's attempts.
 
 A site with no `teamId` belongs to the team `default`, which is what the first
 registered account owns. A fresh install is therefore usable the moment somebody
