@@ -63,6 +63,17 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The runner sets ACTIONS_ID_TOKEN_REQUEST_URL only in a job that may
+      # mint an OIDC token. This one must not be able to, since it runs the
+      # dependencies' own code; if a change to the permissions above ever
+      # gives it that, the release stops here.
+      - name: This job cannot mint a token
+        run: |
+          if [ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::The build job can mint an OIDC token, and must not"
+            exit 1
+          fi
+
       - run: pnpm install --frozen-lockfile
 
       - name: The packages carry the tag's version
@@ -121,6 +132,14 @@ jobs:
         with:
           name: tarballs
           path: tarballs
+
+      # Provenance is signed with the token this job may mint.
+      - name: This job can mint a token
+        run: |
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::The publish job cannot mint an OIDC token, so npm could not sign provenance"
+            exit 1
+          fi
 
       - name: Publish, or show what would be published
         env:
