@@ -9,11 +9,13 @@ import { advisoryLockSql, LOCK_MIGRATE } from './locks.js';
 import { createPartition, listPartitions, monthAfter, monthOf } from './partitions.js';
 import {
   EVENTS,
+  addCheckSql,
   addColumnSql,
   createIndexSql,
   createTableSql,
   declaredIndexNames,
   primaryKeyName,
+  relaxColumnSql,
   schema,
   sequences,
   type TableSchema,
@@ -38,6 +40,9 @@ export interface TableReport {
   table: string;
   exists: boolean;
   missingColumns: string[];
+  // Columns that are still NOT NULL where the schema no longer says so.
+  strictColumns: string[];
+  missingChecks: string[];
   declared: number;
   present: string[];
   missing: string[];
@@ -52,24 +57,35 @@ export interface MigrateReport {
   missingSequences: string[];
   tablesCreated: string[];
   columnsCreated: string[];
+  columnsRelaxed: string[];
+  checksCreated: string[];
   indexesCreated: string[];
   partitionsCreated: string[];
   declaredIndexes: number;
   presentIndexes: number;
   missingTables: number;
   missingColumns: number;
+  strictColumns: number;
+  missingChecks: number;
   missingIndexes: number;
   undeclaredIndexes: number;
-  // Everything a deployment has to wait for: tables, columns, sequences and
-  // indexes together. Zero is the only number --verify-only accepts.
+  // Everything a deployment has to wait for: tables, columns (missing, or
+  // still held to a rule the schema took off), checks, sequences and indexes
+  // together. Zero is the only number --verify-only accepts.
   missing: number;
 }
 
 interface Created {
   tables: string[];
   columns: string[];
+  relaxed: string[];
+  checks: string[];
   indexes: string[];
   partitions: string[];
+}
+
+function nothingCreated(): Created {
+  return { tables: [], columns: [], relaxed: [], checks: [], indexes: [], partitions: [] };
 }
 
 interface Queryable {
@@ -94,17 +110,27 @@ async function inspect(db: Queryable, table: TableSchema): Promise<TableReport> 
       table: table.name,
       exists: false,
       missingColumns: table.columns.map((each) => each.name),
+      // Creating the table makes these with it, so they are not counted twice.
+      strictColumns: [],
+      missingChecks: [],
       declared: declared.length,
       present: [],
       missing: declared,
       undeclared: [],
     };
   }
-  const columns = await db.query<{ name: string }>(
-    `SELECT attname AS name FROM pg_attribute WHERE attrelid = $1 AND attnum > 0 AND NOT attisdropped`,
+  const columns = await db.query<{ name: string; strict: boolean }>(
+    `SELECT attname AS name, attnotnull AS strict
+       FROM pg_attribute WHERE attrelid = $1 AND attnum > 0 AND NOT attisdropped`,
     [oid],
   );
   const have = new Set(columns.rows.map((row) => row.name));
+  const strict = new Set(columns.rows.filter((row) => row.strict).map((row) => row.name));
+  const checks = await db.query<{ name: string }>(
+    `SELECT conname AS name FROM pg_constraint WHERE conrelid = $1 AND contype = 'c'`,
+    [oid],
+  );
+  const haveChecks = new Set(checks.rows.map((row) => row.name));
   // An index a failed CREATE INDEX CONCURRENTLY left behind is there and
   // useless: Postgres keeps it invalid and never reads it. It counts as
   // missing, which is what it is to every query.
@@ -120,6 +146,10 @@ async function inspect(db: Queryable, table: TableSchema): Promise<TableReport> 
     table: table.name,
     exists: true,
     missingColumns: table.columns.map((each) => each.name).filter((name) => !have.has(name)),
+    strictColumns: (table.relaxed ?? []).filter((name) => strict.has(name)),
+    missingChecks: (table.checks ?? [])
+      .map((check) => check.name)
+      .filter((name) => !haveChecks.has(name)),
     declared: declared.length,
     present: declared.filter((name) => usable.includes(name)),
     missing: declared.filter((name) => !usable.includes(name)),
@@ -151,6 +181,8 @@ async function report(db: Queryable, server: ServerInfo, created: Created): Prom
   const missingTables = count((row) => (row.exists ? 0 : 1));
   // A missing table's columns are not counted again: creating it is one act.
   const missingColumns = count((row) => (row.exists ? row.missingColumns.length : 0));
+  const strictColumns = count((row) => row.strictColumns.length);
+  const missingChecks = count((row) => row.missingChecks.length);
   const missingIndexes = count((row) => row.missing.length);
   return {
     server,
@@ -158,21 +190,31 @@ async function report(db: Queryable, server: ServerInfo, created: Created): Prom
     missingSequences: sequencesMissing,
     tablesCreated: created.tables,
     columnsCreated: created.columns,
+    columnsRelaxed: created.relaxed,
+    checksCreated: created.checks,
     indexesCreated: created.indexes,
     partitionsCreated: created.partitions,
     declaredIndexes: count((row) => row.declared),
     presentIndexes: count((row) => row.present.length),
     missingTables,
     missingColumns,
+    strictColumns,
+    missingChecks,
     missingIndexes,
     undeclaredIndexes: count((row) => row.undeclared.length),
-    missing: missingTables + missingColumns + missingIndexes + sequencesMissing.length,
+    missing:
+      missingTables +
+      missingColumns +
+      strictColumns +
+      missingChecks +
+      missingIndexes +
+      sequencesMissing.length,
   };
 }
 
 export async function verify(pool: Pool): Promise<MigrateReport> {
   const server = await inspectServer(pool);
-  return report(pool, server, { tables: [], columns: [], indexes: [], partitions: [] });
+  return report(pool, server, nothingCreated());
 }
 
 export interface ApplyOptions {
@@ -182,7 +224,7 @@ export interface ApplyOptions {
 
 export async function apply(pool: Pool, options: ApplyOptions = {}): Promise<MigrateReport> {
   const now = options.now ?? ((): number => Date.now());
-  const created: Created = { tables: [], columns: [], indexes: [], partitions: [] };
+  const created: Created = nothingCreated();
   const client = await pool.connect();
   try {
     const server = await inspectServer(client);
@@ -210,6 +252,22 @@ export async function apply(pool: Pool, options: ApplyOptions = {}): Promise<Mig
           if (before.missingColumns.includes(each.name)) {
             await client.query(addColumnSql(table, each));
             created.columns.push(`${table.name}.${each.name}`);
+          }
+        }
+        // A rule a later release took off a column. The one thing here that
+        // changes what exists, and it can only make room: no stored row can
+        // fail a rule that has gone.
+        for (const name of before.strictColumns) {
+          await client.query(relaxColumnSql(table, name));
+          created.relaxed.push(`${table.name}.${name}`);
+        }
+        // After the columns it reads exist and after the rule it replaces is
+        // off. Postgres checks every stored row first, so a row that breaks it
+        // fails the migration and nothing above is kept.
+        for (const check of table.checks ?? []) {
+          if (before.missingChecks.includes(check.name)) {
+            await client.query(addCheckSql(table, check));
+            created.checks.push(`${table.name}.${check.name}`);
           }
         }
       }
@@ -250,6 +308,12 @@ export function formatReport(result: MigrateReport): string {
     if (row.exists && row.missingColumns.length > 0) {
       notes.push(`columns missing: ${row.missingColumns.join(', ')}`);
     }
+    if (row.strictColumns.length > 0) {
+      notes.push(`columns still NOT NULL: ${row.strictColumns.join(', ')}`);
+    }
+    if (row.missingChecks.length > 0) {
+      notes.push(`checks missing: ${row.missingChecks.join(', ')}`);
+    }
     if (row.partitions !== undefined) notes.push(`partitions ${row.partitions}`);
     if (row.undeclared.length > 0) notes.push(`undeclared: ${row.undeclared.join(', ')}`);
     const note = notes.length === 0 ? '' : `, ${notes.join(', ')}`;
@@ -263,6 +327,12 @@ export function formatReport(result: MigrateReport): string {
   }
   if (result.columnsCreated.length > 0) {
     lines.push(`columns created: ${result.columnsCreated.join(', ')}`);
+  }
+  if (result.columnsRelaxed.length > 0) {
+    lines.push(`columns relaxed: ${result.columnsRelaxed.join(', ')}`);
+  }
+  if (result.checksCreated.length > 0) {
+    lines.push(`checks created: ${result.checksCreated.join(', ')}`);
   }
   if (result.indexesCreated.length > 0) {
     lines.push(`indexes created: ${result.indexesCreated.join(', ')}`);

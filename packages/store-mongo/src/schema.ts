@@ -29,6 +29,9 @@ export const SEGMENTS = 'segments';
 export const ANNOTATIONS = 'annotations';
 export const ALERTS = 'alerts';
 export const DIGESTS = 'digests';
+export const SITE_MEMBERS = 'site_members';
+export const INVITATIONS = 'invitations';
+export const IDENTITIES = 'identities';
 
 export const schema: readonly CollectionSchema[] = [
   {
@@ -167,8 +170,70 @@ export const schema: readonly CollectionSchema[] = [
   },
   {
     name: AUDIT_LOG,
-    purpose: 'Who read an IP or an identified person. Kept forever, no TTL.',
-    indexes: [{ name: 'audit_site_ts', key: { siteId: 1, ts: 1 } }],
+    purpose: 'Who read an IP or an identified person, and who changed access. Kept forever, no TTL.',
+    indexes: [
+      { name: 'audit_site_ts', key: { siteId: 1, ts: 1 } },
+      // The log read a page at a time, newest first (AN-TEAM01). The _id after
+      // the instant is the tie break that makes the order total, and having it
+      // in the key is what lets a page come straight off the index: with
+      // (siteId, ts) alone, the sort on both is a SORT stage over every row of
+      // the site to answer fifty of them.
+      { name: 'audit_site_page', key: { siteId: 1, ts: -1, _id: -1 } },
+      // The same for a row about a team. Partial, so the rows about a site,
+      // which are nearly all of them, are not in it at all.
+      {
+        name: 'audit_team_page',
+        key: { teamId: 1, ts: -1, _id: -1 },
+        partialFilterExpression: { teamId: { $exists: true } },
+      },
+    ],
+  },
+  {
+    name: SITE_MEMBERS,
+    purpose: 'A role on one site, beside or instead of a role in its team.',
+    indexes: [
+      // One row per person and site. Until this exists the adapter refuses to
+      // write one: two rows for one person would be two answers to "what may
+      // they do here".
+      { name: 'site_member_key', key: { siteId: 1, userId: 1 }, unique: true },
+      // "Which sites does this person hold a row on" is asked on every
+      // dashboard request, beside the teams.
+      { name: 'site_member_user', key: { userId: 1, siteId: 1 } },
+    ],
+  },
+  {
+    name: INVITATIONS,
+    purpose: 'A link that lets one address take one role once. Only the hash of its token.',
+    indexes: [
+      { name: 'invitation_id', key: { id: 1 }, unique: true },
+      // The one read when a link is opened: by the hash of the token in it.
+      { name: 'invitation_token', key: { tokenHash: 1 }, unique: true },
+      // One invitation waiting per address on one team or site. Partial on the
+      // open flag, so an accepted or revoked one does not stand in the way of
+      // the next, and so this is also the list of what is waiting on a scope.
+      {
+        name: 'invitation_open_address',
+        key: { scopeKind: 1, scopeId: 1, email: 1 },
+        unique: true,
+        partialFilterExpression: { open: true },
+      },
+      // What one account has sent that is still open, read when that account
+      // is lowered or removed.
+      {
+        name: 'invitation_sender',
+        key: { invitedBy: 1 },
+        partialFilterExpression: { open: true },
+      },
+    ],
+  },
+  {
+    name: IDENTITIES,
+    purpose: "An account's identity at an OpenID Connect provider: issuer and subject.",
+    indexes: [
+      // The one read on that sign-in path, and what makes a pair one account's.
+      { name: 'identity_subject', key: { issuer: 1, subject: 1 }, unique: true },
+      { name: 'identity_user_issuer', key: { userId: 1, issuer: 1 }, unique: true },
+    ],
   },
 ];
 

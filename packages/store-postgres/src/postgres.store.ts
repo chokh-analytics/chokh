@@ -7,6 +7,7 @@ import {
 } from '@chokh/store';
 import type { Pool } from 'pg';
 
+import { createAccess } from './access.js';
 import { createAccounts } from './accounts.js';
 import { DEFAULT_STATEMENT_TIMEOUT_MS, openPool } from './db.js';
 import { createDepth } from './depth.js';
@@ -119,6 +120,7 @@ export async function createPostgresStore(options: PostgresStoreOptions): Promis
       return outsideWindow;
     },
     ...accounts,
+    ...createAccess(pool, sites),
     ...createReports({ pool, sites, now }),
     ...createPeople({ pool, sites, presence, now }),
     ...createDepth({ pool, sites, now }),

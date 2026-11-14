@@ -6,6 +6,8 @@ import {
   MAX_GOALS_PER_SITE,
   MAX_SEGMENTS_PER_SITE,
   StoreQueryError,
+  checkAuditRow,
+  type AccessStore,
   type AccountStore,
   type Alert,
   type AlertChannel,
@@ -57,32 +59,40 @@ import type { Sites } from './sites.js';
 
 // The site scoped half of AccountStore: everything but the sites themselves,
 // which sites.ts owns because the reporting side reads them too.
-export type Accounts = Omit<AccountStore, 'createSite' | 'updateSite' | 'siteByShareToken'>;
+//
+// Nor the access half (site members, invitations, identities, the guarded
+// team changes and the paged log), which access.ts owns with its reasons.
+export type Accounts = Omit<
+  AccountStore,
+  'createSite' | 'updateSite' | 'siteByShareToken' | keyof AccessStore
+>;
 
-interface UserRow {
+export interface UserRow {
   id: string;
   email: string;
   name: string | null;
   password_hash: string | null;
   created_at: number;
   last_login_at: number | null;
+  session_epoch: number | null;
 }
 
-function userOf(row: UserRow): StoredUser {
+export function userOf(row: UserRow): StoredUser {
   const user: StoredUser = { id: row.id, email: row.email, createdAt: row.created_at };
   if (row.name !== null) user.name = row.name;
   if (row.password_hash !== null) user.passwordHash = row.password_hash;
   if (row.last_login_at !== null) user.lastLoginAt = row.last_login_at;
+  if (row.session_epoch !== null) user.sessionEpoch = row.session_epoch;
   return user;
 }
 
-interface TeamRow {
+export interface TeamRow {
   id: string;
   name: string;
   members: TeamMember[];
 }
 
-function teamOf(row: TeamRow): StoredTeam {
+export function teamOf(row: TeamRow): StoredTeam {
   return { id: row.id, name: row.name, members: row.members };
 }
 
@@ -259,8 +269,9 @@ function digestOf(row: DigestRow): Digest {
   return digest;
 }
 
-interface AuditRow {
-  site_id: string;
+export interface AuditRow {
+  site_id: string | null;
+  team_id: string | null;
   ts: number;
   actor: AuditRecord['actor'];
   action: string;
@@ -269,15 +280,16 @@ interface AuditRow {
   fields: string[];
 }
 
-function auditOf(row: AuditRow): AuditRecord {
+export function auditOf(row: AuditRow): AuditRecord {
   const record: AuditRecord = {
-    siteId: row.site_id,
     ts: row.ts,
     actor: row.actor,
     action: row.action,
     route: row.route,
     fields: row.fields,
   };
+  if (row.site_id !== null) record.siteId = row.site_id;
+  if (row.team_id !== null) record.teamId = row.team_id;
   if (row.target !== null) record.target = row.target;
   return record;
 }
@@ -826,11 +838,13 @@ export function createAccounts(pool: Pool, sites: Sites): Accounts {
     },
 
     async audit(row: AuditRecord): Promise<void> {
+      checkAuditRow(row);
       await pool.query(
-        `INSERT INTO ${AUDIT_LOG} (site_id, ts, actor, action, route, target, fields)
-         VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7::text[])`,
+        `INSERT INTO ${AUDIT_LOG} (site_id, team_id, ts, actor, action, route, target, fields)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::text[])`,
         [
           text(row.siteId),
+          text(row.teamId),
           row.ts,
           json(row.actor),
           text(row.action),
@@ -843,7 +857,7 @@ export function createAccounts(pool: Pool, sites: Sites): Accounts {
 
     async auditTrail(siteId: string, from: number, to: number): Promise<AuditRecord[]> {
       const result = await pool.query<AuditRow>(
-        `SELECT site_id, ts, actor, action, route, target, fields
+        `SELECT site_id, team_id, ts, actor, action, route, target, fields
            FROM ${AUDIT_LOG}
           WHERE site_id = $1 AND ts >= $2 AND ts < $3
           ORDER BY ts, seq`,

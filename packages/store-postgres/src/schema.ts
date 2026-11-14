@@ -33,6 +33,13 @@ export interface IndexSchema {
   unique?: boolean;
 }
 
+// A rule the database itself holds a row to, by name.
+export interface CheckSchema {
+  name: string;
+  // Everything inside CHECK ( ... ).
+  expression: string;
+}
+
 export interface TableSchema {
   name: string;
   // Why the table exists, printed by migrate so an operator reading the report
@@ -45,6 +52,13 @@ export interface TableSchema {
   // Appended to CREATE TABLE after the closing bracket.
   partitionBy?: string;
   indexes: IndexSchema[];
+  // Columns an earlier release declared NOT NULL and this one does not. The
+  // one change to something that exists that migrate ever makes, and it only
+  // goes one way: a rule is taken off a column, never put on, so no row that
+  // is there can fail it. Counted by --verify-only like a missing column,
+  // because the adapter writes rows the old rule would refuse.
+  relaxed?: string[];
+  checks?: CheckSchema[];
 }
 
 export const EVENTS = 'events';
@@ -63,6 +77,9 @@ export const USERS = 'users';
 export const TEAMS = 'teams';
 export const API_KEYS = 'api_keys';
 export const AUDIT_LOG = 'audit_log';
+export const SITE_MEMBERS = 'site_members';
+export const INVITATIONS = 'invitations';
+export const IDENTITIES = 'identities';
 
 // What gives two events of one millisecond an order. A sequence rather than an
 // identity column, because a partition made LIKE its parent copies a default
@@ -416,6 +433,9 @@ export const schema: readonly TableSchema[] = [
       text('password_hash'),
       instant('created_at', true),
       instant('last_login_at'),
+      // How many times this account's sessions have been ended. Null reads as
+      // zero, so an account from before the column keeps the sessions it has.
+      instant('session_epoch'),
     ],
     primaryKey: ['id'],
     indexes: [{ name: 'user_email', definition: '(email)', unique: true }],
@@ -450,20 +470,117 @@ export const schema: readonly TableSchema[] = [
   },
   {
     name: AUDIT_LOG,
-    purpose: 'Who read an IP or an identified person. Kept forever.',
+    purpose: 'Who read an IP or an identified person, and who changed access. Kept forever.',
     columns: [
       // The order two reads of one millisecond were written in.
       column('seq', `bigint NOT NULL DEFAULT nextval('${AUDIT_SEQUENCE}')`),
-      text('site_id', true),
+      // The site a row is about, or null for a row about a team (AN-TEAM01).
+      // NOT NULL until then, which is what `relaxed` below takes off.
+      text('site_id'),
       instant('ts', true),
       json('actor', true),
       text('action', true),
       text('route', true),
       text('target'),
       column('fields', `${TEXT_ARRAY} NOT NULL`),
+      text('team_id'),
     ],
     primaryKey: ['seq'],
-    indexes: [{ name: 'audit_site_ts', definition: '(site_id, ts)' }],
+    indexes: [
+      { name: 'audit_site_ts', definition: '(site_id, ts)' },
+      // The log read a page at a time, newest first. The sequence after the
+      // instant makes the order total, so a page boundary between two rows of
+      // one millisecond is a place in the index and not a guess.
+      { name: 'audit_site_page', definition: '(site_id, ts, seq)' },
+      // The same for a row about a team. Partial, so the rows about a site,
+      // which are nearly all of them, are not in it at all.
+      {
+        name: 'audit_team_page',
+        definition: '(team_id, ts, seq) WHERE team_id IS NOT NULL',
+      },
+    ],
+    relaxed: ['site_id'],
+    // A row is about a site or about a team, never both and never neither.
+    // The adapter refuses anything else before it gets here; this is what
+    // makes it true of a row written by anything at all.
+    checks: [{ name: 'audit_scope', expression: '(site_id IS NULL) <> (team_id IS NULL)' }],
+  },
+  {
+    name: SITE_MEMBERS,
+    purpose: 'A role on one site, beside or instead of a role in its team.',
+    columns: [
+      text('site_id', true),
+      text('user_id', true),
+      text('role', true),
+      column('identity', 'boolean NOT NULL'),
+    ],
+    // One row per person and site, by the key.
+    primaryKey: ['site_id', 'user_id'],
+    indexes: [
+      // "Which sites does this person hold a row on" is asked on every
+      // dashboard request, beside the teams.
+      { name: 'site_member_user', definition: '(user_id, site_id)' },
+    ],
+    checks: [{ name: 'site_member_role', expression: "role IN ('owner', 'editor', 'viewer')" }],
+  },
+  {
+    name: INVITATIONS,
+    purpose: 'A link that lets one address take one role once. Only the hash of its token.',
+    columns: [
+      text('id', true),
+      text('token_hash', true),
+      // Lowercased by the adapter on the way in, as an account's address is.
+      text('email', true),
+      text('scope_kind', true),
+      text('scope_id', true),
+      text('role', true),
+      column('identity', 'boolean NOT NULL'),
+      text('invited_by', true),
+      instant('created_at', true),
+      instant('expires_at', true),
+      instant('accepted_at'),
+      text('accepted_by'),
+      instant('revoked_at'),
+      text('revoked_by'),
+    ],
+    primaryKey: ['id'],
+    indexes: [
+      // The one read when a link is opened: by the hash of the token in it.
+      { name: 'invitation_token', definition: '(token_hash)', unique: true },
+      // One invitation waiting per address on one team or site. Partial on
+      // being open, so an accepted or revoked one does not stand in the way of
+      // the next, and so this is also the list of what is waiting on a scope.
+      {
+        name: 'invitation_open_address',
+        definition:
+          '(scope_kind, scope_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL',
+        unique: true,
+      },
+      // What one account has sent that is still open, read when that account
+      // is lowered or removed.
+      {
+        name: 'invitation_sender',
+        definition: '(invited_by) WHERE accepted_at IS NULL AND revoked_at IS NULL',
+      },
+    ],
+    checks: [
+      { name: 'invitation_scope_kind', expression: "scope_kind IN ('team', 'site')" },
+      { name: 'invitation_role', expression: "role IN ('owner', 'editor', 'viewer')" },
+    ],
+  },
+  {
+    name: IDENTITIES,
+    purpose: "An account's identity at an OpenID Connect provider: issuer and subject.",
+    columns: [
+      text('issuer', true),
+      text('subject', true),
+      text('user_id', true),
+      instant('linked_at', true),
+    ],
+    // The pair is one account's, by the key, and the one read on that sign-in
+    // path is by it.
+    primaryKey: ['issuer', 'subject'],
+    indexes: [{ name: 'identity_user_issuer', definition: '(user_id, issuer)', unique: true }],
   },
 ];
 
@@ -490,12 +607,28 @@ export function createTableSql(table: TableSchema): string {
       `  CONSTRAINT ${primaryKeyName(table)} PRIMARY KEY (${table.primaryKey.join(', ')})`,
     );
   }
+  for (const check of table.checks ?? []) {
+    lines.push(`  CONSTRAINT ${check.name} CHECK (${check.expression})`);
+  }
   const tail = table.partitionBy === undefined ? '' : ` ${table.partitionBy}`;
   return `CREATE TABLE IF NOT EXISTS ${table.name} (\n${lines.join(',\n')}\n)${tail}`;
 }
 
 export function addColumnSql(table: TableSchema, each: ColumnSchema): string {
   return `ALTER TABLE ${table.name} ADD COLUMN IF NOT EXISTS ${each.name} ${each.definition}`;
+}
+
+// Take NOT NULL off a column that an earlier release put it on. A no-op on a
+// column that never had it.
+export function relaxColumnSql(table: TableSchema, name: string): string {
+  return `ALTER TABLE ${table.name} ALTER COLUMN ${name} DROP NOT NULL`;
+}
+
+// Put a declared rule on a table that exists. Postgres checks every row that
+// is already there before it agrees, so a rule that any stored row breaks
+// fails the migration, which rolls back whole.
+export function addCheckSql(table: TableSchema, check: CheckSchema): string {
+  return `ALTER TABLE ${table.name} ADD CONSTRAINT ${check.name} CHECK (${check.expression})`;
 }
 
 export function createIndexSql(table: TableSchema, index: IndexSchema): string {

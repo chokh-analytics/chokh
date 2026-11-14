@@ -184,6 +184,22 @@ import {
   type StoredUser,
   type TeamMember,
   type UserPatch,
+  DEFAULT_TEAM_ID,
+  MAX_PENDING_INVITATIONS,
+  changedMembers,
+  checkAuditPage,
+  checkAuditRow,
+  checkInvitation,
+  matchesAudit,
+  type AccessScope,
+  type AuditEntry,
+  type AuditPage,
+  type AuditPageQuery,
+  type InvitationRecord,
+  type SiteMember,
+  type StoredIdentity,
+  type StoredInvitation,
+  type TeamMemberChange,
 } from './AnalyticsStore.js';
 
 export interface MemoryStore extends AnalyticsStore, AccountStore {
@@ -229,6 +245,22 @@ function copyAlert(alert: Alert): Alert {
   };
 }
 
+// An invitation as a caller may hold it: no hash, and a scope of its own so
+// nobody changes the stored one through the answer.
+function invitationRecord(invitation: StoredInvitation): InvitationRecord {
+  const { tokenHash: _tokenHash, ...record } = invitation;
+  return { ...record, scope: { ...record.scope } };
+}
+
+function sameScope(left: AccessScope, right: AccessScope): boolean {
+  return left.kind === right.kind && left.id === right.id;
+}
+
+// By bytes, the order the other two adapters give an id.
+function byText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function copyFunnel(funnel: Funnel): Funnel {
   return { ...funnel, steps: funnel.steps.map((step) => ({ ...step })) };
 }
@@ -256,6 +288,9 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
   let teams: StoredTeam[] = [];
   let apiKeys: StoredApiKey[] = [];
   let auditLog: AuditRecord[] = [];
+  let siteMembers: SiteMember[] = [];
+  let invitations: StoredInvitation[] = [];
+  let identities: StoredIdentity[] = [];
   let goals: Goal[] = [];
   let segments: Segment[] = [];
   let annotations: Annotation[] = [];
@@ -1150,8 +1185,311 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
     },
 
     audit(row: AuditRecord): Promise<void> {
+      checkAuditRow(row);
       auditLog.push({ ...row });
       return Promise.resolve();
+    },
+
+    // Access (AN-TEAM01). One thread and no waits, so every rule that the
+    // other adapters need a transaction or a compare-and-set for is simply
+    // true here; the rules themselves are the shared ones.
+
+    usersByIds(userIds: string[]): Promise<StoredUser[]> {
+      const wanted = new Set(userIds);
+      return Promise.resolve(
+        users
+          .filter((row) => wanted.has(row.id))
+          .sort((left, right) => byText(left.id, right.id))
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    bumpSessionEpoch(userId: string): Promise<number> {
+      const at = users.findIndex((row) => row.id === userId);
+      const current = users[at];
+      if (current === undefined) {
+        throw new StoreQueryError('UNKNOWN_USER', `No account answers to ${userId}`);
+      }
+      const next = (current.sessionEpoch ?? 0) + 1;
+      users[at] = { ...current, sessionEpoch: next };
+      return Promise.resolve(next);
+    },
+
+    changeTeamMember(
+      teamId: string,
+      userId: string,
+      to: TeamMemberChange | null,
+    ): Promise<StoredTeam> {
+      const team = teams.find((row) => row.id === teamId);
+      if (team === undefined) {
+        throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
+      }
+      const holders = new Set(
+        users.filter((row) => row.passwordHash !== undefined).map((row) => row.id),
+      );
+      team.members = changedMembers(team.members, userId, to, holders);
+      return Promise.resolve({ ...team, members: team.members.map((member) => ({ ...member })) });
+    },
+
+    renameTeam(teamId: string, name: string): Promise<StoredTeam> {
+      const team = teams.find((row) => row.id === teamId);
+      if (team === undefined) {
+        throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
+      }
+      team.name = name;
+      return Promise.resolve({ ...team, members: team.members.map((member) => ({ ...member })) });
+    },
+
+    deleteTeam(teamId: string): Promise<void> {
+      if (teamId === DEFAULT_TEAM_ID) {
+        throw new StoreQueryError('DEFAULT_TEAM', 'The default team is never deleted');
+      }
+      if (!teams.some((row) => row.id === teamId)) {
+        throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
+      }
+      if ([...bySiteId.values()].some((site) => site.teamId === teamId)) {
+        throw new StoreQueryError('TEAM_HAS_SITES', 'That team still holds a site');
+      }
+      teams = teams.filter((row) => row.id !== teamId);
+      invitations = invitations.filter(
+        (row) => !(row.scope.kind === 'team' && row.scope.id === teamId),
+      );
+      return Promise.resolve();
+    },
+
+    siteMembers(siteId: string): Promise<SiteMember[]> {
+      return Promise.resolve(
+        siteMembers
+          .filter((row) => row.siteId === siteId)
+          .sort((left, right) => byText(left.userId, right.userId))
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    siteGrantsForUser(userId: string): Promise<SiteMember[]> {
+      return Promise.resolve(
+        siteMembers
+          .filter((row) => row.userId === userId)
+          .sort((left, right) => byText(left.siteId, right.siteId))
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    setSiteMember(member: SiteMember): Promise<void> {
+      siteOrThrow(member.siteId);
+      const row: SiteMember = {
+        siteId: member.siteId,
+        userId: member.userId,
+        role: member.role,
+        identity: member.identity,
+      };
+      const at = siteMembers.findIndex(
+        (each) => each.siteId === member.siteId && each.userId === member.userId,
+      );
+      if (at === -1) {
+        siteMembers.push(row);
+      } else {
+        siteMembers[at] = row;
+      }
+      return Promise.resolve();
+    },
+
+    removeSiteMember(siteId: string, userId: string): Promise<boolean> {
+      const kept = siteMembers.filter((row) => !(row.siteId === siteId && row.userId === userId));
+      const removed = kept.length !== siteMembers.length;
+      siteMembers = kept;
+      return Promise.resolve(removed);
+    },
+
+    createInvitation(invitation: StoredInvitation): Promise<void> {
+      checkInvitation(invitation);
+      const email = invitation.email.toLowerCase();
+      const scope = invitation.scope;
+      if (scope.kind === 'team') {
+        if (!teams.some((row) => row.id === scope.id)) {
+          throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${scope.id}`);
+        }
+      } else {
+        siteOrThrow(scope.id);
+      }
+      if (
+        invitations.some(
+          (row) => row.id === invitation.id || row.tokenHash === invitation.tokenHash,
+        )
+      ) {
+        throw new StoreQueryError('INVITATION_EXISTS', 'That invitation already exists');
+      }
+      const open = invitations.filter(
+        (row) =>
+          sameScope(row.scope, scope) && row.acceptedAt === undefined && row.revokedAt === undefined,
+      );
+      const waiting = open.filter((row) => row.expiresAt > invitation.createdAt);
+      if (waiting.some((row) => row.email === email)) {
+        throw new StoreQueryError(
+          'INVITATION_EXISTS',
+          'An invitation to that address is already waiting there',
+        );
+      }
+      if (waiting.length >= MAX_PENDING_INVITATIONS) {
+        throw new StoreQueryError(
+          'INVITATION_LIMIT',
+          `At most ${MAX_PENDING_INVITATIONS} invitations can be waiting on one team or site`,
+        );
+      }
+      // One to this address that lapsed unused is closed by the new one.
+      for (const row of open) {
+        if (row.email === email) {
+          row.revokedAt = invitation.createdAt;
+          row.revokedBy = invitation.invitedBy;
+        }
+      }
+      invitations.push({ ...invitation, email, scope: { ...scope } });
+      return Promise.resolve();
+    },
+
+    invitationByHash(tokenHash: string): Promise<InvitationRecord | null> {
+      const found = invitations.find((row) => row.tokenHash === tokenHash);
+      return Promise.resolve(found === undefined ? null : invitationRecord(found));
+    },
+
+    invitation(id: string): Promise<InvitationRecord | null> {
+      const found = invitations.find((row) => row.id === id);
+      return Promise.resolve(found === undefined ? null : invitationRecord(found));
+    },
+
+    openInvitations(scope: AccessScope): Promise<InvitationRecord[]> {
+      return Promise.resolve(
+        invitations
+          .filter(
+            (row) =>
+              sameScope(row.scope, scope) &&
+              row.acceptedAt === undefined &&
+              row.revokedAt === undefined,
+          )
+          .sort((left, right) => left.createdAt - right.createdAt || byText(left.id, right.id))
+          .map(invitationRecord),
+      );
+    },
+
+    invitationsSentBy(userId: string): Promise<InvitationRecord[]> {
+      return Promise.resolve(
+        invitations
+          .filter(
+            (row) =>
+              row.invitedBy === userId &&
+              row.acceptedAt === undefined &&
+              row.revokedAt === undefined,
+          )
+          .sort((left, right) => left.createdAt - right.createdAt || byText(left.id, right.id))
+          .map(invitationRecord),
+      );
+    },
+
+    revokeInvitation(id: string, at: number, by: string): Promise<boolean> {
+      const found = invitations.find((row) => row.id === id);
+      if (found === undefined || found.acceptedAt !== undefined || found.revokedAt !== undefined) {
+        return Promise.resolve(false);
+      }
+      found.revokedAt = at;
+      found.revokedBy = by;
+      return Promise.resolve(true);
+    },
+
+    claimInvitation(
+      tokenHash: string,
+      at: number,
+      userId: string,
+    ): Promise<InvitationRecord | null> {
+      const found = invitations.find((row) => row.tokenHash === tokenHash);
+      if (
+        found === undefined ||
+        found.acceptedAt !== undefined ||
+        found.revokedAt !== undefined ||
+        !(found.expiresAt > at)
+      ) {
+        return Promise.resolve(null);
+      }
+      found.acceptedAt = at;
+      found.acceptedBy = userId;
+      return Promise.resolve(invitationRecord(found));
+    },
+
+    linkIdentity(identity: StoredIdentity): Promise<void> {
+      if (!users.some((row) => row.id === identity.userId)) {
+        throw new StoreQueryError('UNKNOWN_USER', `No account answers to ${identity.userId}`);
+      }
+      if (
+        identities.some(
+          (row) => row.issuer === identity.issuer && row.subject === identity.subject,
+        )
+      ) {
+        throw new StoreQueryError('IDENTITY_TAKEN', 'That identity is already linked to an account');
+      }
+      if (
+        identities.some((row) => row.userId === identity.userId && row.issuer === identity.issuer)
+      ) {
+        throw new StoreQueryError(
+          'IDENTITY_EXISTS',
+          'That account already has an identity from that issuer',
+        );
+      }
+      identities.push({
+        issuer: identity.issuer,
+        subject: identity.subject,
+        userId: identity.userId,
+        linkedAt: identity.linkedAt,
+      });
+      return Promise.resolve();
+    },
+
+    userByIdentity(issuer: string, subject: string): Promise<StoredUser | null> {
+      const link = identities.find((row) => row.issuer === issuer && row.subject === subject);
+      const found = link === undefined ? undefined : users.find((row) => row.id === link.userId);
+      return Promise.resolve(found === undefined ? null : { ...found });
+    },
+
+    identitiesForUser(userId: string): Promise<StoredIdentity[]> {
+      return Promise.resolve(
+        identities
+          .filter((row) => row.userId === userId)
+          .sort((left, right) => byText(left.issuer, right.issuer))
+          .map((row) => ({ ...row })),
+      );
+    },
+
+    unlinkIdentity(userId: string, issuer: string): Promise<boolean> {
+      const kept = identities.filter((row) => !(row.userId === userId && row.issuer === issuer));
+      const removed = kept.length !== identities.length;
+      identities = kept;
+      return Promise.resolve(removed);
+    },
+
+    auditPage(query: AuditPageQuery): Promise<AuditPage> {
+      checkAuditPage(query);
+      const after = query.after;
+      // A row's id here is where it stands in the log, which only ever grows.
+      if (after !== undefined && !/^[0-9]{1,15}$/.test(after.id)) {
+        throw new StoreQueryError('INVALID_CURSOR', 'That cursor was not written by this store');
+      }
+      const edge = after === undefined ? undefined : { ts: after.ts, at: Number(after.id) };
+      const rest = auditLog
+        .map((row, at) => ({ row, at }))
+        .filter((each) => matchesAudit(each.row, query))
+        .filter(
+          (each) =>
+            edge === undefined ||
+            each.row.ts < edge.ts ||
+            (each.row.ts === edge.ts && each.at < edge.at),
+        )
+        .sort((left, right) => right.row.ts - left.row.ts || right.at - left.at);
+      const rows: AuditEntry[] = rest
+        .slice(0, query.limit)
+        .map((each) => ({ ...each.row, id: String(each.at) }));
+      const last = rows[rows.length - 1];
+      return Promise.resolve({
+        rows,
+        next: rest.length > query.limit && last !== undefined ? { ts: last.ts, id: last.id } : null,
+      });
     },
 
     auditTrail(siteId: string, from: number, to: number): Promise<AuditRecord[]> {
@@ -1248,6 +1586,9 @@ export function createMemoryStore(sites: Site[] = [], options: StoreOptions = {}
       teams = [];
       apiKeys = [];
       auditLog = [];
+      siteMembers = [];
+      invitations = [];
+      identities = [];
       goals = [];
       funnels = [];
       segments = [];

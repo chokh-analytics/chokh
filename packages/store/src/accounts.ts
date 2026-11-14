@@ -72,6 +72,12 @@ export interface StoredUser {
   passwordHash?: string;
   createdAt: number;
   lastLoginAt?: number;
+  // How many times this account's sessions have been ended (AN-TEAM01). A
+  // session cookie carries the number it was issued under and is refused once
+  // the account's has moved on, which is how a removed member or a lowered
+  // role stops being signed in on the next request. Absent reads as zero, so
+  // an account from before the field existed keeps the sessions it has.
+  sessionEpoch?: number;
 }
 
 export interface StoredApiKey {
@@ -88,24 +94,34 @@ export interface StoredApiKey {
   createdBy: string;
 }
 
-export type AuditActorKind = 'session' | 'key';
+// A person signed in, a key, or the SSO exchange acting for the application
+// that signed the token (a membership it set is nobody's click in this
+// dashboard, and the log should not pretend it was).
+export type AuditActorKind = 'session' | 'key' | 'sso';
 
-// One row per response that carried an address, a userId or a trait. Kept
-// forever: the point of the log is the question "who looked at this person",
-// which is asked months later.
+// One row per response that carried an address, a userId or a trait, and
+// (AN-TEAM01) one per change to who may reach a site or a team. Kept forever:
+// the point of the log is the question "who looked at this person", which is
+// asked months later.
+//
+// A row is about a site or about a team, exactly one of them: checkAuditRow in
+// access.ts refuses anything else. Every row written before AN-TEAM01 is about
+// a site.
 export interface AuditRecord {
-  siteId: string;
+  siteId?: string;
+  teamId?: string;
   ts: number;
   actor: { kind: AuditActorKind; id: string; email?: string };
-  // What was exercised. Only 'read:identity' today, and a string rather than an
-  // enum so a later ticket can log a write without a migration.
+  // What was exercised: 'read:identity' for a read, and a string rather than
+  // an enum so a later ticket can log a write without a migration.
   action: string;
   // The route that answered, so a log line reads without a join.
   route: string;
-  // The visitor or user the read was about, when it was about one.
+  // The visitor or user the read was about, when it was about one; for a
+  // change of access, the account or the invitation it was made to.
   target?: string;
-  // Which identity fields the response actually carried. A read that revealed
-  // nothing writes no row at all.
+  // Which identity fields the response actually carried, or what a change of
+  // access changed. A read that revealed nothing writes no row at all.
   fields: string[];
 }
 

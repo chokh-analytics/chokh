@@ -15,5 +15,6 @@ export * from './health.js';
 export * from './AnalyticsStore.js';
 export * from './imports.js';
 export * from './accounts.js';
+export * from './access.js';
 export * from './routes.js';
 export * from './AccountStore.js';

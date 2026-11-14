@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import {
+  MAX_AUDIT_PAGE,
+  MAX_PENDING_INVITATIONS,
+  type AccessScope,
+  type AuditPageQuery,
+  type StoredInvitation,
+} from '../access.js';
 import type { AccountStore } from '../AccountStore.js';
 import type { AnalyticsStore } from '../AnalyticsStore.js';
 import {
@@ -10,6 +17,7 @@ import {
   funnelIdFor,
   goalIdFor,
   segmentIdFor,
+  type AuditRecord,
   type StoredApiKey,
   type StoredTeam,
   type StoredUser,
@@ -59,6 +67,30 @@ function user(id: string, email: string): StoredUser {
 
 function team(id: string, userId: string): StoredTeam {
   return { id, name: id, members: [{ userId, role: 'owner', identity: true }] };
+}
+
+const WEEK = 7 * 86_400_000;
+
+// An invitation to one address, a viewer's unless a case says otherwise. The
+// hash is spelled from the id so a case can name it; a real one is SHA-256.
+function invitation(
+  id: string,
+  scope: AccessScope,
+  email: string,
+  overrides: Partial<StoredInvitation> = {},
+): StoredInvitation {
+  return {
+    id,
+    tokenHash: `hash-${id}`,
+    email,
+    scope,
+    role: 'viewer',
+    identity: false,
+    invitedBy: 'u_1',
+    createdAt: NOW,
+    expiresAt: NOW + WEEK,
+    ...overrides,
+  };
 }
 
 function key(id: string, siteId: string, keyHash: string): StoredApiKey {
@@ -921,6 +953,789 @@ export function runAccountConformance(name: string, create: () => Promise<Accoun
 
       it('leaves out what happened outside the range', async () => {
         expect(await store.auditTrail('s_one', NOW + 500, NOW + 600)).toEqual([]);
+      });
+    });
+
+    // AN-TEAM01 from here: who may reach what, and the log read a page at a
+    // time. Every case below is new; none above was changed.
+
+    describe('ending sessions', () => {
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createUser(user('u_1', 'first@example.com'));
+        await store.createUser(user('u_2', 'second@example.com'));
+        await store.createUser(user('u_3', 'third@example.com'));
+      });
+
+      it('reads the accounts behind a list of ids, and leaves out an id nobody holds', async () => {
+        const found = await store.usersByIds(['u_3', 'u_nobody', 'u_1']);
+        expect(found.map((row) => row.id)).toEqual(['u_1', 'u_3']);
+        expect(found[0]?.email).toBe('first@example.com');
+        expect(await store.usersByIds([])).toEqual([]);
+      });
+
+      it('counts the times an account was signed out everywhere, starting from none', async () => {
+        expect((await store.userById('u_1'))?.sessionEpoch ?? 0).toBe(0);
+        expect(await store.bumpSessionEpoch('u_1')).toBe(1);
+        expect(await store.bumpSessionEpoch('u_1')).toBe(2);
+        expect((await store.userById('u_1'))?.sessionEpoch).toBe(2);
+        // Nobody else's moved, and a patch of something else leaves it.
+        expect((await store.userById('u_2'))?.sessionEpoch ?? 0).toBe(0);
+        await store.updateUser('u_1', { lastLoginAt: NOW });
+        expect((await store.userById('u_1'))?.sessionEpoch).toBe(2);
+        expect((await store.userByEmail('first@example.com'))?.sessionEpoch).toBe(2);
+      });
+
+      it('counts every one of several sent at once', async () => {
+        const answers = await Promise.all(
+          Array.from({ length: 8 }, () => store.bumpSessionEpoch('u_2')),
+        );
+        expect([...answers].sort((left, right) => left - right)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+        expect((await store.userById('u_2'))?.sessionEpoch).toBe(8);
+      });
+
+      it('refuses an account nobody holds', async () => {
+        expect(await refusal(() => store.bumpSessionEpoch('u_nobody'))).toBe('UNKNOWN_USER');
+      });
+    });
+
+    describe('team changes', () => {
+      const withoutPassword = (id: string, email: string): StoredUser => ({
+        id,
+        email,
+        createdAt: NOW,
+      });
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createUser(user('u_1', 'first@example.com'));
+        await store.createUser(user('u_2', 'second@example.com'));
+        await store.createUser(withoutPassword('u_3', 'third@example.com'));
+        await store.createUser(withoutPassword('u_4', 'fourth@example.com'));
+        await store.createTeam(team(DEFAULT_TEAM_ID, 'u_1'));
+      });
+
+      it('adds a member at the end and changes one where they stand', async () => {
+        await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_2', { role: 'viewer', identity: false });
+        const added = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_3', {
+          role: 'viewer',
+          identity: false,
+        });
+        expect(added.members.map((member) => member.userId)).toEqual(['u_1', 'u_2', 'u_3']);
+        const changed = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_2', {
+          role: 'editor',
+          identity: true,
+        });
+        expect(changed.members).toEqual([
+          { userId: 'u_1', role: 'owner', identity: true },
+          { userId: 'u_2', role: 'editor', identity: true },
+          { userId: 'u_3', role: 'viewer', identity: false },
+        ]);
+        expect((await store.team(DEFAULT_TEAM_ID))?.members).toEqual(changed.members);
+      });
+
+      it('takes a member out, and says so when there was nobody to take', async () => {
+        const removed = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_3', null);
+        expect(removed.members.map((member) => member.userId)).toEqual(['u_1', 'u_2']);
+        expect(await store.teamsForUser('u_3')).toEqual([]);
+        expect(await refusal(() => store.changeTeamMember(DEFAULT_TEAM_ID, 'u_3', null))).toBe(
+          'UNKNOWN_MEMBER',
+        );
+        expect(
+          await refusal(() =>
+            store.changeTeamMember('t_nothing', 'u_1', { role: 'viewer', identity: false }),
+          ),
+        ).toBe('UNKNOWN_TEAM');
+      });
+
+      it('refuses to lower or remove the last owner, and changes nothing', async () => {
+        expect(
+          await refusal(() =>
+            store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', { role: 'editor', identity: true }),
+          ),
+        ).toBe('LAST_OWNER');
+        expect(await refusal(() => store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', null))).toBe(
+          'LAST_OWNER',
+        );
+        expect((await store.team(DEFAULT_TEAM_ID))?.members[0]).toEqual({
+          userId: 'u_1',
+          role: 'owner',
+          identity: true,
+        });
+        // The owner's flag is not their role: it can be changed.
+        const kept = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', {
+          role: 'owner',
+          identity: true,
+        });
+        expect(kept.members[0]?.role).toBe('owner');
+      });
+
+      it('refuses to leave a team with no owner who has a password', async () => {
+        // u_3 arrives through another application and has no password here.
+        await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_3', { role: 'owner', identity: true });
+        expect(
+          await refusal(() =>
+            store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', { role: 'viewer', identity: false }),
+          ),
+        ).toBe('LAST_OWNER');
+        expect(await refusal(() => store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', null))).toBe(
+          'LAST_OWNER',
+        );
+        // The one without a password can go: an owner with one remains.
+        const lowered = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_3', null);
+        expect(lowered.members.map((member) => member.userId)).toEqual(['u_1', 'u_2']);
+        // And once a second owner has a password, the first may step down.
+        await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_2', { role: 'owner', identity: true });
+        const stepped = await store.changeTeamMember(DEFAULT_TEAM_ID, 'u_1', {
+          role: 'viewer',
+          identity: false,
+        });
+        expect(stepped.members.find((member) => member.userId === 'u_1')?.role).toBe('viewer');
+      });
+
+      it('holds a team whose owners never had a password to the first rule only', async () => {
+        await store.createTeam({
+          id: 't_sso',
+          name: 'Signed in elsewhere',
+          members: [
+            { userId: 'u_3', role: 'owner', identity: true },
+            { userId: 'u_4', role: 'owner', identity: false },
+          ],
+        });
+        const lowered = await store.changeTeamMember('t_sso', 'u_3', {
+          role: 'viewer',
+          identity: false,
+        });
+        expect(lowered.members.find((member) => member.userId === 'u_3')?.role).toBe('viewer');
+        expect(await refusal(() => store.changeTeamMember('t_sso', 'u_4', null))).toBe('LAST_OWNER');
+      });
+
+      it('refuses exactly one of two owners lowering each other at the same moment', async () => {
+        for (let round = 0; round < 6; round += 1) {
+          const id = `t_race_${round}`;
+          await store.createTeam({
+            id,
+            name: id,
+            members: [
+              { userId: 'u_1', role: 'owner', identity: true },
+              { userId: 'u_2', role: 'owner', identity: true },
+            ],
+          });
+          const outcomes = await Promise.all([
+            refusal(() => store.changeTeamMember(id, 'u_1', { role: 'viewer', identity: false })),
+            refusal(() => store.changeTeamMember(id, 'u_2', { role: 'viewer', identity: false })),
+          ]);
+          expect([...outcomes].sort()).toEqual(['LAST_OWNER', 'NOTHING_WAS_REFUSED']);
+          const owners = (await store.team(id))?.members.filter((member) => member.role === 'owner');
+          expect(owners).toHaveLength(1);
+        }
+      });
+
+      it('keeps every one of several changes made to one team at once', async () => {
+        await store.createTeam({
+          id: 't_busy',
+          name: 'Busy',
+          members: [{ userId: 'u_1', role: 'owner', identity: true }],
+        });
+        const ids = ['u_a', 'u_b', 'u_c', 'u_d', 'u_e'];
+        await Promise.all([
+          ...ids.map((userId) =>
+            store.changeTeamMember('t_busy', userId, { role: 'viewer', identity: false }),
+          ),
+          store.setTeamMember('t_busy', { userId: 'u_f', role: 'editor', identity: false }),
+        ]);
+        const members = (await store.team('t_busy'))?.members ?? [];
+        expect(members.map((member) => member.userId).sort()).toEqual([
+          'u_1',
+          'u_a',
+          'u_b',
+          'u_c',
+          'u_d',
+          'u_e',
+          'u_f',
+        ]);
+      });
+
+      it('renames a team and leaves its members alone', async () => {
+        const renamed = await store.renameTeam('t_busy', 'Quieter now');
+        expect(renamed.name).toBe('Quieter now');
+        expect(renamed.members).toHaveLength(7);
+        expect((await store.team('t_busy'))?.name).toBe('Quieter now');
+        expect(await refusal(() => store.renameTeam('t_nothing', 'x'))).toBe('UNKNOWN_TEAM');
+      });
+
+      it('deletes a team that holds no site, and never the default one', async () => {
+        await store.createSite(site('s_held', ['held.example'], { teamId: 't_busy' }));
+        expect(await refusal(() => store.deleteTeam('t_busy'))).toBe('TEAM_HAS_SITES');
+        expect(await refusal(() => store.deleteTeam(DEFAULT_TEAM_ID))).toBe('DEFAULT_TEAM');
+        expect(await refusal(() => store.deleteTeam('t_nothing'))).toBe('UNKNOWN_TEAM');
+        // Moved to another team, the site no longer holds it.
+        await store.updateSite('s_held', { teamId: DEFAULT_TEAM_ID });
+        await store.createInvitation(
+          invitation('inv_goes', { kind: 'team', id: 't_busy' }, 'goes@example.com'),
+        );
+        await store.deleteTeam('t_busy');
+        expect(await store.team('t_busy')).toBeNull();
+        expect(await store.teamsForUser('u_a')).toEqual([]);
+        expect(await store.invitation('inv_goes')).toBeNull();
+        expect((await store.team(DEFAULT_TEAM_ID))?.members.length).toBeGreaterThan(0);
+      });
+    });
+
+    describe('site members', () => {
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createSite(site('s_one', ['one.example']));
+        await store.createSite(site('s_two', ['two.example']));
+      });
+
+      it('keeps one role per person and site, and changes it in place', async () => {
+        await store.setSiteMember({ siteId: 's_one', userId: 'u_2', role: 'viewer', identity: false });
+        await store.setSiteMember({ siteId: 's_one', userId: 'u_1', role: 'owner', identity: true });
+        await store.setSiteMember({ siteId: 's_one', userId: 'u_2', role: 'editor', identity: true });
+        expect(await store.siteMembers('s_one')).toEqual([
+          { siteId: 's_one', userId: 'u_1', role: 'owner', identity: true },
+          { siteId: 's_one', userId: 'u_2', role: 'editor', identity: true },
+        ]);
+        expect(await store.siteMembers('s_two')).toEqual([]);
+      });
+
+      it("lists what one account holds across sites, and nobody else's", async () => {
+        await store.setSiteMember({ siteId: 's_two', userId: 'u_2', role: 'viewer', identity: false });
+        expect(await store.siteGrantsForUser('u_2')).toEqual([
+          { siteId: 's_one', userId: 'u_2', role: 'editor', identity: true },
+          { siteId: 's_two', userId: 'u_2', role: 'viewer', identity: false },
+        ]);
+        expect((await store.siteGrantsForUser('u_1')).map((row) => row.siteId)).toEqual(['s_one']);
+        expect(await store.siteGrantsForUser('u_nobody')).toEqual([]);
+      });
+
+      it('removes once and says so the second time, and only on that site', async () => {
+        expect(await store.removeSiteMember('s_one', 'u_2')).toBe(true);
+        expect(await store.removeSiteMember('s_one', 'u_2')).toBe(false);
+        expect(await store.removeSiteMember('s_two', 'u_1')).toBe(false);
+        expect((await store.siteGrantsForUser('u_2')).map((row) => row.siteId)).toEqual(['s_two']);
+      });
+
+      it('refuses a role on a site nobody registered', async () => {
+        expect(
+          await refusal(() =>
+            store.setSiteMember({ siteId: 's_nobody', userId: 'u_1', role: 'viewer', identity: false }),
+          ),
+        ).toBe('UNKNOWN_SITE');
+      });
+
+      it('keeps one row when the same person is set several times at once', async () => {
+        await Promise.all(
+          Array.from({ length: 6 }, (_, index) =>
+            store.setSiteMember({
+              siteId: 's_two',
+              userId: 'u_9',
+              role: index % 2 === 0 ? 'viewer' : 'editor',
+              identity: false,
+            }),
+          ),
+        );
+        const rows = (await store.siteMembers('s_two')).filter((row) => row.userId === 'u_9');
+        expect(rows).toHaveLength(1);
+        expect(await store.siteGrantsForUser('u_9')).toHaveLength(1);
+      });
+    });
+
+    describe('invitations', () => {
+      const TEAM: AccessScope = { kind: 'team', id: DEFAULT_TEAM_ID };
+      const SITE: AccessScope = { kind: 'site', id: 's_one' };
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createTeam(team(DEFAULT_TEAM_ID, 'u_1'));
+        await store.createTeam(team('t_full', 'u_1'));
+        await store.createSite(site('s_one', ['one.example']));
+      });
+
+      it('finds an invitation by the hash of its token and never hands the hash back', async () => {
+        await store.createInvitation(invitation('inv_1', TEAM, 'Ada@Example.com'));
+        const found = await store.invitationByHash('hash-inv_1');
+        expect(found).toEqual({
+          id: 'inv_1',
+          email: 'ada@example.com',
+          scope: TEAM,
+          role: 'viewer',
+          identity: false,
+          invitedBy: 'u_1',
+          createdAt: NOW,
+          expiresAt: NOW + WEEK,
+        });
+        expect(found).not.toHaveProperty('tokenHash');
+        expect(await store.invitation('inv_1')).toEqual(found);
+        expect(await store.invitationByHash('hash-nothing')).toBeNull();
+        expect(await store.invitation('inv_nothing')).toBeNull();
+      });
+
+      it("lists what is waiting on a scope, oldest first, and only that scope's", async () => {
+        await store.createInvitation(
+          invitation('inv_3', TEAM, 'cyd@example.com', { createdAt: NOW + 2000, expiresAt: NOW + WEEK }),
+        );
+        await store.createInvitation(
+          invitation('inv_2', TEAM, 'bea@example.com', { createdAt: NOW + 1000, expiresAt: NOW + WEEK }),
+        );
+        await store.createInvitation(
+          invitation('inv_site', SITE, 'ada@example.com', { role: 'editor', identity: true }),
+        );
+        expect((await store.openInvitations(TEAM)).map((row) => row.id)).toEqual([
+          'inv_1',
+          'inv_2',
+          'inv_3',
+        ]);
+        const onSite = await store.openInvitations(SITE);
+        expect(onSite.map((row) => row.id)).toEqual(['inv_site']);
+        expect(onSite[0]?.role).toBe('editor');
+        expect(onSite[0]?.identity).toBe(true);
+        for (const row of [...onSite, ...(await store.openInvitations(TEAM))]) {
+          expect(row).not.toHaveProperty('tokenHash');
+        }
+        expect(await store.openInvitations({ kind: 'team', id: 't_full' })).toEqual([]);
+      });
+
+      it('refuses a second invitation waiting for the same address on the same scope', async () => {
+        expect(
+          await refusal(() => store.createInvitation(invitation('inv_again', TEAM, 'ADA@example.com'))),
+        ).toBe('INVITATION_EXISTS');
+        expect(await store.invitation('inv_again')).toBeNull();
+        // The same token twice is refused too, whoever it is for.
+        expect(
+          await refusal(() =>
+            store.createInvitation({
+              ...invitation('inv_same_token', TEAM, 'new@example.com'),
+              tokenHash: 'hash-inv_1',
+            }),
+          ),
+        ).toBe('INVITATION_EXISTS');
+      });
+
+      it('lets an address be invited again once the first one lapsed, and closes the first', async () => {
+        await store.createInvitation(
+          invitation('inv_old', TEAM, 'dee@example.com', { createdAt: NOW, expiresAt: NOW + 1000 }),
+        );
+        // Still waiting a moment before it lapses: refused.
+        expect(
+          await refusal(() =>
+            store.createInvitation(
+              invitation('inv_early', TEAM, 'dee@example.com', {
+                createdAt: NOW + 999,
+                expiresAt: NOW + WEEK,
+              }),
+            ),
+          ),
+        ).toBe('INVITATION_EXISTS');
+        await store.createInvitation(
+          invitation('inv_new', TEAM, 'dee@example.com', {
+            createdAt: NOW + 1000,
+            expiresAt: NOW + WEEK,
+            invitedBy: 'u_2',
+          }),
+        );
+        const old = await store.invitation('inv_old');
+        expect(old?.revokedAt).toBe(NOW + 1000);
+        expect(old?.revokedBy).toBe('u_2');
+        expect((await store.openInvitations(TEAM)).map((row) => row.id)).toContain('inv_new');
+        expect((await store.openInvitations(TEAM)).map((row) => row.id)).not.toContain('inv_old');
+      });
+
+      it('refuses one more than the ceiling waiting on one scope', async () => {
+        const full: AccessScope = { kind: 'team', id: 't_full' };
+        for (let index = 0; index < MAX_PENDING_INVITATIONS; index += 1) {
+          await store.createInvitation(invitation(`inv_f${index}`, full, `p${index}@example.com`));
+        }
+        expect(
+          await refusal(() => store.createInvitation(invitation('inv_over', full, 'over@example.com'))),
+        ).toBe('INVITATION_LIMIT');
+        // One used or revoked makes room, and another scope was never full.
+        expect(await store.revokeInvitation('inv_f0', NOW + 5, 'u_1')).toBe(true);
+        await store.createInvitation(invitation('inv_room', full, 'room@example.com'));
+        expect(await store.openInvitations(full)).toHaveLength(MAX_PENDING_INVITATIONS);
+      });
+
+      it('refuses a team or a site that does not exist', async () => {
+        expect(
+          await refusal(() =>
+            store.createInvitation(
+              invitation('inv_no_team', { kind: 'team', id: 't_nothing' }, 'x@example.com'),
+            ),
+          ),
+        ).toBe('UNKNOWN_TEAM');
+        expect(
+          await refusal(() =>
+            store.createInvitation(
+              invitation('inv_no_site', { kind: 'site', id: 's_nothing' }, 'x@example.com'),
+            ),
+          ),
+        ).toBe('UNKNOWN_SITE');
+      });
+
+      it('refuses an invitation that is not created open, or that expires before it is made', async () => {
+        const base = invitation('inv_bad', TEAM, 'bad@example.com');
+        for (const bad of [
+          { ...base, acceptedAt: NOW, acceptedBy: 'u_9' },
+          { ...base, revokedAt: NOW },
+          { ...base, expiresAt: base.createdAt },
+          { ...base, tokenHash: '' },
+          { ...base, email: '' },
+        ]) {
+          expect(await refusal(() => store.createInvitation(bad))).toBe('INVALID_INVITATION');
+        }
+        expect(await store.invitation('inv_bad')).toBeNull();
+      });
+
+      it('is used once: the first claim is answered and no later one is', async () => {
+        const claimed = await store.claimInvitation('hash-inv_2', NOW + 5000, 'u_bea');
+        expect(claimed?.id).toBe('inv_2');
+        expect(claimed?.acceptedAt).toBe(NOW + 5000);
+        expect(claimed?.acceptedBy).toBe('u_bea');
+        expect(claimed).not.toHaveProperty('tokenHash');
+        expect(await store.claimInvitation('hash-inv_2', NOW + 6000, 'u_other')).toBeNull();
+        const after = await store.invitation('inv_2');
+        expect(after?.acceptedBy).toBe('u_bea');
+        expect(after?.acceptedAt).toBe(NOW + 5000);
+        expect((await store.openInvitations(TEAM)).map((row) => row.id)).not.toContain('inv_2');
+        expect(await store.claimInvitation('hash-nothing', NOW, 'u_x')).toBeNull();
+        // Used, it no longer stands in the way of a new one to that address.
+        await store.createInvitation(invitation('inv_2b', TEAM, 'bea@example.com'));
+      });
+
+      it('answers exactly one of eight claims sent at once', async () => {
+        const answers = await Promise.all(
+          Array.from({ length: 8 }, (_, index) =>
+            store.claimInvitation('hash-inv_3', NOW + 7000, `u_racer_${index}`),
+          ),
+        );
+        const won = answers.filter((answer) => answer !== null);
+        expect(won).toHaveLength(1);
+        expect((await store.invitation('inv_3'))?.acceptedBy).toBe(won[0]?.acceptedBy);
+      });
+
+      it('is never claimed once it has expired', async () => {
+        await store.createInvitation(
+          invitation('inv_short', SITE, 'eve@example.com', { createdAt: NOW, expiresAt: NOW + 60_000 }),
+        );
+        // The instant it expires is already too late.
+        expect(await store.claimInvitation('hash-inv_short', NOW + 60_000, 'u_eve')).toBeNull();
+        expect(await store.claimInvitation('hash-inv_short', NOW + 90_000, 'u_eve')).toBeNull();
+        expect((await store.invitation('inv_short'))?.acceptedAt).toBeUndefined();
+        // A millisecond earlier it would have been.
+        expect(
+          (await store.claimInvitation('hash-inv_short', NOW + 59_999, 'u_eve'))?.acceptedBy,
+        ).toBe('u_eve');
+      });
+
+      it('is never claimed once it is revoked, and is revoked once', async () => {
+        expect(await store.revokeInvitation('inv_1', NOW + 8000, 'u_1')).toBe(true);
+        expect(await store.revokeInvitation('inv_1', NOW + 9000, 'u_2')).toBe(false);
+        expect(await store.claimInvitation('hash-inv_1', NOW + 9500, 'u_ada')).toBeNull();
+        const row = await store.invitation('inv_1');
+        expect(row?.revokedAt).toBe(NOW + 8000);
+        expect(row?.revokedBy).toBe('u_1');
+        expect(row?.acceptedAt).toBeUndefined();
+        // An accepted one cannot be revoked afterwards, nor one that never was.
+        expect(await store.revokeInvitation('inv_2', NOW + 9000, 'u_1')).toBe(false);
+        expect(await store.revokeInvitation('inv_nothing', NOW, 'u_1')).toBe(false);
+      });
+
+      it('lists the open invitations one account sent, oldest first', async () => {
+        const sent = await store.invitationsSentBy('u_2');
+        expect(sent.map((row) => row.id)).toEqual(['inv_new']);
+        const mine = (await store.invitationsSentBy('u_1')).map((row) => row.id);
+        expect(mine).toContain('inv_site');
+        expect(mine).toContain('inv_2b');
+        // Neither the revoked one nor the accepted ones.
+        expect(mine).not.toContain('inv_1');
+        expect(mine).not.toContain('inv_2');
+        expect(mine).not.toContain('inv_3');
+        expect(await store.invitationsSentBy('u_nobody')).toEqual([]);
+      });
+    });
+
+    describe('identities', () => {
+      const ISSUER = 'https://login.example.test';
+
+      beforeAll(async () => {
+        await harness.reset();
+        await store.createUser(user('u_1', 'first@example.com'));
+        await store.createUser(user('u_2', 'second@example.com'));
+        for (const id of ['u_a', 'u_b', 'u_c', 'u_d']) {
+          await store.createUser(user(id, `${id}@example.com`));
+        }
+      });
+
+      it('links an account to an outside identity and finds the account by it', async () => {
+        await store.linkIdentity({ issuer: ISSUER, subject: 'sub-1', userId: 'u_1', linkedAt: NOW });
+        expect((await store.userByIdentity(ISSUER, 'sub-1'))?.id).toBe('u_1');
+        expect(await store.userByIdentity(ISSUER, 'sub-2')).toBeNull();
+        // The pair, exactly: another issuer's same subject is somebody else.
+        expect(await store.userByIdentity('https://other.example.test', 'sub-1')).toBeNull();
+        expect(await store.userByIdentity(ISSUER, 'SUB-1')).toBeNull();
+        expect(await store.identitiesForUser('u_1')).toEqual([
+          { issuer: ISSUER, subject: 'sub-1', userId: 'u_1', linkedAt: NOW },
+        ]);
+        expect(await store.identitiesForUser('u_2')).toEqual([]);
+      });
+
+      it('refuses a pair that is already linked, to another account or to this one', async () => {
+        expect(
+          await refusal(() =>
+            store.linkIdentity({ issuer: ISSUER, subject: 'sub-1', userId: 'u_2', linkedAt: NOW }),
+          ),
+        ).toBe('IDENTITY_TAKEN');
+        expect(
+          await refusal(() =>
+            store.linkIdentity({ issuer: ISSUER, subject: 'sub-1', userId: 'u_1', linkedAt: NOW }),
+          ),
+        ).toBe('IDENTITY_TAKEN');
+        expect((await store.userByIdentity(ISSUER, 'sub-1'))?.id).toBe('u_1');
+      });
+
+      it('refuses a second identity of one issuer on one account', async () => {
+        expect(
+          await refusal(() =>
+            store.linkIdentity({ issuer: ISSUER, subject: 'sub-9', userId: 'u_1', linkedAt: NOW }),
+          ),
+        ).toBe('IDENTITY_EXISTS');
+        expect(await store.userByIdentity(ISSUER, 'sub-9')).toBeNull();
+        // Another issuer is another identity, and that is allowed.
+        await store.linkIdentity({
+          issuer: 'https://other.example.test',
+          subject: 'sub-9',
+          userId: 'u_1',
+          linkedAt: NOW + 1,
+        });
+        expect((await store.identitiesForUser('u_1')).map((row) => row.issuer)).toEqual([
+          ISSUER,
+          'https://other.example.test',
+        ]);
+      });
+
+      it('refuses an account nobody holds', async () => {
+        expect(
+          await refusal(() =>
+            store.linkIdentity({ issuer: ISSUER, subject: 'sub-x', userId: 'u_nobody', linkedAt: NOW }),
+          ),
+        ).toBe('UNKNOWN_USER');
+      });
+
+      it('unlinks once and says so the second time', async () => {
+        expect(await store.unlinkIdentity('u_1', 'https://other.example.test')).toBe(true);
+        expect(await store.unlinkIdentity('u_1', 'https://other.example.test')).toBe(false);
+        expect(await store.unlinkIdentity('u_2', ISSUER)).toBe(false);
+        expect((await store.userByIdentity(ISSUER, 'sub-1'))?.id).toBe('u_1');
+        // Unlinked, the pair can be linked again.
+        await store.linkIdentity({
+          issuer: 'https://other.example.test',
+          subject: 'sub-9',
+          userId: 'u_2',
+          linkedAt: NOW + 2,
+        });
+        expect((await store.userByIdentity('https://other.example.test', 'sub-9'))?.id).toBe('u_2');
+      });
+
+      it('links a pair to one account when several ask at once', async () => {
+        const outcomes = await Promise.all(
+          ['u_a', 'u_b', 'u_c', 'u_d'].map((userId) =>
+            refusal(() =>
+              store.linkIdentity({ issuer: ISSUER, subject: 'sub-race', userId, linkedAt: NOW }),
+            ),
+          ),
+        );
+        expect(outcomes.filter((code) => code === 'NOTHING_WAS_REFUSED')).toHaveLength(1);
+        expect(outcomes.filter((code) => code === 'IDENTITY_TAKEN')).toHaveLength(3);
+        const holder = await store.userByIdentity(ISSUER, 'sub-race');
+        expect(['u_a', 'u_b', 'u_c', 'u_d']).toContain(holder?.id);
+      });
+    });
+
+    describe('the audit log, a page at a time', () => {
+      const row = (
+        scope: { siteId: string } | { teamId: string },
+        ts: number,
+        action: string,
+        actorId: string,
+        target?: string,
+      ): AuditRecord => ({
+        ...scope,
+        ts,
+        actor: actorId.startsWith('k_')
+          ? { kind: 'key', id: actorId }
+          : { kind: 'session', id: actorId, email: `${actorId}@example.com` },
+        action,
+        route: 'GET /api/sites/:siteId/people',
+        ...(target === undefined ? {} : { target }),
+        fields: action === 'read:identity' ? ['ip', 'userId'] : ['role=viewer'],
+      });
+
+      // Read every page of a query and hand back the targets in the order
+      // they came, with how many pages it took.
+      async function walk(
+        query: Omit<AuditPageQuery, 'after'>,
+      ): Promise<{ targets: (string | undefined)[]; ids: string[]; pages: number }> {
+        const targets: (string | undefined)[] = [];
+        const ids: string[] = [];
+        let after: AuditPageQuery['after'];
+        let pages = 0;
+        for (;;) {
+          const page = await store.auditPage(after === undefined ? query : { ...query, after });
+          pages += 1;
+          expect(page.rows.length).toBeLessThanOrEqual(query.limit);
+          for (const each of page.rows) {
+            targets.push(each.target);
+            ids.push(each.id);
+          }
+          if (page.next === null) break;
+          after = page.next;
+          if (pages > 50) throw new Error('the log never ended');
+        }
+        return { targets, ids, pages };
+      }
+
+      beforeAll(async () => {
+        await harness.reset();
+        // Seven rows of one site, five of them in one millisecond, written in
+        // the order t1 to t7.
+        await store.audit(row({ siteId: 's_one' }, NOW, 'read:identity', 'u_1', 't1'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 1000, 'read:identity', 'u_1', 't2'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 1000, 'read:identity', 'k_1', 't3'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 1000, 'member:set', 'u_2', 't4'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 1000, 'read:identity', 'u_2', 't5'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 1000, 'read:audit', 'u_1', 't6'));
+        await store.audit(row({ siteId: 's_one' }, NOW + 2000, 'read:identity', 'u_1', 't7'));
+        await store.audit(row({ siteId: 's_two' }, NOW + 1000, 'read:identity', 'u_1', 'other'));
+        await store.audit(row({ teamId: 't_1' }, NOW + 1000, 'member:set', 'u_1', 'team-1'));
+        await store.audit(row({ teamId: 't_1' }, NOW + 3000, 'invite:create', 'u_1', 'team-2'));
+        await store.audit(row({ teamId: 's_one' }, NOW + 1000, 'member:remove', 'u_1', 'same-name'));
+      });
+
+      it("reads a site's rows newest first, with what each row said", async () => {
+        const page = await store.auditPage({ scope: { kind: 'site', id: 's_one' }, limit: 50 });
+        expect(page.next).toBeNull();
+        expect(page.rows).toHaveLength(7);
+        expect(page.rows[0]?.target).toBe('t7');
+        expect(page.rows[6]?.target).toBe('t1');
+        expect(page.rows.map((each) => each.ts)).toEqual(
+          [...page.rows.map((each) => each.ts)].sort((left, right) => right - left),
+        );
+        const first = page.rows[6];
+        expect(first?.siteId).toBe('s_one');
+        expect(first?.teamId).toBeUndefined();
+        expect(first?.actor).toEqual({ kind: 'session', id: 'u_1', email: 'u_1@example.com' });
+        expect(first?.action).toBe('read:identity');
+        expect(first?.fields).toEqual(['ip', 'userId']);
+        expect(typeof first?.id).toBe('string');
+        expect(new Set(page.rows.map((each) => each.id)).size).toBe(7);
+      });
+
+      it('pages through rows of one millisecond without a gap or a repeat', async () => {
+        const whole = await walk({ scope: { kind: 'site', id: 's_one' }, limit: 50 });
+        for (const limit of [1, 2, 3, 4]) {
+          const paged = await walk({ scope: { kind: 'site', id: 's_one' }, limit });
+          expect(paged.ids).toEqual(whole.ids);
+          expect(paged.pages).toBeGreaterThan(1);
+        }
+        expect(new Set(whole.ids).size).toBe(7);
+        expect([...whole.targets].sort()).toEqual(['t1', 't2', 't3', 't4', 't5', 't6', 't7']);
+      });
+
+      it('says when a page was the last one, and when it was not', async () => {
+        const exact = await store.auditPage({ scope: { kind: 'site', id: 's_one' }, limit: 7 });
+        expect(exact.next).toBeNull();
+        const short = await store.auditPage({ scope: { kind: 'site', id: 's_one' }, limit: 6 });
+        expect(short.rows).toHaveLength(6);
+        expect(short.next).toEqual({ ts: short.rows[5]?.ts, id: short.rows[5]?.id });
+        expect(await store.auditPage({ scope: { kind: 'site', id: 's_empty' }, limit: 10 })).toEqual({
+          rows: [],
+          next: null,
+        });
+      });
+
+      it('filters by the range, the actor, the action and the target', async () => {
+        const site: AccessScope = { kind: 'site', id: 's_one' };
+        const targetsOf = async (
+          query: Omit<Partial<AuditPageQuery>, 'scope' | 'limit' | 'after'>,
+        ): Promise<(string | undefined)[]> =>
+          [...(await walk({ scope: site, limit: 2, ...query })).targets].sort();
+        // [from, to): the first instant is in, the last is out.
+        expect(await targetsOf({ from: NOW + 1000, to: NOW + 2000 })).toEqual([
+          't2',
+          't3',
+          't4',
+          't5',
+          't6',
+        ]);
+        expect(await targetsOf({ from: NOW + 1001 })).toEqual(['t7']);
+        expect(await targetsOf({ to: NOW + 1000 })).toEqual(['t1']);
+        expect(await targetsOf({ actorId: 'u_2' })).toEqual(['t4', 't5']);
+        expect(await targetsOf({ actorId: 'k_1' })).toEqual(['t3']);
+        expect(await targetsOf({ actions: ['member:set', 'read:audit'] })).toEqual(['t4', 't6']);
+        expect(await targetsOf({ actions: ['read:identity'], actorId: 'u_1' })).toEqual([
+          't1',
+          't2',
+          't7',
+        ]);
+        expect(await targetsOf({ target: 't5' })).toEqual(['t5']);
+        expect(await targetsOf({ target: 't' })).toEqual([]);
+        expect(await targetsOf({ actions: [] })).toEqual([]);
+      });
+
+      it("keeps a site's rows out of a team's page and a team's out of a site's", async () => {
+        const team = await walk({ scope: { kind: 'team', id: 't_1' }, limit: 1 });
+        expect(team.targets).toEqual(['team-2', 'team-1']);
+        const page = await store.auditPage({ scope: { kind: 'team', id: 't_1' }, limit: 5 });
+        expect(page.rows[0]?.teamId).toBe('t_1');
+        expect(page.rows[0]?.siteId).toBeUndefined();
+        // A team and a site that share a name are still two logs.
+        expect((await walk({ scope: { kind: 'team', id: 's_one' }, limit: 5 })).targets).toEqual([
+          'same-name',
+        ]);
+        expect((await walk({ scope: { kind: 'site', id: 't_1' }, limit: 5 })).targets).toEqual([]);
+        expect((await walk({ scope: { kind: 'site', id: 's_two' }, limit: 5 })).targets).toEqual([
+          'other',
+        ]);
+      });
+
+      it('leaves the trail a site had: a row about a team is not in it', async () => {
+        const trail = await store.auditTrail('s_one', NOW, NOW + 5000);
+        expect(trail).toHaveLength(7);
+        expect(trail[0]?.target).toBe('t1');
+        expect(trail.every((each) => each.siteId === 's_one')).toBe(true);
+      });
+
+      it('refuses a row about both a site and a team, or about neither', async () => {
+        const base = row({ siteId: 's_three' }, NOW, 'read:identity', 'u_1', 'x');
+        expect(await refusal(() => store.audit({ ...base, teamId: 't_three' }))).toBe(
+          'INVALID_AUDIT_ROW',
+        );
+        const { siteId: _siteId, ...neither } = base;
+        expect(await refusal(() => store.audit(neither))).toBe('INVALID_AUDIT_ROW');
+        expect(await refusal(() => store.audit({ ...neither, siteId: '' }))).toBe('INVALID_AUDIT_ROW');
+        expect((await walk({ scope: { kind: 'site', id: 's_three' }, limit: 5 })).targets).toEqual([]);
+        expect((await walk({ scope: { kind: 'team', id: 't_three' }, limit: 5 })).targets).toEqual([]);
+      });
+
+      it('refuses a page size it does not serve and a cursor it did not write', async () => {
+        const site: AccessScope = { kind: 'site', id: 's_one' };
+        for (const limit of [0, -1, 1.5, MAX_AUDIT_PAGE + 1, Number.NaN]) {
+          expect(await refusal(() => store.auditPage({ scope: site, limit }))).toBe(
+            'INVALID_AUDIT_QUERY',
+          );
+        }
+        expect((await store.auditPage({ scope: site, limit: MAX_AUDIT_PAGE })).rows).toHaveLength(7);
+        for (const id of ['not-a-cursor', '', "1'; DROP TABLE audit_log; --", '$gt']) {
+          expect(
+            await refusal(() => store.auditPage({ scope: site, limit: 5, after: { ts: NOW, id } })),
+          ).toBe('INVALID_CURSOR');
+        }
+        expect(
+          await refusal(() =>
+            store.auditPage({ scope: site, limit: 5, after: { ts: Number.NaN, id: '1' } }),
+          ),
+        ).toBe('INVALID_CURSOR');
       });
     });
   });

@@ -669,7 +669,7 @@ jobs:
           docker compose logs --no-color migrate | tail -n 3
           report="$(docker compose exec -T server node packages/store-postgres/dist/migrate.js --verify-only)"
           echo "${report}" | tail -n 1
-          grep -q 'tables: 16, indexes: 31 present of 31, missing: 0, unexpected: 0' <<< "${report}"
+          grep -q 'tables: 19, indexes: 41 present of 41, missing: 0, unexpected: 0' <<< "${report}"
 
       - name: Apply the index migration against the real MongoDB
         if: matrix.store == 'mongodb'
@@ -685,6 +685,14 @@ jobs:
           grep -Eq 'visitors +indexes 4/4' <<< "${report}"
           # The health reads' index (AN-VIT01) is the sixth on events.
           grep -Eq 'events +indexes 6/6' <<< "${report}"
+          # Access (AN-TEAM01): the three collections whose writes wait for
+          # their unique indexes, the log's two page indexes, and the totals
+          # Founder Owes quotes for a production install.
+          grep -Eq 'invitations +indexes 4/4' <<< "${report}"
+          grep -Eq 'identities +indexes 2/2' <<< "${report}"
+          grep -Eq 'site_members +indexes 2/2' <<< "${report}"
+          grep -Eq 'audit_log +indexes 3/3' <<< "${report}"
+          grep -q 'collections: 19, indexes: 45 present of 45, missing: 0, unexpected: 0' <<< "${report}"
 
       # The README's own first steps: the first account, a site, and then what
       # the script on a page would send. The session cookie is carried by hand

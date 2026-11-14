@@ -55,6 +55,7 @@ import {
   SESSION_DIMENSIONS,
   SESSION_PATH_BY_DIMENSION,
   StoreQueryError,
+  checkAuditRow,
   addEngagement,
   addTotals,
   assertEngageable,
@@ -228,6 +229,7 @@ import {
   USERS,
   VISITORS,
 } from './schema.js';
+import { createAccess, type TeamDoc } from './access.js';
 import { createImports } from './imports.js';
 
 // The MongoDB adapter. Everything below reads and writes through aggregation
@@ -290,6 +292,10 @@ function copyAlert(alert: Alert): Alert {
     recent: alert.recent.map(copyFiring),
   };
 }
+
+// A team as a caller reads it: without the revision the guarded writes keep on
+// the document (access.ts), which is the adapter's business and nobody else's.
+const TEAM_FIELDS = { projection: { _id: 0, rev: 0 } } as const;
 
 export async function createMongoStore(options: MongoStoreOptions = {}): Promise<MongoStore> {
   const client = options.client ?? new MongoClient(requiredUri(options.uri));
@@ -625,10 +631,21 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     now,
   });
 
+  // Site members, invitations, identities, the guarded team changes and the
+  // paged audit log, in access.ts with their reasons.
+  const access = createAccess({
+    db,
+    users,
+    teams: db.collection<TeamDoc>(TEAMS),
+    sites,
+    siteOrThrow,
+  });
+
   return {
     db,
     serverVersion,
     ...imports,
+    ...access,
 
     async createSite(site: Site): Promise<void> {
       if (site.domains.length === 0) {
@@ -726,22 +743,54 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     },
 
     team(teamId: string): Promise<StoredTeam | null> {
-      return teams.findOne({ id: teamId }, { projection: { _id: 0 } });
+      return teams.findOne({ id: teamId }, TEAM_FIELDS);
     },
 
     teamsForUser(userId: string): Promise<StoredTeam[]> {
-      return teams.find({ 'members.userId': userId }, { projection: { _id: 0 } }).toArray();
+      return teams.find({ 'members.userId': userId }, TEAM_FIELDS).toArray();
     },
 
     async setTeamMember(teamId: string, member: TeamMember): Promise<StoredTeam> {
-      const team = await teams.findOne({ id: teamId }, { projection: { _id: 0 } });
-      if (team === null) {
+      // One write, computed by the server from the list as it is at that
+      // moment: the member taken out if they were in it and put at its end.
+      // It used to be a read and a write, and two changes to one team at once
+      // could lose one of them. The revision goes up with it, so a guarded
+      // change (access.ts) that read the list before this landed notices.
+      // $literal, so no value of a member is ever read as an expression.
+      const updated = await teams.findOneAndUpdate(
+        { id: teamId },
+        [
+          {
+            $set: {
+              members: {
+                $concatArrays: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$members', []] },
+                      cond: { $ne: ['$$this.userId', { $literal: member.userId }] },
+                    },
+                  },
+                  [
+                    {
+                      $literal: {
+                        userId: member.userId,
+                        role: member.role,
+                        identity: member.identity,
+                      },
+                    },
+                  ],
+                ],
+              },
+              rev: { $add: [{ $ifNull: ['$rev', 0] }, 1] },
+            },
+          },
+        ],
+        { returnDocument: 'after', ...TEAM_FIELDS },
+      );
+      if (updated === null) {
         throw new StoreQueryError('UNKNOWN_TEAM', `No team answers to ${teamId}`);
       }
-      const members = team.members.filter((row) => row.userId !== member.userId);
-      members.push({ ...member });
-      await teams.updateOne({ id: teamId }, { $set: { members } });
-      return { ...team, members };
+      return updated;
     },
 
     async createApiKey(key: StoredApiKey): Promise<void> {
@@ -1063,6 +1112,7 @@ export async function createMongoStore(options: MongoStoreOptions = {}): Promise
     },
 
     async audit(row: AuditRecord): Promise<void> {
+      checkAuditRow(row);
       await auditLog.insertOne({ ...row });
     },
 

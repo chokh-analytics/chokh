@@ -1,3 +1,4 @@
+import type { AccessStore } from './access.js';
 import type { AuditRecord, StoredApiKey, StoredTeam, StoredUser, TeamMember } from './accounts.js';
 import type {
   Alert,
@@ -22,7 +23,11 @@ import type { Site, SiteSettings, SiteShare } from './types.js';
 //
 // Every adapter is held to the same answers by runAccountConformance in
 // ./conformance, the way AnalyticsStore is held by runStoreConformance.
-export interface AccountStore {
+//
+// Site members, invitations, identities, the guarded team changes and the
+// paged audit log (AN-TEAM01) are declared in access.ts and are part of this
+// interface.
+export interface AccountStore extends AccessStore {
   // Register a site. Refuses a duplicate id with SITE_EXISTS and a domain
   // already claimed by another site with DOMAIN_TAKEN, and refuses an empty
   // domain list with DOMAIN_REQUIRED: sites.domains is a unique multikey index,
@@ -50,7 +55,10 @@ export interface AccountStore {
   createTeam(team: StoredTeam): Promise<void>;
   team(teamId: string): Promise<StoredTeam | null>;
   teamsForUser(userId: string): Promise<StoredTeam[]>;
-  // Add a member or change their role. Answers with the team as it now is.
+  // Add a member or change their role, with no rule: this is how the first
+  // owner is made. A change somebody asks for goes through changeTeamMember,
+  // which keeps a team from losing its last owner. Answers with the team as it
+  // now is.
   setTeamMember(teamId: string, member: TeamMember): Promise<StoredTeam>;
 
   createApiKey(key: StoredApiKey): Promise<void>;
@@ -151,9 +159,11 @@ export interface AccountStore {
     firing?: AlertFiring,
   ): Promise<boolean>;
 
+  // Append a row. There is no method that changes or deletes one. Refuses a
+  // row that is not about exactly one site or one team with INVALID_AUDIT_ROW.
   audit(row: AuditRecord): Promise<void>;
-  // The trail for a site over a range, oldest first. Read by tests today and by
-  // whichever ticket gives a site owner somewhere to look at it.
+  // The trail for a site over a range, oldest first. auditPage is what a
+  // route reads; this stays for a range read whole.
   auditTrail(siteId: string, from: number, to: number): Promise<AuditRecord[]>;
 }
 
