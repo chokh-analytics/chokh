@@ -1,5 +1,6 @@
 // Accessibility, audited: every page of the built docs, at a phone's width and
-// a desktop's, in both themes, by Lighthouse (which runs axe). A score of 1 is
+// a desktop's, in both themes, by Lighthouse (which runs axe). Then every page
+// again with scripts off, which has to still be the page. A score of 1 is
 // the bar, as it is for the dashboard (packages/dashboard/scripts/a11y.mjs,
 // whose shape this follows), and a run proves it audited a page with the
 // words on it: Lighthouse scores a blank page 1.
@@ -75,10 +76,46 @@ try {
   }
 } finally {
   await browser.close();
-  server.close();
 }
 
-let bad = 0;
+// With scripts off, every page is still the page: its title and words, the
+// list of pages on the page itself, every block of code (a set of tabs shown
+// one panel after another), and no button that needs a script showing.
+const quiet = await chromium.launch();
+const noScript = [];
+try {
+  const context = await quiet.newContext({ javaScriptEnabled: false, viewport: { width: 375, height: 812 } });
+  const tab = await context.newPage();
+  for (const page of PAGES) {
+    await tab.goto(`${base}${page.path}`);
+    // Runs in the page, where globalThis is the window.
+    const seen = await tab.evaluate(() => {
+      const shown = (element) =>
+        element.getClientRects().length > 0 && globalThis.getComputedStyle(element).visibility !== 'hidden';
+      const all = (selector) => [...globalThis.document.querySelectorAll(selector)];
+      return {
+        title: all('main h1').filter(shown).length,
+        links: all('.sidebar a').filter(shown).length,
+        code: all('pre.code-block').length,
+        codeShown: all('pre.code-block').filter(shown).length,
+        needsScript: all('.needs-js').filter(shown).length,
+      };
+    });
+    const ok = seen.title === 1 && seen.links > 0 && seen.code === seen.codeShown && seen.needsScript === 0;
+    noScript.push({ page: page.name, ok, ...seen });
+  }
+  await context.close();
+} finally {
+  await quiet.close();
+  server.close();
+}
+for (const row of noScript) {
+  process.stdout.write(
+    `${row.ok ? 'ok  ' : 'FAIL'} ${row.page}, scripts off, 375 px: title ${row.title}, ${row.links} page links, ${row.codeShown} of ${row.code} code blocks shown, ${row.needsScript} script-only buttons shown\n`,
+  );
+}
+
+let bad = noScript.filter((row) => !row.ok).length;
 for (const row of results) {
   const ok = row.score === 1 && row.painted > 0 && row.applicable >= MIN_AUDITS;
   if (!ok) {
