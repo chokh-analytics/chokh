@@ -107,8 +107,35 @@ describe('a log line', () => {
     const urls = requestLines().map((line) => line.url);
     expect(urls).toContain('/api/share/:token');
     expect(urls).toContain('/api/share/:token/stats/aggregate');
-    expect(urls).toContain('/share/:token/embed');
+    expect(urls).toContain('/share/:token');
     expect(logged.join('\n')).not.toContain('aVeryPrivate');
+  });
+
+  // An address that reached no route of the API is cut to its first two
+  // segments, after a share page's token is taken out (the review of part 0).
+  it('holds no person from a profile page, and no token from an address that matched nothing', async () => {
+    await harness.app.inject({
+      method: 'GET',
+      url: `/${SITE_ID}/people/u/${encodeURIComponent('ana.bose@example.com')}?range=30d`,
+      headers: { accept: 'text/html' },
+    });
+    await harness.app.inject({
+      method: 'GET',
+      url: `/${SITE_ID}/people/v/v_9f8e7d6c5b4a`,
+      headers: { accept: 'text/html' },
+    });
+    await harness.app.inject({ method: 'GET', url: '/api/share/shr_aVeryPrivateShareToken0123456789/typo' });
+    await harness.app.inject({ method: 'GET', url: '/assets/index-3f2a9c.js' });
+
+    const urls = requestLines().map((line) => line.url);
+    expect(urls.filter((url) => url === `/${SITE_ID}/people`)).toHaveLength(2);
+    expect(urls).toContain('/api/share');
+    // A built file has two segments and stays readable.
+    expect(urls).toContain('/assets/index-3f2a9c.js');
+    const written = logged.join('\n');
+    for (const kept of ['ana', 'example.com', 'v_9f8e7d6c5b4a', 'aVeryPrivate', 'typo', 'range=']) {
+      expect(written).not.toContain(kept);
+    }
   });
 
   // The collector's line, at the default level and every other. Behind a

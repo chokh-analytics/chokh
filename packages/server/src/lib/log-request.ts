@@ -31,12 +31,21 @@ const SHOWN_PARAMETERS: ReadonlySet<string> = new Set([
   'keyId',
 ]);
 
-// The dashboard's own pages, which reach no route of the API (the static
-// files' wildcard, or the not found handler that answers with the page), are
-// written as their path without the query, and a share page's token is taken
-// out of it. That is the one page of the dashboard whose path holds a secret;
-// an invitation's token is after a `#`, which a browser never sends.
+// Anything that reached no route of the API: the dashboard's own pages (the
+// static files' wildcard, or the not found handler that answers with the
+// page), and an address that matched nothing. Written as its path without the
+// query, a share page's token taken out first, then cut to its first two
+// segments. Cut, because a page of the dashboard can hold who somebody is in
+// its path: a profile is `/:siteId/people/:kind/:id`, and the id is a
+// visitor's or the one an application gave a person, which may be an
+// address. The same route in the API hides it, and so does this. Two
+// segments still say which page it was (`/s_web/people`), and a built file
+// (`/assets/index-3f2a.js`) has only two. An address under `/api/` that
+// matched nothing is cut the same way, so `/api/share/<token>/typo` is
+// `/api/share`. An invitation's token is after a `#`, which a browser never
+// sends.
 const SHARE_PAGE = /^\/share\/[^/]+/;
+const FIRST_TWO = /^(\/[^/]*(?:\/[^/]*)?)/;
 
 export function loggedUrl(request: FastifyRequest): string {
   const pattern = request.routeOptions.url;
@@ -47,8 +56,8 @@ export function loggedUrl(request: FastifyRequest): string {
       return SHOWN_PARAMETERS.has(name) && typeof value === 'string' ? value : whole;
     });
   }
-  const path = request.url.split('?')[0] ?? '';
-  return path.replace(SHARE_PAGE, '/share/:token');
+  const path = (request.url.split('?')[0] ?? '').replace(SHARE_PAGE, '/share/:token');
+  return FIRST_TWO.exec(path)?.[1] ?? path;
 }
 
 export const requestLogSerializers = {

@@ -351,6 +351,62 @@ describe("the exchange's own count", () => {
     expect(arrived.cookies[0]?.name).toBe(SESSION_COOKIE);
   });
 
+  // A hidden frame is a navigation too, so the page itself is asked for as
+  // well (the review of part 0).
+  it('refuses a navigation into a frame, by either form, and counts neither', async () => {
+    const framed = { ...followed, 'sec-fetch-dest': 'iframe' };
+    for (let index = 0; index < 12; index += 1) {
+      const get = await harness.app.inject({ method: 'GET', url: `/api/sso?token=${token()}`, headers: framed });
+      expectFailure(get, 403, 'NOT_A_NAVIGATION');
+      expect(get.cookies).toHaveLength(0);
+      expectFailure(
+        await harness.app.inject({
+          method: 'POST',
+          url: '/api/sso',
+          headers: { ...framed, 'content-type': 'application/json' },
+          payload: { token: token() },
+        }),
+        403,
+        'NOT_A_NAVIGATION',
+      );
+    }
+    // Twenty-four refusals, and the count of ten untouched.
+    const arrived = await harness.app.inject({ method: 'GET', url: `/api/sso?token=${token()}`, headers: followed });
+    expect(arrived.statusCode).toBe(303);
+  });
+
+  // The POST form is for a program, which sends no Sec-Fetch header; a page's
+  // fetch is refused before it is counted, and a form a person submits is a
+  // navigation and taken.
+  it('refuses a POST a page makes, and takes a program and a person submitting a form', async () => {
+    for (const mode of ['no-cors', 'cors', 'same-origin']) {
+      expectFailure(
+        await harness.app.inject({
+          method: 'POST',
+          url: '/api/sso',
+          headers: {
+            'sec-fetch-mode': mode,
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-site': 'cross-site',
+            'content-type': 'text/plain',
+          },
+          payload: JSON.stringify({ token: token() }),
+        }),
+        403,
+        'NOT_A_NAVIGATION',
+      );
+    }
+    const program = await harness.app.inject({ method: 'POST', url: '/api/sso', payload: { token: token() } });
+    expect(program.statusCode).toBe(200);
+    const submitted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/sso',
+      headers: { ...followed, 'content-type': 'application/json' },
+      payload: { token: token() },
+    });
+    expect(submitted.statusCode).toBe(200);
+  });
+
   it('refuses every kind of request a page makes that is not following a link', async () => {
     for (const mode of ['no-cors', 'cors', 'same-origin', 'websocket', 'NO-CORS']) {
       const response = await harness.app.inject({

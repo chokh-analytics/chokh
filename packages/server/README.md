@@ -978,13 +978,16 @@ in both from then on, until an owner removes them from the first.
 
 Both forms count on a limit of their own, `AUTH_RATE_LIMIT` a minute per
 address, and never on the password's: an address that has spent its
-exchanges can still sign in with a password, and the other way round. The
-`GET` form is a link a person follows, so a `GET` the browser says is not a
-navigation (a `Sec-Fetch-Mode` other than `navigate`: an image, a script, a
-`fetch`) answers `403 NOT_A_NAVIGATION` before it is counted, and an image tag
-on somebody else's page can spend nothing. A request from another site is not
-refused: arriving from another application is what the exchange is for. A
-program sends no `Sec-Fetch-Mode` and is let through.
+exchanges can still sign in with a password, and the other way round. A
+request the browser says is not a person arriving at the page itself answers
+`403 NOT_A_NAVIGATION` before it is counted, by either form: a
+`Sec-Fetch-Mode` other than `navigate` (an image, a script, a `fetch`), or a
+`Sec-Fetch-Dest` other than `document` (a navigation into a frame, which a
+page can hide). So nothing on somebody else's page can spend the count. A
+request from another site is not refused: arriving from another application
+is what the exchange is for, by a link or by `window.location`. A program
+sends neither header and is let through, so the `POST` from another
+application's server works as before.
 
 ### There is no CORS
 
@@ -1305,7 +1308,12 @@ Never the query string, so no SSO token, no single sign-on code or state, no
 `/api/share/:token` (and the dashboard's share page `/share/:token`); of a
 route's parameters only the ids of a site's own things are filled in (a site,
 a team, a goal, a funnel, a segment, an annotation, an invitation's id, a
-key's id), and a person's id or a visitor's never is. **And never the address
+key's id), and a person's id or a visitor's never is. An address that reached
+no route of the API, which is every page of the dashboard and anything
+mistyped, is written as its first two segments, after a share page's token is
+taken out: a profile at `/s_web/people/u/ana@example.com` is `/s_web/people`,
+`/api/share/<token>/typo` is `/api/share`, and a built file such as
+`/assets/index-3f2a.js` stays whole. **And never the address
 of whoever asked.** Behind a proxy you trust, the framework's own line wrote
 the forwarded address, and with no proxy the socket's peer: on the collector
 either one is a visitor's, at the default `info` level, and a log would have

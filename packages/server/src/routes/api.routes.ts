@@ -162,12 +162,13 @@ export async function registerApiRoutes(
   );
   app.post('/api/auth/logout', { preHandler: signedIn }, createLogoutController(deps));
   app.get('/api/me', { preHandler: signedIn }, createMeController(deps));
-  // The SSO exchange, on a count of its own and never on the password's. The
-  // GET form is followed by a person, so a GET the browser says is not a
-  // navigation (an image, a script, a fetch) is refused before it is counted:
-  // a page elsewhere cannot spend this address's attempts with a tag. Arriving
-  // from another site is not refused, because that is what the exchange is
-  // for: another application sends somebody here.
+  // The SSO exchange, on a count of its own and never on the password's. A
+  // request the browser says is not a navigation of the whole page (an image,
+  // a script, a fetch, a hidden frame) is refused before it is counted, by
+  // either form: a page elsewhere cannot spend this address's attempts. A
+  // program sends no such header, so the POST from another application's
+  // server is taken. Arriving from another site is not refused, because that
+  // is what the exchange is for: another application sends somebody here.
   const exchanges = limitAttempts(
     deps.limits.authAttempts,
     deps.ssoLimit,
@@ -175,7 +176,11 @@ export async function registerApiRoutes(
     deps.now,
     'sso',
   );
-  app.post('/api/sso', { preHandler: exchanges }, createSsoPostController(deps));
+  app.post(
+    '/api/sso',
+    { preHandler: [requireNavigation(), exchanges] },
+    createSsoPostController(deps),
+  );
   app.get(
     '/api/sso',
     { preHandler: [requireNavigation(), exchanges] },

@@ -148,20 +148,31 @@ export function requireThisDashboard(): preHandlerHookHandler {
   };
 }
 
-// For a GET that a person follows and no page should load: the SSO exchange's
-// link. A browser says what kind of request it is making in Sec-Fetch-Mode,
-// which a page cannot set: "navigate" when somebody follows a link or is sent
-// by a redirect, and something else for an image, a script, a frame's
-// subresource or a fetch. Anything but a navigation is refused here, before
-// it is counted. A program sends no such header and is let through, and so is
-// a browser too old to send one, which is what the count is still there for.
+// For the SSO exchange, both forms: a person arriving at a page, and never a
+// page loading something. A browser says what kind of request it is making,
+// in two headers a page cannot set. Sec-Fetch-Mode is "navigate" when
+// somebody follows a link, submits a form or is sent by a redirect, and
+// something else for an image, a script or a fetch. Sec-Fetch-Dest is
+// "document" for the page itself, and "iframe" (or another) when the
+// navigation is into a frame, which a page elsewhere can hide. Anything but a
+// navigation to the page itself is refused here, before it is counted. A
+// program sends neither header and is let through (Progsity's backend posts
+// server to server), and so is a browser too old to send them, which is what
+// the count is still there for. Progsity's admin panel sends a person with
+// `window.location.assign`, a navigation of the whole page, so it is taken.
+function header(request: FastifyRequest, name: string): string | undefined {
+  const sent = request.headers[name];
+  const value = Array.isArray(sent) ? sent[0] : sent;
+  return value?.toLowerCase();
+}
+
 export function requireNavigation(): preHandlerHookHandler {
   // Async even though it does no waiting: a Fastify hook that returns something
   // other than a promise and never calls done leaves the request hanging.
   return async function navigationHook(request: FastifyRequest, reply: FastifyReply) {
-    const sent = request.headers['sec-fetch-mode'];
-    const mode = Array.isArray(sent) ? sent[0] : sent;
-    if (mode !== undefined && mode.toLowerCase() !== 'navigate') {
+    const mode = header(request, 'sec-fetch-mode');
+    const dest = header(request, 'sec-fetch-dest');
+    if ((mode !== undefined && mode !== 'navigate') || (dest !== undefined && dest !== 'document')) {
       return reply
         .code(403)
         .send(
