@@ -114,6 +114,14 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   }),
   rule('DELETE', '/api/teams/:teamId/members/:userId', teamOwner),
   rule('PATCH', '/api/teams/:teamId', teamOwner, { body: ({ params }) => ({ name: params['teamId'] }) }),
+  rule('GET', '/api/teams/:teamId/invitations', teamOwner),
+  rule('POST', '/api/teams/:teamId/invitations', teamOwner),
+  rule('DELETE', '/api/teams/:teamId/invitations/:invitationId', teamOwner),
+
+  // What somebody holding an invitation link uses: no session, the token in
+  // the body, limited by address.
+  rule('POST', '/api/invitations/lookup', open),
+  rule('POST', '/api/invitations/accept', open),
 
   // Sites.
   rule('GET', '/api/sites', anybody),
@@ -134,6 +142,9 @@ export const CORE_ROUTES: readonly RouteRule[] = [
     body: () => ({ role: 'viewer', identity: false }),
   }),
   rule('DELETE', `${SITE}/members/:userId`, adminPerson),
+  rule('GET', `${SITE}/invitations`, adminPerson),
+  rule('POST', `${SITE}/invitations`, adminPerson),
+  rule('DELETE', `${SITE}/invitations/:invitationId`, adminPerson),
 
   // The public share: the owner's two routes, then the reader's.
   rule('PUT', `${SITE}/share`, admin),

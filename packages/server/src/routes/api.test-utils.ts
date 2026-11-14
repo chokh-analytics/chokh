@@ -62,6 +62,7 @@ export async function createBareApp(
     once?: OnceOnly;
     extensions?: ServerExtension[];
     onRoute?: (route: { method: string; url: string }) => void;
+    log?: { level: string; stream: { write(line: string): void } };
   } = {},
 ): Promise<{
   app: FastifyInstance;
@@ -86,6 +87,7 @@ export async function createBareApp(
     now,
     ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
     ...(options.onRoute === undefined ? {} : { onRoute: options.onRoute }),
+    ...(options.log === undefined ? {} : { log: options.log }),
   });
   await app.ready();
   return {
@@ -114,11 +116,13 @@ export async function createHarness(
     sites?: Site[];
     extensions?: ServerExtension[];
     onRoute?: (route: { method: string; url: string }) => void;
+    log?: { level: string; stream: { write(line: string): void } };
   } = {},
 ): Promise<Harness> {
   const bare = await createBareApp({
     ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
     ...(options.onRoute === undefined ? {} : { onRoute: options.onRoute }),
+    ...(options.log === undefined ? {} : { log: options.log }),
   });
   const { app, store, bus, once } = bare;
 

@@ -47,6 +47,10 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   ANNOTATION_LIMIT: 409,
   ALERT_EXISTS: 409,
   ALERT_LIMIT: 409,
+  // An invitation to that address is already waiting on that team or site,
+  // or as many are waiting there as may be.
+  INVITATION_EXISTS: 409,
+  INVITATION_LIMIT: 409,
   // A team keeps an owner, and one with a password where it had one.
   LAST_OWNER: 409,
   // Too many others were changing that team's members at the same instant.
@@ -67,6 +71,7 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   INVALID_GOAL: 400,
   UNSUPPORTED_GOAL: 400,
   INVALID_FUNNEL: 400,
+  INVALID_INVITATION: 400,
   INVALID_BRANCHES: 400,
 };
 

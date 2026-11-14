@@ -79,6 +79,10 @@ export interface AppOptions {
   // What packages/ee added, when it is there. server.ts loads it; nothing in
   // this package imports it, and an empty list is a complete free install.
   extensions?: ServerExtension[];
+  // Where the log goes and at what level, in place of the environment's. For
+  // a test that has to read what the server wrote: that a secret which passed
+  // through a request is in no line of it.
+  log?: { level: string; stream: { write(line: string): void } };
   // Told about every route as it is registered, extensions' included, so a
   // test can hold the whole list to the route table (routes/route-table.ts)
   // and fail when a route has no row.
@@ -87,7 +91,10 @@ export interface AppOptions {
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: env.LOG_LEVEL },
+    logger:
+      options.log === undefined
+        ? { level: env.LOG_LEVEL }
+        : { level: options.log.level, stream: options.log.stream },
     trustProxy: env.TRUST_PROXY.length === 0 ? false : env.TRUST_PROXY,
   });
 
@@ -199,10 +206,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     once,
     authLimit: createWindowCounter(MINUTE_MS),
     shareLimit: createWindowCounter(MINUTE_MS),
+    inviteLimit: createWindowCounter(MINUTE_MS),
     shareCodec: createShareCodec(session.secret),
     limits: { authAttempts: env.AUTH_RATE_LIMIT, shareReads: env.SHARE_RATE_LIMIT },
     cookie: { secure: cookieSecure() },
     sso: { secret: env.SSO_SECRET, maxAgeSeconds: env.SSO_MAX_AGE_SECONDS },
+    invites: { ttlMs: env.INVITE_TTL_HOURS * HOUR_MS },
     license: resolveLicense(extensions),
     now,
   };

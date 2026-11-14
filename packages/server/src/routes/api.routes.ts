@@ -7,6 +7,16 @@ import {
   createRegisterController,
 } from '../controllers/accounts.controller.js';
 import {
+  createAcceptInvitationController,
+  createCreateSiteInvitationController,
+  createCreateTeamInvitationController,
+  createListSiteInvitationsController,
+  createListTeamInvitationsController,
+  createLookupInvitationController,
+  createRevokeSiteInvitationController,
+  createRevokeTeamInvitationController,
+} from '../controllers/invitations.controller.js';
+import {
   createListSiteMembersController,
   createListTeamMembersController,
   createRemoveSiteMemberController,
@@ -167,6 +177,43 @@ export async function registerApiRoutes(
   );
   app.patch('/api/teams/:teamId', { preHandler: signedIn }, createRenameTeamController(deps));
 
+  // Invitations to a team (AN-TEAM01): sent, listed and taken back by a
+  // person who owns it, the same check the member routes make.
+  app.get(
+    '/api/teams/:teamId/invitations',
+    { preHandler: signedIn },
+    createListTeamInvitationsController(deps),
+  );
+  app.post(
+    '/api/teams/:teamId/invitations',
+    { preHandler: signedIn },
+    createCreateTeamInvitationController(deps),
+  );
+  app.delete(
+    '/api/teams/:teamId/invitations/:invitationId',
+    { preHandler: signedIn },
+    createRevokeTeamInvitationController(deps),
+  );
+
+  // What somebody holding an invitation link uses. No session is needed,
+  // because the person may have no account yet, so both are limited by
+  // address the way signing in is, on a counter of their own. The token comes
+  // in the body. Accepting hears who is signed in, when anybody is: an address
+  // that already has an account is accepted by that account and nobody else.
+  const invites = limitAttempts(
+    deps.limits.authAttempts,
+    deps.inviteLimit,
+    ipOptions,
+    deps.now,
+    'invite',
+  );
+  app.post('/api/invitations/lookup', { preHandler: invites }, createLookupInvitationController(deps));
+  app.post(
+    '/api/invitations/accept',
+    { preHandler: [invites, attachPrincipal(auth)] },
+    createAcceptInvitationController(deps),
+  );
+
   // Sites. Listing and creating are about the caller rather than about one site, so
   // they take the principal hook; everything under /:siteId takes the scope hook,
   // which is also what reads the site.
@@ -197,6 +244,23 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/members/:userId',
     { preHandler: [scope('admin'), requirePerson()] },
     createRemoveSiteMemberController(deps),
+  );
+
+  // Invitations to one site: the same two things, admin and a person.
+  app.get(
+    '/api/sites/:siteId/invitations',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createListSiteInvitationsController(deps),
+  );
+  app.post(
+    '/api/sites/:siteId/invitations',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createCreateSiteInvitationController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/invitations/:invitationId',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createRevokeSiteInvitationController(deps),
   );
 
   // The public share (AN-RPT01). The owner's two routes are on the site;

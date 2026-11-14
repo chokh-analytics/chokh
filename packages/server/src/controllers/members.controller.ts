@@ -84,7 +84,7 @@ function effects(change: MembershipChange): Record<string, unknown> {
 
 // The team in the path, for a person who owns it. Answers the refusal itself
 // and returns null when there is one.
-async function ownedTeam(
+export async function ownedTeam(
   deps: ApiDeps,
   request: FastifyRequest,
   reply: FastifyReply,

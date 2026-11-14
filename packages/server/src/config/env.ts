@@ -130,6 +130,12 @@ export const envSchema = z.object({
   // somebody locks a person out of their own dashboard.
   AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
 
+  // How long an invitation can be used for (AN-TEAM01). A week: long enough
+  // for somebody to get to it, short enough that a link forgotten in a chat
+  // history is worth nothing by the time anybody finds it. An invitation is
+  // also single use, and can be revoked from the Team page.
+  INVITE_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(168),
+
   // Reads of a public share page a minute per address (AN-RPT01): the page
   // reads six routes on load and one per range change, so this is room for a
   // person and a wall for a script.

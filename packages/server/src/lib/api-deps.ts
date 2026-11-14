@@ -20,10 +20,15 @@ export interface ApiDeps {
   authLimit: WindowCounter;
   // Reads of a public share per address a minute, on their own counter.
   shareLimit: WindowCounter;
+  // Looking up and accepting an invitation, per address a minute, on a
+  // counter of their own so a sign-in and an invitation do not share a limit.
+  inviteLimit: WindowCounter;
   shareCodec: ShareCodec;
   limits: { authAttempts: number; shareReads: number };
   cookie: { secure: boolean };
   sso: { secret: string | undefined; maxAgeSeconds: number };
+  // How long an invitation lives, in milliseconds.
+  invites: { ttlMs: number };
   // What GET /api/license answers. The extension's when packages/ee is loaded,
   // and "no licence" when it is not. The core never reads a key to build it.
   license: LicenseStatusProvider;

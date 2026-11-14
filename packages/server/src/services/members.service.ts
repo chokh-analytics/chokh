@@ -95,12 +95,12 @@ function summary(key: ApiKeyRecord): KeySummary {
 }
 
 // Everything one account holds: its place in each team and its rows on sites.
-interface Holding {
+export interface Holding {
   teams: StoredTeam[];
   rows: SiteMember[];
 }
 
-async function holdingOf(store: AccountStore, userId: string): Promise<Holding> {
+export async function holdingOf(store: AccountStore, userId: string): Promise<Holding> {
   const [teams, rows] = await Promise.all([
     store.teamsForUser(userId),
     store.siteGrantsForUser(userId),
@@ -108,7 +108,7 @@ async function holdingOf(store: AccountStore, userId: string): Promise<Holding> 
   return { teams, rows };
 }
 
-function memberIn(holding: Holding, teamId: string, userId: string): TeamMember | undefined {
+export function memberIn(holding: Holding, teamId: string, userId: string): TeamMember | undefined {
   return holding.teams
     .find((team) => team.id === teamId)
     ?.members.find((member) => member.userId === userId);
@@ -139,14 +139,14 @@ function standing(member: Pick<TeamMember, 'role' | 'identity'> | undefined): {
 
 // A role as the log says it. An owner has identity by being one, so the flag
 // is only worth saying for the two roles it changes anything for.
-function said(role: Role | undefined, identity: boolean | undefined): string {
+export function said(role: Role | undefined, identity: boolean | undefined): string {
   if (role === undefined) return 'none';
   return role !== 'owner' && identity === true ? `${role}+identity` : role;
 }
 
 // Whether an account may still send an invitation it sent: to a team, only an
 // owner of that team; to a site, only somebody with admin on it.
-async function maySend(
+export async function maySend(
   store: AnalyticsStore & AccountStore,
   holding: Holding,
   userId: string,
@@ -271,6 +271,15 @@ async function follow(input: Follow): Promise<MembershipChange> {
   };
 }
 
+// How a change came about, when it was not somebody changing a role by hand:
+// an invitation being used. The audit row then says so instead of saying a
+// member was set.
+export interface ChangeCause {
+  action: string;
+  // Said in the row beside what changed: which invitation, never its token.
+  note: string;
+}
+
 export interface TeamChangeInput {
   teamId: string;
   userId: string;
@@ -279,6 +288,7 @@ export interface TeamChangeInput {
   actor: AuditRecord['actor'];
   route: string;
   keys: KeysDecision;
+  cause?: ChangeCause;
 }
 
 // Change one member of a team, add one, or take one out.
@@ -351,12 +361,15 @@ export async function changeTeamMembership(
     userId,
     actor: input.actor,
     scope: { kind: 'team', id: teamId },
-    action: to === null ? 'member:remove' : 'member:set',
+    action: input.cause?.action ?? (to === null ? 'member:remove' : 'member:set'),
     route: input.route,
     lowered,
     keys,
     decision: input.keys,
-    changed: [`role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`],
+    changed: [
+      ...(input.cause === undefined ? [] : [input.cause.note]),
+      `role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`,
+    ],
     // What they hold on this team's sites by rows of their own, which this
     // change left exactly as it found them.
     siteRolesKept: before.rows
@@ -374,6 +387,7 @@ export interface SiteChangeInput {
   actor: AuditRecord['actor'];
   route: string;
   keys: KeysDecision;
+  cause?: ChangeCause;
 }
 
 // Give somebody a role on one site, change it, or take it off.
@@ -432,14 +446,17 @@ export async function changeSiteMembership(
     userId,
     actor: input.actor,
     scope: { kind: 'site', id: site.id },
-    action: to === null ? 'member:remove' : 'member:set',
+    action: input.cause?.action ?? (to === null ? 'member:remove' : 'member:set'),
     route: input.route,
     // On the site itself, from what they could do before and can do now, so a
     // row a team owner holds (which decides nothing) lowers nobody.
     lowered: lost(grantBefore, grantAfter),
     keys,
     decision: input.keys,
-    changed: [`role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`],
+    changed: [
+      ...(input.cause === undefined ? [] : [input.cause.note]),
+      `role: ${said(was?.role, was?.identity)} > ${said(to?.role, to?.identity)}`,
+    ],
     siteRolesKept: [],
   });
   return { ok: true, members: await store.siteMembers(site.id), ...followed };

@@ -168,3 +168,26 @@ export const renameTeamSchema = z.object({
 export const siteParamsSchema = z.object({
   siteId: z.string().min(1).max(64),
 });
+
+// An invitation, as somebody sends one: an address, a role, and whether the
+// role comes with the identity flag.
+export const createInvitationSchema = z.object({
+  email,
+  role: z.enum(ROLES as [Role, ...Role[]]),
+  identity: z.boolean().default(false),
+});
+
+// The token from an invitation link. In a body, never in a path or a query:
+// a URL is written to logs, a body is not.
+const invitationToken = z.string().min(20).max(200);
+
+export const lookupInvitationSchema = z.object({ token: invitationToken });
+
+// Using one. The password is asked for only when the address has no account
+// yet, and is held to the rule registration applies; the name is optional as
+// it is there.
+export const acceptInvitationSchema = z.object({
+  token: invitationToken,
+  password: password.optional(),
+  name: z.string().min(1).max(120).optional(),
+});

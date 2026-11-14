@@ -160,6 +160,12 @@ success envelope. A failure on either is the ordinary envelope.
 | `PUT /api/teams/:teamId/members/:userId` | owner of the team, a person | Role and identity flag; `revokeKeys` when it asks |
 | `DELETE /api/teams/:teamId/members/:userId` | owner of the team, a person | Take somebody out; `?revokeKeys=true` or `false` when it asks |
 | `PATCH /api/teams/:teamId` | owner of the team, a person | Rename it |
+| `GET`/`POST /api/teams/:teamId/invitations` | owner of the team, a person | What is waiting; send one. The link is in the answer once |
+| `DELETE /api/teams/:teamId/invitations/:invitationId` | owner of the team, a person | Take one back |
+| `GET`/`POST /api/sites/:siteId/invitations` | `admin`, a person | The same, to one site |
+| `DELETE /api/sites/:siteId/invitations/:invitationId` | `admin`, a person | Take one back |
+| `POST /api/invitations/lookup` | the token, in the body | What an invitation is for, before anything is typed |
+| `POST /api/invitations/accept` | the token, in the body | Use it, once: a new account with a password of its own, or the account that already has the address, signed in |
 | `GET /api/sites/:siteId/members` | `admin`, a person | The roles held on this one site |
 | `PUT`/`DELETE /api/sites/:siteId/members/:userId` | `admin`, a person | Give, change or take away a role on this one site |
 | `GET /api/sites/:siteId/stats/aggregate` | `read:stats` | Totals for a range |
@@ -673,6 +679,52 @@ it was given here would outlive a permission that application later takes
 away. It can be removed here like anybody else, which signs it out at once;
 its next arrival through the exchange puts it back as the token says.
 
+**Invitations.** Somebody joins by a link. An owner of a team (or, for one
+site, somebody with `admin` on it) names an address and a role and is answered
+with `once.link`, a path of this dashboard with the token in its fragment:
+
+```
+POST /api/teams/default/invitations   { "email": "ada@example.com", "role": "viewer" }
+201  { "invitation": { "id": "inv_…", "state": "pending", "expiresAt": … },
+       "once": { "token": "chi_…", "link": "/invite#chi_…" } }
+```
+
+The core sends no mail, so whoever made the invitation sends the link
+themselves, over something they trust. That makes the link a bearer secret for
+an address that has no account yet, and everything about it is built to be
+worth little to anybody else:
+
+- Only the SHA-256 of the token is stored, as an API key's is, and no answer
+  after the first carries the token or the hash.
+- It is used once (the store's claim compares and sets in one write, so of
+  several acceptances at the same instant one is answered), it expires after
+  `INVITE_TTL_HOURS` (a week), and it can be revoked. One invitation waits per
+  address on a team or a site, and at most 50 wait on one.
+- The token is in the link's fragment, which a browser never sends to a
+  server, and reaches this server only in a request body: never a path or a
+  query, where a log would keep it. It is in no log line and no audit row;
+  rows name an invitation by its id.
+- The link is a path. Which host the dashboard is reached at is the
+  dashboard's to know, and is never taken from a request's `Host`.
+- An address with no account: accepting makes the account, with a password
+  the invited person chooses under the rule registration applies, and signs
+  them in. An address that already has an account is accepted only by that
+  account, signed in (`401 SIGN_IN_REQUIRED`, `403
+  INVITATION_ADDRESS_MISMATCH`); a password in the body is ignored for it. The
+  link is never a way into somebody who is already here.
+- It is never worth more than its sender. Whoever sent it has to still be
+  allowed to send it when it is used, not only when it was made: lowering or
+  removing them revokes what they sent, and an invitation whose sender lost
+  the right some other way answers `410 INVITATION_REVOKED` all the same.
+- The two routes a link's holder uses are limited by address like signing in,
+  on a count of their own.
+
+An address held by an account the SSO exchange signs in is not invited
+(`409 MANAGED_BY_SSO`), and somebody who already has a role there is changed
+from the list, not invited (`409 ALREADY_MEMBER`). On MongoDB, sending one
+answers `503 MIGRATION_REQUIRED` until `migrate --apply` has made the index
+that keeps an invitation single per address.
+
 **A change has to come from this dashboard.** The session cookie is
 `SameSite=Lax`, which stops another site's form from carrying it but not a
 page on another origin of the same site (a sibling hostname). So a request
@@ -943,7 +995,8 @@ empty and events are still collected.
 | `SESSION_TTL_HOURS` | `12` | How long a session lasts |
 | `SSO_SECRET` | none | Shared with the application that mints SSO tokens. Unset means SSO is refused |
 | `SSO_MAX_AGE_SECONDS` | `300` | The longest life an SSO token may claim |
-| `AUTH_RATE_LIMIT` | `10` | Sign-in, registration and SSO attempts a minute, per address |
+| `AUTH_RATE_LIMIT` | `10` | Sign-in, registration and SSO attempts a minute, per address; looking at and using an invitation too, on a count of their own |
+| `INVITE_TTL_HOURS` | `168` | How long an invitation can be used for, 1 to 720 |
 | `COOKIE_SECURE` | yes in production | `false` lets a developer sign in over plain http |
 
 `CHOKH_LICENSE_KEY` and the five variables that say where alerts go
