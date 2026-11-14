@@ -79,6 +79,10 @@ export interface AppOptions {
   // What packages/ee added, when it is there. server.ts loads it; nothing in
   // this package imports it, and an empty list is a complete free install.
   extensions?: ServerExtension[];
+  // Told about every route as it is registered, extensions' included, so a
+  // test can hold the whole list to the route table (routes/route-table.ts)
+  // and fail when a route has no row.
+  onRoute?: (route: { method: string; url: string }) => void;
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
@@ -86,6 +90,16 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     logger: { level: env.LOG_LEVEL },
     trustProxy: env.TRUST_PROXY.length === 0 ? false : env.TRUST_PROXY,
   });
+
+  const onRoute = options.onRoute;
+  if (onRoute !== undefined) {
+    // Before anything is registered, or the first routes would go unheard.
+    app.addHook('onRoute', (route) => {
+      for (const method of [route.method].flat()) {
+        onRoute({ method, url: route.url });
+      }
+    });
+  }
 
   const now = options.now ?? ((): number => Date.now());
   const extensions = options.extensions ?? [];

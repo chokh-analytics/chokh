@@ -57,7 +57,12 @@ export function testSite(overrides: Partial<Site> = {}): Site {
 // An app with nothing in it: no site, no account, no team. What a fresh install is,
 // for the tests about the very first registration.
 export async function createBareApp(
-  options: { bus?: Bus; once?: OnceOnly; extensions?: ServerExtension[] } = {},
+  options: {
+    bus?: Bus;
+    once?: OnceOnly;
+    extensions?: ServerExtension[];
+    onRoute?: (route: { method: string; url: string }) => void;
+  } = {},
 ): Promise<{
   app: FastifyInstance;
   store: MemoryStore;
@@ -80,6 +85,7 @@ export async function createBareApp(
     once,
     now,
     ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
+    ...(options.onRoute === undefined ? {} : { onRoute: options.onRoute }),
   });
   await app.ready();
   return {
@@ -104,11 +110,16 @@ function cookieHeader(response: { cookies: { name: string; value: string }[] }):
 }
 
 export async function createHarness(
-  options: { sites?: Site[]; extensions?: ServerExtension[] } = {},
+  options: {
+    sites?: Site[];
+    extensions?: ServerExtension[];
+    onRoute?: (route: { method: string; url: string }) => void;
+  } = {},
 ): Promise<Harness> {
-  const bare = await createBareApp(
-    options.extensions === undefined ? {} : { extensions: options.extensions },
-  );
+  const bare = await createBareApp({
+    ...(options.extensions === undefined ? {} : { extensions: options.extensions }),
+    ...(options.onRoute === undefined ? {} : { onRoute: options.onRoute }),
+  });
   const { app, store, bus, once } = bare;
 
   for (const site of options.sites ?? [testSite()]) {

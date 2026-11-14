@@ -18,4 +18,18 @@ export {
   type ServerExtension,
 } from './plugins/extensions.js';
 export { requirePrincipal, requireSiteScope } from './plugins/auth.js';
+// The route table and the walk that holds every route to it. An extension
+// declares a table of its own and is walked the same way.
+export {
+  CORE_ROUTES,
+  compareRoutes,
+  expectedOf,
+  routeKey,
+  walkRouteTable,
+  type Expected,
+  type RouteCaller,
+  type RouteNeed,
+  type RouteRule,
+  type RouteWalk,
+} from './routes/route-table.js';
 export type { AuthDeps } from './services/auth.service.js';
