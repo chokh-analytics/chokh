@@ -5,7 +5,8 @@
 # on with "GitHub Actions" as its source (Settings, Pages), and the repository
 # variable DOCS_PAGES set to `on` (Settings, Secrets and variables, Actions,
 # Variables). Until both, every push still builds and checks the site, and
-# the deploy job is skipped: merging publishes nothing.
+# the deploy job is skipped: merging publishes nothing. Once both are set, a
+# push to main publishes, and so does a manual run of this workflow on main.
 #
 # Every action is named by the commit it is at, with its version beside it,
 # as in release-packages.yml: a tag can be moved to other code, a commit
@@ -62,14 +63,14 @@ jobs:
       - run: pnpm --filter @chokh/docs site:a11y
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           path: packages/docs/dist
 
   deploy:
     name: publish to GitHub Pages
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DOCS_PAGES == 'on'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.DOCS_PAGES == 'on'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
