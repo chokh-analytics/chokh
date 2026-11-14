@@ -205,6 +205,34 @@ batch arrives; and it holds the name, the domains, the retention and the
 privacy modes. The timezone is shown there and is not a control, because a
 year of daily numbers is keyed by it.
 
+### Who can see a site, and who looked
+
+The same menu leads to two more pages.
+
+**Team** is who can reach the site: the people in the team that owns it, the
+people let in to this site alone, and the invitations still waiting. An owner
+invites somebody by address and role. Chokh sends no mail, so the link is
+shown once, to copy and send yourself, and whoever opens it chooses a password
+of their own; the owner never knows it. A role can be held on one site with no
+place in the team, which is how a client sees their own site and nothing else.
+Lowering or removing somebody ends their sessions at once, asks what to do
+about the API keys they made, and says what they still hold on single sites.
+
+![The Team page: an invitation form, who is waiting, the team and the one site](docs/images/dashboard-team-light.png)
+
+**Audit log** is the record of who read which visitor's address, name or
+traits, who was let in and who was removed, with filters by kind, person and
+day. Nothing in it can be changed or removed, and opening it is itself a row
+in it. A key that may administer a site and may not see who its visitors are
+reads the log with the people taken out.
+
+![The audit log, newest first, in words](docs/images/dashboard-audit-dark.png)
+
+More than one team, and signing in through the identity provider your
+organisation already uses (OpenID Connect), are part of Chokh Pro. Both are on
+the Team page of every install, named and described; a licence key turns them
+on, and [packages/ee/README.md](packages/ee/README.md) says how each works.
+
 ### Annotations and alerts
 
 A deploy, a campaign, an outage or a note is a mark on the chart: a dotted
@@ -490,7 +518,7 @@ Chokh is open core.
 | The tracker, the collector, the store and both adapters, the dashboard and every report | Hosted Chokh Cloud |
 | Events, goals, funnels, filters, segments, annotations | Alerts by email, Telegram and webhook |
 | CSV and JSON exports, the public share page and the embed | Scheduled email and PDF digests |
-| The stats API, the SSE stream, the SDKs, one team with owner, editor and viewer | Multi-team and OIDC single sign-on |
+| The stats API, the SSE stream, the SDKs, one team with owner, editor and viewer, roles on a single site, invitations | Multi-team and OIDC single sign-on |
 | Retention up to 400 days, the audit log | Retention beyond 400 days, white-label, priority support |
 | Vitals, errors, retention cohorts, journeys | Session replay, heatmaps, surveys, experiments, flags |
 

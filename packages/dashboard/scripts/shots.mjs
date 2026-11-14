@@ -34,6 +34,8 @@ const README_SHOTS = new Map([
   ['09-goals-light', 'dashboard-goals-light.png'],
   ['10-funnels-light', 'dashboard-funnels-light.png'],
   ['11-journeys-dark', 'dashboard-journeys-dark.png'],
+  ['15-team-light', 'dashboard-team-light.png'],
+  ['16-audit-dark', 'dashboard-audit-dark.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser
 // suite drives never take each other's place: a screenshot of live data is a

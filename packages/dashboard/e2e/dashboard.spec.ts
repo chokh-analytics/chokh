@@ -866,8 +866,10 @@ test('shares the Overview with whoever holds the link, behind a password when th
     data: { site: { name: string } };
   }).data.site;
 
-  // A fresh context: no cookie, no session, nothing but the link.
-  const context = await browser.newContext();
+  // A fresh context: no cookie, no session, nothing but the link. Said to the
+  // browser and not only here: a context made inside a test begins with the
+  // session the whole suite shares unless it is told otherwise.
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const guest = await context.newPage();
   const answer = await guest.goto(`/share/${token}`);
   expect(answer?.headers()['x-robots-tag']).toBe('noindex');

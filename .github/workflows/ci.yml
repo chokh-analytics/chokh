@@ -729,6 +729,64 @@ jobs:
           echo "${answer}"
           grep -q '"pageviews":1' <<< "${answer}"
 
+      # Access, end to end against the real database of this leg (AN-TEAM01):
+      # an owner invites somebody, the link is looked up and used, the new
+      # account reads the site as a viewer and nothing more, the link is spent,
+      # and once the owner removes them the very same cookie is refused. On the
+      # MongoDB leg this is also the proof that the migration above made the
+      # indexes an invitation waits for. The token goes in a body, as it does
+      # everywhere, and the three rows the log should hold are read back.
+      - name: Invite somebody, accept, read as a viewer, and be refused after removal
+        run: |
+          set -e
+          api=http://localhost:4100
+          json='content-type: application/json'
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+          made="$(curl -fs -X POST "${api}/api/teams/default/invitations" \
+            -H "cookie: ${SESSION}" -H "${json}" \
+            -d '{"email":"viewer@example.com","role":"viewer"}')"
+          token="$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' <<< "${made}")"
+          [ -n "${token}" ]
+          grep -q '"link":"/invite#' <<< "${made}"
+
+          # What it is for, told to whoever holds the link, before anything.
+          looked="$(curl -fs -X POST "${api}/api/invitations/lookup" -H "${json}" -d "{\"token\":\"${token}\"}")"
+          grep -q '"email":"viewer@example.com"' <<< "${looked}"
+          grep -q '"accountExists":false' <<< "${looked}"
+
+          # Used: a new account with a password of its own, signed in by the answer.
+          curl -fs -D accepted.headers -o accepted.json -X POST "${api}/api/invitations/accept" \
+            -H "${json}" -d "{\"token\":\"${token}\",\"password\":\"another-long-password\"}"
+          viewer="$(tr -d '\r' < accepted.headers | sed -n 's/^[Ss]et-[Cc]ookie: \([^;]*\).*/\1/p' | paste -sd ';' -)"
+          [ -n "${viewer}" ]
+          who="$(sed -n 's/.*"user":{"id":"\([^"]*\)".*/\1/p' accepted.json)"
+          [ -n "${who}" ]
+          grep -q '"role":"viewer"' accepted.json
+
+          # A viewer reads the numbers, and not who else read them.
+          curl -fs -H "cookie: ${viewer}" "${READ}" | grep -q '"pageviews":1'
+          [ "$(status -H "cookie: ${viewer}" "${api}/api/sites/ci_site/audit")" = "403" ]
+          [ "$(status -H "cookie: ${viewer}" "${api}/api/teams/default/members")" = "403" ]
+
+          # The link worked once.
+          [ "$(status -X POST "${api}/api/invitations/accept" -H "${json}" \
+            -d "{\"token\":\"${token}\",\"password\":\"another-long-password\"}")" = "410" ]
+
+          # Removed by the owner, and the cookie they were holding is refused.
+          curl -fs -X DELETE "${api}/api/teams/default/members/${who}" -H "cookie: ${SESSION}" | grep -q '"sessionsEnded":true'
+          [ "$(status -H "cookie: ${viewer}" "${READ}")" = "401" ]
+
+          # All of it is in the team's log, read by its owner.
+          log="$(curl -fs -H "cookie: ${SESSION}" "${api}/api/teams/default/audit")"
+          for action in invite:create invite:accept member:remove; do
+            grep -q "\"action\":\"${action}\"" <<< "${log}"
+          done
+          # And the token, which only ever travelled in a body, is in no log line.
+          if docker compose logs --no-color server | grep -q "${token}"; then
+            echo "the invitation token is in the server log"; exit 1
+          fi
+
       # The importers as a process, with the image's own command, against the
       # real database of this leg (PostgreSQL or MongoDB): the dry run writes
       # nothing, --apply writes, a second --apply writes nothing, the stats API
