@@ -11,6 +11,20 @@
 # with provenance (the id-token permission below), so npm shows which commit
 # and which run built it. A version already on npm is passed over, so a run
 # that failed halfway can simply be run again.
+#
+# Two jobs, so that what can publish runs nothing it did not have to. The
+# build job installs the dependencies, builds, tests, packs and checks, and
+# can mint no token: it holds `contents: read` and nothing else, so nothing
+# a dependency runs during the install or the tests can ask for the OIDC
+# token or see NPM_TOKEN. It hands the checked tarballs on as an artifact.
+# The publish job takes those tarballs and nothing else: no checkout, no
+# install, no build, only npm. It alone holds `id-token: write`, and it
+# alone is given the secret.
+#
+# Every action is named by the commit it is at, not by a tag a maintainer
+# (or somebody who took over their account) can move to other code. The
+# version each commit is is said beside it. To move one on, read the new
+# version's commit on that action's releases page and change both.
 name: Release packages
 
 on:
@@ -23,29 +37,31 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
-  id-token: write
+# Nothing by default. Each job says what it needs.
+permissions: {}
 
 concurrency:
   group: release-packages
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: build, test, pack and publish the three packages
+  build:
+    name: build, test, pack and check the three packages
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
 
       - run: pnpm install --frozen-lockfile
 
@@ -73,9 +89,38 @@ jobs:
       - run: pnpm size:packages
 
       # Packs each package, checks each tarball and loads it from a throwaway
-      # consumer. --keep leaves the tarballs for the step below, so what is
+      # consumer. --keep leaves the tarballs for the job below, so what is
       # published is exactly what was checked.
       - run: node scripts/pack-check.mjs --keep
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tarballs
+          path: .pack-check/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish the checked tarballs, or show what would be published
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Node for npm, and the registry's address written where npm reads the
+      # token from. No checkout and no install: nothing of this repository's
+      # dependencies runs in a job that can publish.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: tarballs
+          path: tarballs
 
       - name: Publish, or show what would be published
         env:
@@ -89,7 +134,7 @@ jobs:
           fi
           # @chokh/react before @chokh/next, which depends on it.
           for name in sdk-node react next; do
-            tarball="$(ls .pack-check/tarballs/chokh-${name}-*.tgz)"
+            tarball="$(ls tarballs/chokh-${name}-*.tgz)"
             version="$(tar -xOzf "${tarball}" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
             if npm view "@chokh/${name}@${version}" version > /dev/null 2>&1; then
               echo "@chokh/${name}@${version} is already on npm, passed over"
