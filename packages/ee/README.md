@@ -374,9 +374,11 @@ program gets `403 CROSS_SITE_REQUEST`. And a return is counted only once its
 cookie has opened and its state has matched, so a return this browser never
 began costs the address nothing.
 
-**In the log.** These two routes are logged by their path alone: the query of
-one holds where somebody was going and the query of the other what the
-provider sent back, and neither belongs in a log line.
+**In the log.** Like every route of the server, these two are logged by
+their path alone (the core's one serializer, said in the server README under
+"What a log line holds"): the query of one holds where somebody was going and
+the query of the other what the provider sent back, and neither belongs in a
+log line.
 
 **The flow** is the authorization code flow with PKCE (`S256`), a `state` and
 a `nonce`, each 32 random bytes. They travel with the browser in one cookie:

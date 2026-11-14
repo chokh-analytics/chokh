@@ -24,6 +24,34 @@ describe('where a sign-in may land', () => {
     }
   });
 
+  // Everything URLSearchParams leaves as it is: what the dashboard writes for
+  // a query of its own, a People search with a space in it (`q=a+b`) among
+  // them. Every printable character of ASCII goes in, and what comes out is a
+  // path the rule takes.
+  it('takes any query URLSearchParams wrote, a plus and a star included', () => {
+    let printable = '';
+    for (let code = 0x20; code < 0x7f; code += 1) {
+      printable += String.fromCharCode(code);
+    }
+    const written = `/s_demo/people?${new URLSearchParams({ q: printable }).toString()}`;
+    expect(written).toContain('+');
+    expect(written).toContain('*');
+    expect(safeNextPath(written)).toBe(written);
+    expect(lands(written)).toBe('https://dash.example');
+    for (const path of ['/s_demo/people?q=ana+bose', '/s_demo/pages?q=*pricing*', '/+/evil.example', '/*']) {
+      expect(safeNextPath(path)).toBe(path);
+      expect(lands(path)).toBe('https://dash.example');
+    }
+  });
+
+  // And the other way: neither character helps a string that leaves.
+  it('takes neither a plus nor a star where it would help a string leave', () => {
+    for (const leaving of ['//+evil.example', '/\\+evil.example', '/\t/*evil.example', '/\n/+evil.example']) {
+      expect(lands(leaving)).not.toBe('https://dash.example');
+      expect(safeNextPath(leaving)).toBeUndefined();
+    }
+  });
+
   // What a comparison of strings calls a path and a browser does not. Each of
   // these begins with one slash and not two, and each leaves.
   it('is never something a browser reads as another host', () => {

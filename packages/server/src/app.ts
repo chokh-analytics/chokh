@@ -14,6 +14,7 @@ import type { ApiDeps } from './lib/api-deps.js';
 import type { ClientIpOptions } from './lib/client-ip.js';
 import { fail } from './lib/envelope.js';
 import { framePolicy } from './lib/frame-policy.js';
+import { requestLogSerializers } from './lib/log-request.js';
 import { wantsHtml } from './lib/wants-html.js';
 import { createWindowCounter } from './lib/window-counter.js';
 import { registerAuthDecorations } from './plugins/auth.js';
@@ -95,10 +96,16 @@ export interface AppOptions {
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
+    // Every request is logged by its method, host and route alone, and never
+    // by its query or by the address it came from (lib/log-request.ts).
     logger:
       options.log === undefined
-        ? { level: env.LOG_LEVEL }
-        : { level: options.log.level, stream: options.log.stream },
+        ? { level: env.LOG_LEVEL, serializers: requestLogSerializers }
+        : {
+            level: options.log.level,
+            stream: options.log.stream,
+            serializers: requestLogSerializers,
+          },
     trustProxy: env.TRUST_PROXY.length === 0 ? false : env.TRUST_PROXY,
   });
 
@@ -205,6 +212,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
 
   const authLimit = createWindowCounter(MINUTE_MS);
   const inviteLimit = createWindowCounter(MINUTE_MS);
+  const ssoLimit = createWindowCounter(MINUTE_MS);
   // Counts an extension takes for itself, apart from every count of the
   // core's own.
   const extensionLimit = createWindowCounter(MINUTE_MS);
@@ -216,6 +224,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     authLimit,
     shareLimit: createWindowCounter(MINUTE_MS),
     inviteLimit,
+    ssoLimit,
     shareCodec: createShareCodec(session.secret),
     auditCursor: createAuditCursorCodec(session.secret),
     seal: (purpose) => createSealer(session.secret, purpose),

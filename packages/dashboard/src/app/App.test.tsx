@@ -108,6 +108,18 @@ describe('who sees what', () => {
     expect(decodeURIComponent(window.location.search)).toBe('?next=/s_test/sources?range=30d');
   });
 
+  // A People search with a space in it is written by URLSearchParams as
+  // `q=a+b`, and it is carried through a sign-in like any other query.
+  it('carries a search with a space in it to the sign in page', async () => {
+    at(`/s_test/people?${new URLSearchParams({ q: 'ana bose*' }).toString()}`);
+    serve({ '/api/me': () => refusal(401, 'UNAUTHENTICATED') });
+    render(<App />);
+
+    await screen.findByRole('button', { name: 'Sign in' });
+    expect(window.location.pathname).toBe('/login');
+    expect(new URLSearchParams(window.location.search).get('next')).toBe('/s_test/people?q=ana+bose*');
+  });
+
   // An install that has just been started. Without this screen somebody signs
   // in and looks at nothing, with no way forward that is not the README.
   it('offers the first site to an account that can read none', async () => {
@@ -919,6 +931,20 @@ describe('where a sign-in may land', () => {
   it('is a path of this dashboard, with its query', () => {
     for (const path of ['/s_test', '/s_test/sources?range=30d', '/s_test/pages?filters=page%3D%3D%2Fpricing']) {
       expect(safeNext(path)).toBe(path);
+    }
+  });
+
+  // `+` and `*`, the two characters URLSearchParams leaves as they are that the
+  // rule once refused. Each way: taken where a browser stays here, and no help
+  // to a string that leaves.
+  it('takes a plus and a star, and neither lets a string leave', () => {
+    for (const path of ['/s_test/people?q=ana+bose', '/s_test/pages?q=*pricing*', '/+/evil.example', '/*']) {
+      expect(safeNext(path)).toBe(path);
+      expect(new URL(path, 'https://dash.example/login').origin).toBe('https://dash.example');
+    }
+    for (const leaving of ['//+evil.example', '/\\+evil.example', '/\t/*evil.example']) {
+      expect(new URL(leaving, 'https://dash.example/login').origin).not.toBe('https://dash.example');
+      expect(safeNext(leaving)).toBeNull();
     }
   });
 

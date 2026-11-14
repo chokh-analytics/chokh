@@ -12,9 +12,15 @@
 // list, and neither is a space or anything else outside what a path and a
 // query of this dashboard are made of.
 //
+// `+` and `*` are in it. With the rest of the list that is every character
+// URLSearchParams leaves as it is, so a query the dashboard wrote itself is
+// always carried through a sign-in: a People search with a space in it is
+// written `q=a+b`. Neither changes where a browser goes: each is an ordinary
+// character of a path or a query to it, and the slash rule above still holds.
+//
 // One rule, here, for every route that redirects after signing somebody in:
 // the SSO exchange in the core and the OIDC flow in packages/ee.
-export const SAFE_NEXT = /^\/(?!\/)[\w\-./?=&%#]*$/;
+export const SAFE_NEXT = /^\/(?!\/)[\w\-./?=&%#+*]*$/;
 
 export const MAX_NEXT = 512;
 

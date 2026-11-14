@@ -4,7 +4,6 @@ import type {
   FastifyInstance,
   FastifyReply,
   FastifyRequest,
-  RouteShorthandOptions,
 } from 'fastify';
 import {
   acceptInvitation,
@@ -128,27 +127,6 @@ function fromAnotherSite(request: FastifyRequest): boolean {
   return site !== undefined && site !== 'same-origin' && site !== 'none';
 }
 
-// These two routes are logged by their path alone. The line Fastify writes
-// for a request carries its address, query and all, and here the query holds
-// what a provider sent back (a code and a state) and where somebody was
-// going. A code is spent and useless without the verifier, so this is not a
-// way in; it is still nothing a log should keep.
-const pathOnly = {
-  // What Fastify's own line says of a request, with the query taken off.
-  req(request: FastifyRequest): Record<string, unknown> {
-    return {
-      method: request.method,
-      url: request.url.split('?')[0],
-      host: request.host,
-      remoteAddress: request.ip,
-      remotePort: request.socket.remotePort,
-    };
-  },
-};
-// The framework takes serializers for one route, and its types say so for a
-// plugin and not for a route, so the option is typed here.
-const QUIET = { logSerializers: pathOnly } as RouteShorthandOptions;
-
 function sameText(left: string, right: string): boolean {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -247,7 +225,6 @@ export function registerOidcRoutes(
   // the button is.
   app.get(
     '/api/ee/oidc/start',
-    QUIET,
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (live() === null) {
         return refuse(request, reply, 404, 'OIDC_OFF', OFF);
@@ -343,7 +320,7 @@ export function registerOidcRoutes(
   // Where the provider sends the browser back.
   app.get(
     CALLBACK_PATH,
-    { ...QUIET, preHandler: attachPrincipal(auth) },
+    { preHandler: attachPrincipal(auth) },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const provider = live();
       if (provider === null || config === null) {

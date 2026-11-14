@@ -289,3 +289,127 @@ describe('the SSO exchange and the role it carries', () => {
     ]);
   });
 });
+
+// Both forms of the exchange count on a count of their own, never on the
+// password's, and a GET that the browser says is not a navigation is refused
+// before it is counted (the review of AN-TEAM01). The GET form is a link
+// another application sends somebody along, so it is a request any page can
+// make a browser send: an image tag pointed at it must not use up what an
+// address has left to sign in with.
+describe("the exchange's own count", () => {
+  let harness: Harness;
+
+  beforeEach(async () => {
+    harness = await createHarness();
+  });
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  // What a browser sends for an <img> on another site's page.
+  const image = {
+    'sec-fetch-mode': 'no-cors',
+    'sec-fetch-dest': 'image',
+    'sec-fetch-site': 'cross-site',
+    accept: 'image/avif,image/webp,*/*',
+  };
+  // And for a person following a link from another application.
+  const followed = {
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-site': 'cross-site',
+    accept: 'text/html,application/xhtml+xml',
+  };
+
+  async function wrongPassword(): Promise<number> {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'owner@test.example', password: 'not-the-password-at-all' },
+    });
+    return response.statusCode;
+  }
+
+  it('leaves the password and the exchange usable after a page of image requests', async () => {
+    for (let index = 0; index < 40; index += 1) {
+      expectFailure(
+        await harness.app.inject({ method: 'GET', url: `/api/sso?token=${token()}`, headers: image }),
+        403,
+        'NOT_A_NAVIGATION',
+      );
+    }
+    // Nothing above was counted, and nothing was exchanged.
+    expect(await harness.signIn('owner@test.example')).toContain(SESSION_COOKIE);
+    const arrived = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${token()}`,
+      headers: followed,
+    });
+    expect(arrived.statusCode).toBe(303);
+    expect(arrived.headers.location).toBe('/');
+    expect(arrived.cookies[0]?.name).toBe(SESSION_COOKIE);
+  });
+
+  it('refuses every kind of request a page makes that is not following a link', async () => {
+    for (const mode of ['no-cors', 'cors', 'same-origin', 'websocket', 'NO-CORS']) {
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: `/api/sso?token=${token()}`,
+        headers: { 'sec-fetch-mode': mode },
+      });
+      expectFailure(response, 403, 'NOT_A_NAVIGATION');
+      expect(response.cookies).toHaveLength(0);
+    }
+  });
+
+  // Another site is where the exchange is entered from: that is not refused.
+  it('takes a person sent from another site, and a program that says nothing', async () => {
+    const sent = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${token()}&next=${encodeURIComponent('/s_test')}`,
+      headers: followed,
+    });
+    expect([sent.statusCode, sent.headers.location]).toEqual([303, '/s_test']);
+    const program = await harness.app.inject({ method: 'GET', url: `/api/sso?token=${token()}` });
+    expect(program.statusCode).toBe(303);
+  });
+
+  it('counts the exchange apart from the password, both ways', async () => {
+    const limit = 10;
+    // The exchange's count used up, by both forms.
+    for (let index = 0; index < limit; index += 1) {
+      const response =
+        index % 2 === 0
+          ? await harness.app.inject({ method: 'POST', url: '/api/sso', payload: { token: 'not.a.token' } })
+          : await harness.app.inject({ method: 'GET', url: '/api/sso?token=not.a.token', headers: followed });
+      expect(response.statusCode).not.toBe(429);
+    }
+    expectFailure(
+      await harness.app.inject({ method: 'POST', url: '/api/sso', payload: { token: token() } }),
+      429,
+      'RATE_LIMITED',
+    );
+    expectFailure(
+      await harness.app.inject({
+        method: 'GET',
+        url: `/api/sso?token=${token()}`,
+        headers: { accept: 'application/json' },
+      }),
+      429,
+      'RATE_LIMITED',
+    );
+    // The password is untouched by it.
+    expect(await harness.signIn('owner@test.example')).toContain(SESSION_COOKIE);
+
+    // And the other way, a minute later: the password's count used up leaves
+    // the exchange working.
+    harness.setNow(harness.now() + 61_000);
+    for (let index = 0; index < limit; index += 1) {
+      expect(await wrongPassword()).toBe(401);
+    }
+    expect(await wrongPassword()).toBe(429);
+    const exchanged = await harness.app.inject({ method: 'POST', url: '/api/sso', payload: { token: token({ now: harness.now() }) } });
+    expect(exchanged.statusCode).toBe(200);
+  });
+});

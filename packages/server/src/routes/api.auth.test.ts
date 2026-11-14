@@ -166,9 +166,12 @@ describe('the gate in front of signing in', () => {
     expectFailure(await guess(), 429, 'RATE_LIMITED');
   });
 
-  // One counter for every way in, so somebody who has run out of login attempts
-  // cannot carry on guessing at the registration route or at SSO.
-  it('counts registration and both SSO forms against the same address', async () => {
+  // One counter for the ways in by password, so somebody who has run out of
+  // login attempts cannot carry on guessing at the registration route. The SSO
+  // exchange is not one of them: it counts on a count of its own (the review
+  // of AN-TEAM01), because its GET form is a request any page can make a
+  // browser send. Its own cases are in api.sso.test.ts.
+  it('counts registration against the same address, and the SSO exchange apart', async () => {
     for (let tries = 0; tries < 10; tries += 1) {
       await guess();
     }
@@ -181,16 +184,10 @@ describe('the gate in front of signing in', () => {
       429,
       'RATE_LIMITED',
     );
-    expectFailure(
-      await bare.app.inject({ method: 'POST', url: '/api/sso', payload: { token: 'x' } }),
-      429,
-      'RATE_LIMITED',
-    );
-    expectFailure(
-      await bare.app.inject({ method: 'GET', url: '/api/sso?token=x' }),
-      429,
-      'RATE_LIMITED',
-    );
+    expect(
+      (await bare.app.inject({ method: 'POST', url: '/api/sso', payload: { token: 'x' } })).statusCode,
+    ).not.toBe(429);
+    expect((await bare.app.inject({ method: 'GET', url: '/api/sso?token=x' })).statusCode).not.toBe(429);
   });
 });
 

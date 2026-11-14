@@ -976,6 +976,16 @@ A token names one team, and the exchange adds a place in the team it names and
 never takes one away: somebody who arrives with a token for a second team is
 in both from then on, until an owner removes them from the first.
 
+Both forms count on a limit of their own, `AUTH_RATE_LIMIT` a minute per
+address, and never on the password's: an address that has spent its
+exchanges can still sign in with a password, and the other way round. The
+`GET` form is a link a person follows, so a `GET` the browser says is not a
+navigation (a `Sec-Fetch-Mode` other than `navigate`: an image, a script, a
+`fetch`) answers `403 NOT_A_NAVIGATION` before it is counted, and an image tag
+on somebody else's page can spend nothing. A request from another site is not
+refused: arriving from another application is what the exchange is for. A
+program sends no `Sec-Fetch-Mode` and is let through.
+
 ### There is no CORS
 
 Deliberately. The dashboard is served by this same process, so it is same origin,
@@ -1078,7 +1088,7 @@ empty and events are still collected.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `HOST`, `PORT` | `127.0.0.1`, `4100` | Where the server listens |
-| `LOG_LEVEL` | `info` | pino level |
+| `LOG_LEVEL` | `info` | pino level. What a line holds: see [What a log line holds](#what-a-log-line-holds) |
 | `DASHBOARD_DIR` | the sibling package's `dist` | The built dashboard to serve |
 | `TRUST_PROXY` | none | Comma separated CIDRs allowed to say who a visitor is |
 | `REAL_IP_HEADER` | `X-Forwarded-For` | Or `CF-Connecting-IP`, honoured only from a trusted peer, or `X-Chokh-Forwarded-For`, honoured only when signed |
@@ -1096,7 +1106,7 @@ empty and events are still collected.
 | `SESSION_TTL_HOURS` | `12` | How long a session lasts |
 | `SSO_SECRET` | none | Shared with the application that mints SSO tokens. Unset means SSO is refused |
 | `SSO_MAX_AGE_SECONDS` | `300` | The longest life an SSO token may claim |
-| `AUTH_RATE_LIMIT` | `10` | Sign-in, registration and SSO attempts a minute, per address; looking at and using an invitation too, on a count of their own |
+| `AUTH_RATE_LIMIT` | `10` | Sign-in and registration attempts a minute, per address; the SSO exchange, and looking at and using an invitation, each on a count of their own |
 | `INVITE_TTL_HOURS` | `168` | How long an invitation can be used for, 1 to 720 |
 | `COOKIE_SECURE` | yes in production | `false` lets a developer sign in over plain http |
 
@@ -1285,6 +1295,23 @@ survives the purge; only the per-visitor detail ages out.
   logged out, until the daily salt turns. Persistent mode throws the stored id
   away on `reset` and has no such window, so a site where people sign in on
   shared machines should run `persistent`.
+
+## What a log line holds
+
+The line written for each request holds its method, the host it was asked of,
+and the route it reached: `{"method":"GET","url":"/api/sites/s_web/people","host":"analytics.example.com"}`.
+Never the query string, so no SSO token, no single sign-on code or state, no
+`next` and no search text; never a share link's token, which is written
+`/api/share/:token` (and the dashboard's share page `/share/:token`); of a
+route's parameters only the ids of a site's own things are filled in (a site,
+a team, a goal, a funnel, a segment, an annotation, an invitation's id, a
+key's id), and a person's id or a visitor's never is. **And never the address
+of whoever asked.** Behind a proxy you trust, the framework's own line wrote
+the forwarded address, and with no proxy the socket's peer: on the collector
+either one is a visitor's, at the default `info` level, and a log would have
+kept it whatever the site's `ipMode` says. So no line has it. The line that says a
+request finished holds its status code and how long it took. A warning or an
+error holds what went wrong and, where there is one, the site it was about.
 
 ## The load test
 

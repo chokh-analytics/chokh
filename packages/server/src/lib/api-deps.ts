@@ -27,6 +27,12 @@ export interface ApiDeps {
   // Looking up and accepting an invitation, per address a minute, on a
   // counter of their own so a sign-in and an invitation do not share a limit.
   inviteLimit: WindowCounter;
+  // Both forms of the SSO exchange, per address a minute, on a counter of
+  // their own. The GET form is a link another application sends a person
+  // along, so it is a request any page can try to make a browser send; it
+  // must never be able to use up what somebody has left to sign in with
+  // their password.
+  ssoLimit: WindowCounter;
   shareCodec: ShareCodec;
   // Signs the audit log's cursor, so a page is only ever carried on from a
   // listing whose opening was recorded.

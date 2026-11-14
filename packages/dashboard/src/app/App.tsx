@@ -212,7 +212,7 @@ function SiteFrame({
 // through `/\host`, which leaves. Here the router would refuse to go rather
 // than leave, but this is also what the sign-in page hands the server when
 // it builds the link for single sign-on, and one rule is one rule.
-const SAFE_NEXT = /^\/(?!\/)[\w\-./?=&%#]*$/;
+const SAFE_NEXT = /^\/(?!\/)[\w\-./?=&%#+*]*$/;
 
 export function safeNext(next: string | null): string | null {
   if (next === null || next.length > 512 || !SAFE_NEXT.test(next)) {

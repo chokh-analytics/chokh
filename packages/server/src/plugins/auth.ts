@@ -148,6 +148,30 @@ export function requireThisDashboard(): preHandlerHookHandler {
   };
 }
 
+// For a GET that a person follows and no page should load: the SSO exchange's
+// link. A browser says what kind of request it is making in Sec-Fetch-Mode,
+// which a page cannot set: "navigate" when somebody follows a link or is sent
+// by a redirect, and something else for an image, a script, a frame's
+// subresource or a fetch. Anything but a navigation is refused here, before
+// it is counted. A program sends no such header and is let through, and so is
+// a browser too old to send one, which is what the count is still there for.
+export function requireNavigation(): preHandlerHookHandler {
+  // Async even though it does no waiting: a Fastify hook that returns something
+  // other than a promise and never calls done leaves the request hanging.
+  return async function navigationHook(request: FastifyRequest, reply: FastifyReply) {
+    const sent = request.headers['sec-fetch-mode'];
+    const mode = Array.isArray(sent) ? sent[0] : sent;
+    if (mode !== undefined && mode.toLowerCase() !== 'navigate') {
+      return reply
+        .code(403)
+        .send(
+          fail('NOT_A_NAVIGATION', 'This address signs somebody in when they follow a link to it'),
+        );
+    }
+    return undefined;
+  };
+}
+
 // Resolve whoever is asking, and refuse nobody. Registration needs it: the
 // first account has no credentials to present and every one after it is created
 // by an owner, so the route has to see both cases.
@@ -250,8 +274,9 @@ export function addressOf(request: FastifyRequest, ipOptions: ClientIpOptions, a
 
 // The gate in front of signing in.
 //
-// Login, registration and both SSO forms are the routes where an address gets to
-// guess, so they are limited per address rather than per account: limiting per
+// Login, registration, both SSO forms and using an invitation are the routes
+// where an address gets to guess, each on a count of its own, so they are
+// limited per address rather than per account: limiting per
 // account is how somebody locks a person out of their own dashboard by guessing at
 // them. The counter is the same one the collector uses, a fixed window a minute
 // wide, which is coarse and enough: this is here to stop a script, not a botnet.
