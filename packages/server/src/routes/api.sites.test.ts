@@ -162,6 +162,7 @@ describe('reading and changing a site', () => {
       method: 'POST',
       url: `/api/sites/${SITE_ID}/identify-secret/rotate`,
       headers: { cookie: harness.owner.cookie },
+      payload: {},
     });
     expect(response.statusCode).toBe(200);
     const body = envelope<Created>(response.body);
@@ -179,6 +180,7 @@ describe('reading and changing a site', () => {
         method: 'POST',
         url: `/api/sites/${SITE_ID}/identify-secret/rotate`,
         headers: { cookie: editor.cookie },
+        payload: {},
       }),
       403,
       'SCOPE_REQUIRED',

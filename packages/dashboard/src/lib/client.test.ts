@@ -138,6 +138,23 @@ describe('createClient', () => {
     );
   });
 
+  // Signing out, rotating a secret, sending a test: nothing to say, and still
+  // JSON. The server takes a POST made with a session only as
+  // application/json, because that is the one type a form on another origin
+  // cannot send.
+  it('posts an empty object as JSON when there is nothing to send', async () => {
+    const fetch = vi.fn().mockResolvedValue(respond(200, { success: true, data: null }));
+    await createClient({ fetch }).post('/api/auth/logout');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/auth/logout',
+      expect.objectContaining({
+        method: 'POST',
+        body: '{}',
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  });
+
   // A delete carries no body and no content type, which a server that parses
   // JSON would otherwise refuse as an empty document.
   it('deletes with no body', async () => {

@@ -4,11 +4,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiDeps } from '../lib/api-deps.js';
 import { fail, ok } from '../lib/envelope.js';
 import { attempt } from '../lib/store-error.js';
-import {
-  loginSchema,
-  registerSchema,
-  setMemberSchema,
-} from '../schemas/accounts.schema.js';
+import { startSession } from '../lib/session-cookie.js';
+import { loginSchema, registerSchema } from '../schemas/accounts.schema.js';
 import {
   authenticate,
   hashPassword,
@@ -42,22 +39,6 @@ export function publicUser(user: StoredUser): PublicUser {
 
 function authDeps(deps: ApiDeps): AuthDeps {
   return { store: deps.store, session: deps.session, now: deps.now };
-}
-
-function setSessionCookie(deps: ApiDeps, reply: FastifyReply, userId: string): void {
-  const issued = deps.session.issue(userId, deps.now());
-  reply.setCookie(SESSION_COOKIE, issued.value, {
-    path: '/',
-    // Not readable by script, so an XSS in a dashboard widget cannot steal it.
-    httpOnly: true,
-    // Lax and not Strict: the SSO exchange is a top level navigation from another
-    // application, and Strict would drop the cookie on the very redirect that
-    // sets it. Lax still refuses it on a cross site POST, which is the case that
-    // matters.
-    sameSite: 'lax',
-    secure: deps.cookie.secure,
-    maxAge: Math.floor(deps.session.ttlMs / 1000),
-  });
 }
 
 export function createRegisterController(deps: ApiDeps) {
@@ -113,13 +94,14 @@ export function createRegisterController(deps: ApiDeps) {
           members: [{ userId: user.id, role: 'owner', identity: true }],
         });
       } else {
-        await deps.store.setTeamMember(DEFAULT_TEAM_ID, {
-          userId: user.id,
+        // Through the guarded change, like every other: adding an owner can
+        // lower nobody, so nothing refuses it.
+        await deps.store.changeTeamMember(DEFAULT_TEAM_ID, user.id, {
           role: 'owner',
           identity: true,
         });
       }
-      setSessionCookie(deps, reply, user.id);
+      startSession(deps, reply, user);
     }
 
     return reply.code(201).send(ok({ user: publicUser(user), signedIn: first }));
@@ -143,7 +125,7 @@ export function createLoginController(deps: ApiDeps) {
         .code(401)
         .send(fail('INVALID_CREDENTIALS', 'That address and password do not match'));
     }
-    setSessionCookie(deps, reply, user.id);
+    startSession(deps, reply, user);
     return reply.send(ok({ user: publicUser(user) }));
   };
 }
@@ -190,51 +172,5 @@ export function createMeController(deps: ApiDeps) {
         teams,
       }),
     );
-  };
-}
-
-// The one team route this ticket lands: add a member, or change their role.
-// Removing one, renaming a team and creating a second belong to AN-TEAM01.
-export function createSetMemberController(deps: ApiDeps) {
-  return async function setMemberController(request: FastifyRequest, reply: FastifyReply) {
-    const { teamId, userId } = request.params as { teamId: string; userId: string };
-    const parsed = setMemberSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send(fail('INVALID_BODY', 'A role is required', parsed.error.issues));
-    }
-    const principal = request.principal;
-    if (principal === null) {
-      return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
-    }
-
-    // Owner of that team, not of any team. Membership is the permission, so it is
-    // read here rather than inferred from a site.
-    const team = await deps.store.team(teamId);
-    if (team === null) {
-      return reply.code(404).send(fail('UNKNOWN_TEAM', `No team answers to ${teamId}`));
-    }
-    const mine = team.members.find((member) => member.userId === principal.id);
-    if (principal.kind !== 'session' || mine?.role !== 'owner') {
-      return reply
-        .code(403)
-        .send(fail('FORBIDDEN', 'Only an owner of that team may change its members'));
-    }
-    if ((await deps.store.userById(userId)) === null) {
-      return reply.code(404).send(fail('UNKNOWN_USER', `No account answers to ${userId}`));
-    }
-
-    const updated = await attempt(() =>
-      deps.store.setTeamMember(teamId, {
-        userId,
-        role: parsed.data.role,
-        identity: parsed.data.identity,
-      }),
-    );
-    if (!updated.ok) {
-      return reply.code(updated.status).send(fail(updated.code, updated.message));
-    }
-    return reply.send(ok({ team: updated.data }));
   };
 }

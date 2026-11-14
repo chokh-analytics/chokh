@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { keyPrincipal, scopesForRole, sessionPrincipal, teamIdOf } from './scopes.js';
+import { grantOn, keyPrincipal, roleRank, scopesForRole, sessionPrincipal, teamIdOf } from './scopes.js';
 import { defaultSiteSettings, type Site, type StoredTeam } from '../store/AnalyticsStore.js';
 
 function site(overrides: Partial<Site> = {}): Site {
@@ -100,5 +100,58 @@ describe('a key principal', () => {
   it('answers null for any site but its own', () => {
     const principal = keyPrincipal('k_1', 's_one', ['read:stats']);
     expect(principal.grantFor(site({ id: 's_two' }))).toBeNull();
+  });
+});
+
+// The order a grant is decided in, which is the rule (AN-TEAM01).
+describe('a role in the team and a role on the site', () => {
+  const sorted = (grant: ReturnType<typeof grantOn>): string[] => [...(grant?.scopes ?? [])].sort();
+  const everything = ['admin', 'read:identity', 'read:stats', 'write:events'];
+
+  it('makes an owner of the team an owner of the site, whatever the row on the site says', () => {
+    for (const row of [undefined, { role: 'viewer', identity: false }, { role: 'editor', identity: false }] as const) {
+      const grant = grantOn({ role: 'owner', identity: false }, row);
+      expect(grant?.role).toBe('owner');
+      expect(sorted(grant)).toEqual(everything);
+    }
+  });
+
+  it('takes the row on the site in place of the team role, up or down', () => {
+    expect(grantOn({ role: 'viewer', identity: false }, { role: 'owner', identity: true })?.role).toBe('owner');
+    const lowered = grantOn({ role: 'editor', identity: true }, { role: 'viewer', identity: false });
+    expect(lowered?.role).toBe('viewer');
+    // The flag is the row's too: the team's does not leak through it.
+    expect(sorted(lowered)).toEqual(['read:stats']);
+  });
+
+  it('falls back to the team role, and to nothing', () => {
+    expect(sorted(grantOn({ role: 'editor', identity: false }, undefined))).toEqual([
+      'read:stats',
+      'write:events',
+    ]);
+    expect(sorted(grantOn(undefined, { role: 'viewer', identity: true }))).toEqual([
+      'read:identity',
+      'read:stats',
+    ]);
+    expect(grantOn(undefined, undefined)).toBeNull();
+  });
+
+  it('reads a session by it: a row on one site is about that site only', () => {
+    const principal = sessionPrincipal('u_viewer', 'v@x.example', [team], [
+      { siteId: 's_one', userId: 'u_viewer', role: 'owner', identity: true },
+    ]);
+    expect(principal.grantFor(site())?.role).toBe('owner');
+    expect(principal.grantFor(site({ id: 's_other' }))?.role).toBe('viewer');
+    // No place in the team and a row on one of its sites: that site, no other.
+    const guest = sessionPrincipal('u_guest', 'g@x.example', [], [
+      { siteId: 's_one', userId: 'u_guest', role: 'viewer', identity: false },
+    ]);
+    expect(guest.grantFor(site())?.role).toBe('viewer');
+    expect(guest.grantFor(site({ id: 's_other' }))).toBeNull();
+  });
+
+  it('ranks the roles owner, editor, viewer', () => {
+    expect(roleRank('owner')).toBeGreaterThan(roleRank('editor'));
+    expect(roleRank('editor')).toBeGreaterThan(roleRank('viewer'));
   });
 });

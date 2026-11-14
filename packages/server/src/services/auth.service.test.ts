@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -79,8 +81,26 @@ describe('the session cookie', () => {
 
   it('reads back the account it was issued for', () => {
     const issued = codec.issue('u_1', NOW);
-    expect(codec.read(issued.value, NOW)).toBe('u_1');
+    expect(codec.read(issued.value, NOW)).toEqual({ userId: 'u_1', epoch: 0 });
     expect(issued.expiresAt).toBe(NOW + 12 * HOUR);
+  });
+
+  it('carries the count of ended sessions it was issued under', () => {
+    expect(codec.read(codec.issue('u_1', NOW, 3).value, NOW)).toEqual({ userId: 'u_1', epoch: 3 });
+  });
+
+  // A cookie from before the count existed has none, and reads as zero: what
+  // every account's count was then, so a deploy signs nobody out.
+  it('reads a cookie from before the count existed as issued under zero', () => {
+    const sign = (body: string): string =>
+      createHmac('sha256', 'a-session-secret-not-a-real-key-00').update(body).digest('base64url');
+    const body = Buffer.from(JSON.stringify({ uid: 'u_1', exp: NOW + HOUR })).toString('base64url');
+    expect(codec.read(`${body}.${sign(body)}`, NOW)).toEqual({ userId: 'u_1', epoch: 0 });
+    // A count that is not a count is not a session, however well it is signed.
+    for (const se of [-1, 1.5, '2', null]) {
+      const bad = Buffer.from(JSON.stringify({ uid: 'u_1', exp: NOW + HOUR, se })).toString('base64url');
+      expect(codec.read(`${bad}.${sign(bad)}`, NOW)).toBeNull();
+    }
   });
 
   it('refuses a cookie whose payload was edited', () => {

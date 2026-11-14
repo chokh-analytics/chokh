@@ -23,8 +23,9 @@ export type RouteNeed =
   | { kind: 'share' }
   // Somebody: a session or a key, whatever it may do.
   | { kind: 'principal' }
-  // A scope on the site in the path.
-  | { kind: 'site'; scope: Scope }
+  // A scope on the site in the path. With `person`, held by somebody signed
+  // in and not by a key: a key that holds the scope is refused for being one.
+  | { kind: 'site'; scope: Scope; person?: true }
   // A person, signed in, who is an owner of the team the request names (in
   // its path or in its body). Never a key.
   | { kind: 'teamOwner' }
@@ -56,12 +57,21 @@ export interface RouteRule {
   // caller who passed the scope check is refused for the licence instead, and
   // one who did not is refused for the scope first.
   feature?: string;
+  // Entered from another application by design: a browser arrives here from
+  // another origin carrying a token that application signed, and that is the
+  // route working. Every other route refuses a change that a session makes
+  // from anywhere but this dashboard (plugins/auth.ts); these read no session
+  // at all, so there is nothing for that rule to protect on them. The list is
+  // short on purpose and a test holds it: adding a row here is a decision.
+  crossSite?: true;
 }
 
 const read: RouteNeed = { kind: 'site', scope: 'read:stats' };
 const identity: RouteNeed = { kind: 'site', scope: 'read:identity' };
 const write: RouteNeed = { kind: 'site', scope: 'write:events' };
 const admin: RouteNeed = { kind: 'site', scope: 'admin' };
+const adminPerson: RouteNeed = { kind: 'site', scope: 'admin', person: true };
+const teamOwner: RouteNeed = { kind: 'teamOwner' };
 const open: RouteNeed = { kind: 'public' };
 const anybody: RouteNeed = { kind: 'principal' };
 const shared: RouteNeed = { kind: 'share' };
@@ -70,7 +80,7 @@ function rule(
   method: RouteMethod,
   url: string,
   needs: RouteNeed,
-  extra: Pick<RouteRule, 'body' | 'stream'> = {},
+  extra: Pick<RouteRule, 'body' | 'stream' | 'crossSite'> = {},
 ): RouteRule {
   return { method, url, needs, ...extra };
 }
@@ -93,18 +103,21 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   rule('POST', '/api/auth/login', open),
   rule('POST', '/api/auth/logout', anybody),
   rule('GET', '/api/me', anybody),
-  rule('POST', '/api/sso', open),
-  rule('GET', '/api/sso', open),
+  rule('POST', '/api/sso', open, { crossSite: true }),
+  rule('GET', '/api/sso', open, { crossSite: true }),
   rule('GET', '/api/license', anybody),
 
-  // Teams.
-  rule('PUT', '/api/teams/:teamId/members/:userId', { kind: 'teamOwner' }, {
+  // Teams: read and changed by a person who owns the team in the path.
+  rule('GET', '/api/teams/:teamId/members', teamOwner),
+  rule('PUT', '/api/teams/:teamId/members/:userId', teamOwner, {
     body: () => ({ role: 'viewer', identity: false }),
   }),
+  rule('DELETE', '/api/teams/:teamId/members/:userId', teamOwner),
+  rule('PATCH', '/api/teams/:teamId', teamOwner, { body: ({ params }) => ({ name: params['teamId'] }) }),
 
   // Sites.
   rule('GET', '/api/sites', anybody),
-  rule('POST', '/api/sites', { kind: 'teamOwner' }, {
+  rule('POST', '/api/sites', teamOwner, {
     body: ({ params, serial }) => ({
       name: `Probe ${serial}`,
       domains: [`probe-${serial}.route-table.test`],
@@ -114,6 +127,13 @@ export const CORE_ROUTES: readonly RouteRule[] = [
   rule('GET', SITE, read),
   rule('PATCH', SITE, admin),
   rule('POST', `${SITE}/identify-secret/rotate`, admin),
+
+  // Roles on one site: admin, and a person.
+  rule('GET', `${SITE}/members`, adminPerson),
+  rule('PUT', `${SITE}/members/:userId`, adminPerson, {
+    body: () => ({ role: 'viewer', identity: false }),
+  }),
+  rule('DELETE', `${SITE}/members/:userId`, adminPerson),
 
   // The public share: the owner's two routes, then the reader's.
   rule('PUT', `${SITE}/share`, admin),
@@ -245,6 +265,7 @@ export function expectedOf(rule: RouteRule, caller: RouteCaller, licensed = true
       if (caller.principal === null) return UNAUTHENTICATED;
       if (caller.scopes === null) return { status: 403, code: 'SITE_FORBIDDEN' };
       if (!caller.scopes.includes(rule.needs.scope)) return { status: 403, code: 'SCOPE_REQUIRED' };
+      if (rule.needs.person === true && caller.principal !== 'session') return FORBIDDEN;
       return afterScope;
     case 'teamOwner':
       if (caller.principal === null) return UNAUTHENTICATED;

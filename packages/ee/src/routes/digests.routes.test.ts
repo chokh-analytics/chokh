@@ -232,6 +232,8 @@ describe('the digest routes on a licensed install', () => {
       method: 'POST',
       url: `${digests}/${digestIdFor(SITE_ID, 'daily')}/send`,
       headers: { cookie: here.owner },
+      // As the dashboard sends it: a POST made with a session is JSON.
+      payload: {},
     });
     expect(sent.statusCode).toBe(200);
     const answer = body<{ deliveries: unknown[]; period: string }>(sent).data;
@@ -255,6 +257,7 @@ describe('the digest routes on a licensed install', () => {
       method: 'POST',
       url: `${digests}/dg_nobody/send`,
       headers: { cookie: here.owner },
+      payload: {},
     });
     expect(missing.statusCode).toBe(404);
     expect(body(missing).error?.code).toBe('DIGEST_NOT_FOUND');

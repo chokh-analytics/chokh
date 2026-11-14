@@ -4,6 +4,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { keyPrincipal, sessionPrincipal, type Principal } from '../lib/scopes.js';
 import type { AccountStore, AnalyticsStore, StoredUser } from '../store/AnalyticsStore.js';
 import { hashApiKey } from './keys.service.js';
+import { isSsoManaged } from './sso-accounts.js';
 
 // Who is asking. Two ways to answer, one currency.
 //
@@ -54,22 +55,34 @@ export async function verifyPassword(stored: string | undefined, password: strin
 
 // The signed cookie that is a dashboard session.
 //
-// There is no session row. The cookie carries the user id and an expiry, signed
-// with SESSION_SECRET, and the principal behind it is read from the store on
-// every request, so removing somebody from a team takes effect on their next
-// request rather than when their cookie runs out. What that costs is revocation:
-// "sign this person out of every browser" needs a row to invalidate, and nothing
-// in this product asks for it yet. Said out loud in the server README.
+// There is no session row. The cookie carries the user id, an expiry and the
+// number of times that account's sessions had been ended when it was issued,
+// signed with SESSION_SECRET. The principal behind it is read from the store
+// on every request, so a changed role decides the very next request; and the
+// account's row, which that read fetches anyway, carries the count as it is
+// now, so a cookie issued before the count moved is refused. That is how
+// "sign this person out of every browser" works with no table of sessions: a
+// member who is removed or lowered has the count moved, and holds nothing.
 export interface SessionCodec {
-  issue(userId: string, now: number): { value: string; expiresAt: number };
-  // The user id the cookie names, or null when it is missing, altered, or over.
-  read(value: string | undefined, now: number): string | null;
+  // `epoch` is the account's sessionEpoch at this moment (absent reads as 0).
+  issue(userId: string, now: number, epoch?: number): { value: string; expiresAt: number };
+  // Who the cookie names and the count it was issued under, or null when it
+  // is missing, altered, or over.
+  read(value: string | undefined, now: number): SessionClaim | null;
   ttlMs: number;
+}
+
+export interface SessionClaim {
+  userId: string;
+  epoch: number;
 }
 
 interface SessionPayload {
   uid: string;
   exp: number;
+  // Absent on a cookie from before AN-TEAM01, which reads as zero: what every
+  // account's count was then, so a deploy signs nobody out.
+  se?: number;
 }
 
 export function createSessionCodec(secret: string, ttlMs: number): SessionCodec {
@@ -79,14 +92,14 @@ export function createSessionCodec(secret: string, ttlMs: number): SessionCodec 
   return {
     ttlMs,
 
-    issue(userId: string, now: number): { value: string; expiresAt: number } {
+    issue(userId: string, now: number, epoch = 0): { value: string; expiresAt: number } {
       const expiresAt = now + ttlMs;
-      const payload: SessionPayload = { uid: userId, exp: expiresAt };
+      const payload: SessionPayload = { uid: userId, exp: expiresAt, se: epoch };
       const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
       return { value: `${body}.${sign(body)}`, expiresAt };
     },
 
-    read(value: string | undefined, now: number): string | null {
+    read(value: string | undefined, now: number): SessionClaim | null {
       if (value === undefined || value === '') {
         return null;
       }
@@ -109,11 +122,14 @@ export function createSessionCodec(secret: string, ttlMs: number): SessionCodec 
       if (typeof payload !== 'object' || payload === null) {
         return null;
       }
-      const { uid, exp } = payload as Partial<SessionPayload>;
+      const { uid, exp, se } = payload as Partial<SessionPayload>;
       if (typeof uid !== 'string' || typeof exp !== 'number' || exp <= now) {
         return null;
       }
-      return uid;
+      if (se !== undefined && (typeof se !== 'number' || !Number.isInteger(se) || se < 0)) {
+        return null;
+      }
+      return { userId: uid, epoch: se ?? 0 };
     },
   };
 }
@@ -143,18 +159,30 @@ export async function resolvePrincipal(
     return key === null ? null : keyPrincipal(key.id, key.siteId, key.scopes);
   }
 
-  const userId = deps.session.read(credentials.cookie, deps.now());
-  if (userId === null) {
+  const claim = deps.session.read(credentials.cookie, deps.now());
+  if (claim === null) {
     return null;
   }
-  const user = await deps.store.userById(userId);
+  const user = await deps.store.userById(claim.userId);
   if (user === null) {
     // A valid cookie for an account that no longer exists. Read fresh every
     // request, which is why this is caught at all.
     return null;
   }
-  const teams = await deps.store.teamsForUser(user.id);
-  return sessionPrincipal(user.id, user.email, teams);
+  if ((user.sessionEpoch ?? 0) !== claim.epoch) {
+    // Issued before this account's sessions were last ended: somebody was
+    // removed or lowered, and what they held then is not a session now.
+    return null;
+  }
+  // The teams, and the rows on single sites. Not for an account another
+  // application signs in: its place is decided there on every arrival, a row
+  // on a site would outlive what that application later takes away, and so
+  // none is ever written for it (members.service.ts) and none is read here.
+  const [teams, siteRows] = await Promise.all([
+    deps.store.teamsForUser(user.id),
+    isSsoManaged(user.id) ? Promise.resolve([]) : deps.store.siteGrantsForUser(user.id),
+  ]);
+  return sessionPrincipal(user.id, user.email, teams, siteRows);
 }
 
 // Sign in, or answer null. Never says which half was wrong, and takes the same

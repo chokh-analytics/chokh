@@ -8,6 +8,7 @@ import {
   SITE_ID,
   type Harness,
 } from './api.test-utils.js';
+import { STREAM_RECHECK_MS } from '../controllers/realtime.controller.js';
 import type { AuditRecord, RealtimeSnapshot, StoredEvent } from '../store/AnalyticsStore.js';
 
 // Who is here now: the snapshot, and the stream.
@@ -278,5 +279,114 @@ describe('GET /api/sites/:siteId/realtime/stream', () => {
     // writing to a socket that has gone.
     await new Promise((resolve) => setTimeout(resolve, 50));
     await expect(harness.bus.publish(SITE_ID)).resolves.toBeUndefined();
+  });
+
+  // A stream is one request that lasts as long as the tab does, so what it was
+  // told about its reader when it opened goes stale (AN-TEAM01). Past the
+  // recheck window, the next frame asks again. The window is on the site's
+  // clock, which a case here moves; nothing waits on a real ten seconds.
+  describe('a reader whose access changes while the stream is open', () => {
+    async function nextAfterRecheck(stream: Stream): Promise<Record<string, unknown>> {
+      harness.setNow(harness.now() + STREAM_RECHECK_MS + 1);
+      await harness.bus.publish(SITE_ID);
+      return stream.next();
+    }
+
+    it('is told so and cut off once they are removed from the team', async () => {
+      const reader = await harness.account({
+        email: 'reader@test.example',
+        role: 'viewer',
+        identity: true,
+      });
+      await harness.store.ingest([live({ visitorId: 'v_2', userId: 'u_42' })]);
+      const { stream } = await open({ cookie: reader.cookie });
+      const first = (await stream.next()) as { data: RealtimeSnapshot };
+      expect(first.data.visitors[0]).toHaveProperty('ip');
+
+      await harness.store.changeTeamMember('t_test', reader.userId, null);
+      const last = await nextAfterRecheck(stream);
+      expect(last).toMatchObject({ success: false, error: { code: 'STREAM_CLOSED' } });
+      // Nothing of anybody was in that frame, and no frame follows it.
+      expect(JSON.stringify(last)).not.toContain('203.0.113.7');
+      await expect(stream.next()).rejects.toThrow('the stream ended');
+    });
+
+    it('goes on without the address and the name once the identity flag is taken away', async () => {
+      const reader = await harness.account({
+        email: 'reader@test.example',
+        role: 'viewer',
+        identity: true,
+      });
+      await harness.store.ingest([live({ visitorId: 'v_2', userId: 'u_42' })]);
+      const { stream } = await open({ cookie: reader.cookie });
+      const first = (await stream.next()) as { data: RealtimeSnapshot };
+      expect(first.data.visitors[0]?.userId).toBe('u_42');
+
+      await harness.store.changeTeamMember('t_test', reader.userId, {
+        role: 'viewer',
+        identity: false,
+      });
+      const next = (await nextAfterRecheck(stream)) as { success: boolean; data: RealtimeSnapshot };
+      expect(next.success).toBe(true);
+      expect(next.data.online).toBe(1);
+      expect(next.data.visitors[0]).not.toHaveProperty('ip');
+      expect(next.data.visitors[0]).not.toHaveProperty('userId');
+      await stream.close();
+    });
+
+    it('is cut off when their sessions are ended, and when the key it was opened with is deleted', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      const bySession = await open({ cookie: viewer.cookie });
+      await bySession.stream.next();
+      await harness.store.bumpSessionEpoch(viewer.userId);
+      expect(await nextAfterRecheck(bySession.stream)).toMatchObject({
+        error: { code: 'STREAM_CLOSED' },
+      });
+
+      const key = await harness.key(['read:stats']);
+      const byKey = await open({ authorization: key });
+      await byKey.stream.next();
+      const [stored] = await harness.store.apiKeys(SITE_ID);
+      await harness.store.deleteApiKey(SITE_ID, stored?.id ?? '');
+      expect(await nextAfterRecheck(byKey.stream)).toMatchObject({
+        error: { code: 'STREAM_CLOSED' },
+      });
+    });
+
+    it('closes, and takes nothing down with it, when the store cannot say who is reading', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      const { stream } = await open({ cookie: viewer.cookie });
+      await stream.next();
+      const userById = harness.store.userById.bind(harness.store);
+      harness.store.userById = () => Promise.reject(new Error('the database went away'));
+      try {
+        expect(await nextAfterRecheck(stream)).toMatchObject({ error: { code: 'STREAM_CLOSED' } });
+      } finally {
+        harness.store.userById = userById;
+      }
+      // The server is still serving everybody else.
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: '/api/me',
+        headers: { cookie: harness.owner.cookie },
+      });
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('does not ask again before the window has passed', async () => {
+      const viewer = await harness.account({ email: 'viewer@test.example', role: 'viewer' });
+      const { stream } = await open({ cookie: viewer.cookie });
+      await stream.next();
+      await harness.store.changeTeamMember('t_test', viewer.userId, null);
+      // Inside the window the stream still believes what it was told.
+      harness.setNow(harness.now() + STREAM_RECHECK_MS - 1);
+      await harness.bus.publish(SITE_ID);
+      expect(await stream.next()).toMatchObject({ success: true });
+      // One millisecond on, it asks, and the answer is no.
+      harness.setNow(harness.now() + 1);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await harness.bus.publish(SITE_ID);
+      expect(await stream.next()).toMatchObject({ error: { code: 'STREAM_CLOSED' } });
+    });
   });
 });

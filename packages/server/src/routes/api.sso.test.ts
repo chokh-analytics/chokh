@@ -206,3 +206,86 @@ describe('the SSO exchange', () => {
     });
   });
 });
+
+// The exchange under the last-owner rule, over HTTP (AN-TEAM01). The service's
+// own tests hold the rule; these hold what a browser and a cookie see of it.
+describe('the SSO exchange and the role it carries', () => {
+  let harness: Harness;
+
+  beforeEach(async () => {
+    harness = await createHarness();
+  });
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  const html = { accept: 'text/html' };
+
+  async function arrive(overrides: Parameters<typeof token>[0]): Promise<string> {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/sso',
+      payload: { token: token(overrides) },
+    });
+    expect(response.statusCode).toBe(200);
+    return `${response.cookies[0]?.name}=${response.cookies[0]?.value}`;
+  }
+
+  function me(cookie: string) {
+    return harness.app.inject({ method: 'GET', url: '/api/me', headers: { cookie } });
+  }
+
+  it('ends the session somebody had when they arrive lowered, and the new one lives', async () => {
+    // An owner beside the install's own owner, who has a password.
+    const before = await arrive({ role: 'owner', identity: true });
+    expect((await me(before)).statusCode).toBe(200);
+
+    const after = await arrive({ role: 'viewer', identity: false });
+    expectFailure(await me(before), 401, 'UNAUTHENTICATED');
+    const now = envelope<{ sites: { scopes: string[] }[] }>((await me(after)).body).data;
+    expect(now?.sites[0]?.scopes).toEqual(['read:stats']);
+  });
+
+  it('leaves the session alone on an arrival that changes nothing, and on one that raises', async () => {
+    const first = await arrive({ role: 'viewer' });
+    const second = await arrive({ role: 'viewer' });
+    const raised = await arrive({ role: 'editor' });
+    for (const cookie of [first, second, raised]) {
+      expect((await me(cookie)).statusCode).toBe(200);
+    }
+  });
+
+  it('sends a browser to the sign in page, with no cookie, when the token would lower the last owner', async () => {
+    // A team made by the exchange, of accounts with no password: its one owner.
+    const made = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${token({ teamId: 't_made_here', role: 'owner' })}`,
+      headers: html,
+    });
+    expect(made.statusCode).toBe(303);
+    expect(made.headers.location).toBe('/');
+
+    const refused = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sso?token=${token({ teamId: 't_made_here', role: 'viewer' })}`,
+      headers: html,
+    });
+    expect(refused.statusCode).toBe(303);
+    expect(refused.headers.location).toBe('/login?sso=LAST_OWNER');
+    expect(refused.cookies.find((cookie) => cookie.name === SESSION_COOKIE)).toBeUndefined();
+    // A program is told the same thing in the envelope.
+    expectFailure(
+      await harness.app.inject({
+        method: 'POST',
+        url: '/api/sso',
+        payload: { token: token({ teamId: 't_made_here', role: 'editor' }) },
+      }),
+      409,
+      'LAST_OWNER',
+    );
+    expect((await harness.store.team('t_made_here'))?.members).toEqual([
+      { userId: 'sso_staff_7', role: 'owner', identity: false },
+    ]);
+  });
+});

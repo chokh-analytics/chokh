@@ -5,8 +5,16 @@ import {
   createLogoutController,
   createMeController,
   createRegisterController,
-  createSetMemberController,
 } from '../controllers/accounts.controller.js';
+import {
+  createListSiteMembersController,
+  createListTeamMembersController,
+  createRemoveSiteMemberController,
+  createRemoveTeamMemberController,
+  createRenameTeamController,
+  createSetSiteMemberController,
+  createSetTeamMemberController,
+} from '../controllers/members.controller.js';
 import {
   createCreateAnnotationController,
   createDeleteAnnotationController,
@@ -87,6 +95,7 @@ import type { ClientIpOptions } from '../lib/client-ip.js';
 import {
   attachPrincipal,
   limitAttempts,
+  requirePerson,
   requirePrincipal,
   requireSiteScope,
 } from '../plugins/auth.js';
@@ -137,12 +146,26 @@ export async function registerApiRoutes(
   // last paid, and a stranger has no business with either.
   app.get('/api/license', { preHandler: signedIn }, createLicenseController(deps.license));
 
-  // Teams. One route; AN-TEAM01 owns the rest.
+  // Teams (AN-TEAM01). A team's members are its owners' to read and to change:
+  // each controller asks for a person, signed in, who owns the team in the
+  // path. Creating a team, deleting one and moving a site between two are not
+  // here; they are packages/ee's.
+  app.get(
+    '/api/teams/:teamId/members',
+    { preHandler: signedIn },
+    createListTeamMembersController(deps),
+  );
   app.put(
     '/api/teams/:teamId/members/:userId',
     { preHandler: signedIn },
-    createSetMemberController(deps),
+    createSetTeamMemberController(deps),
   );
+  app.delete(
+    '/api/teams/:teamId/members/:userId',
+    { preHandler: signedIn },
+    createRemoveTeamMemberController(deps),
+  );
+  app.patch('/api/teams/:teamId', { preHandler: signedIn }, createRenameTeamController(deps));
 
   // Sites. Listing and creating are about the caller rather than about one site, so
   // they take the principal hook; everything under /:siteId takes the scope hook,
@@ -155,6 +178,25 @@ export async function registerApiRoutes(
     '/api/sites/:siteId/identify-secret/rotate',
     { preHandler: scope('admin') },
     createRotateSecretController(deps),
+  );
+
+  // Roles on one site (AN-TEAM01): admin, and a person. A key can hold admin,
+  // and who else gets in is not a key's to decide. Each hook is built for its
+  // own route.
+  app.get(
+    '/api/sites/:siteId/members',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createListSiteMembersController(deps),
+  );
+  app.put(
+    '/api/sites/:siteId/members/:userId',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createSetSiteMemberController(deps),
+  );
+  app.delete(
+    '/api/sites/:siteId/members/:userId',
+    { preHandler: [scope('admin'), requirePerson()] },
+    createRemoveSiteMemberController(deps),
   );
 
   // The public share (AN-RPT01). The owner's two routes are on the site;

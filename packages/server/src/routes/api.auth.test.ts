@@ -127,6 +127,9 @@ describe('signing in', () => {
       method: 'POST',
       url: '/api/auth/logout',
       headers: { cookie: harness.owner.cookie },
+      // As the dashboard sends it: a POST made with a session is JSON, and an
+      // empty object when there is nothing to say.
+      payload: {},
     });
     expect(response.statusCode).toBe(200);
     expect(response.cookies[0]?.name).toBe(SESSION_COOKIE);

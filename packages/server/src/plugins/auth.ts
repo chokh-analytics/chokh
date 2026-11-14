@@ -46,19 +46,109 @@ async function attach(deps: AuthDeps, request: FastifyRequest): Promise<Principa
 const NO_CREDENTIALS =
   'Sign in for a session cookie, or present an API key as a bearer token';
 
+// A request that changes something on a person's behalf has to come from this
+// dashboard (AN-TEAM01).
+//
+// The session cookie is SameSite=Lax, which stops another site's form from
+// carrying it. It does not stop another origin of the same site: a page on a
+// sibling hostname is "same site" to a browser, the cookie goes with its
+// request, and this server parses a body of any content type as JSON. So the
+// cookie attribute was the one thing between a signed-in owner and a form on a
+// neighbouring application, and it does not cover neighbours.
+//
+// Two checks, for a request that carries a session and is not a read:
+//
+// 1. Sec-Fetch-Site, which a browser sets itself and a page cannot forge, has
+//    to say same-origin, or none (somebody typed the address), or be absent (a
+//    program, or a browser too old to send it). same-site and cross-site are
+//    refused: a neighbour is not this dashboard.
+// 2. A POST has to be JSON. A form cannot send application/json, and there is
+//    no CORS here to let another origin's script send it, so this holds for
+//    the browsers that never send the header above. A POST with no body and no
+//    content type is taken only when the browser itself vouches it is same
+//    origin: a page that was open across a deploy still signs out. PUT, PATCH
+//    and DELETE need no such rule, because a browser asks permission before it
+//    sends one of those to another origin and nothing here grants it.
+//
+// A key is not held to either: a key is presented by a program on purpose, and
+// a browser never attaches one by itself. The SSO exchange is entered from
+// another application by design and reads no session, so it never comes here;
+// the route table names it as the exception and a test holds the list.
+const READS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS']);
+const SAME_ORIGIN: ReadonlySet<string> = new Set(['same-origin', 'none']);
+
+export function crossSiteRefusal(
+  request: Pick<FastifyRequest, 'method' | 'headers'>,
+  principal: Principal | null,
+): { status: number; code: string; message: string } | null {
+  if (principal?.kind !== 'session' || READS.has(request.method.toUpperCase())) {
+    return null;
+  }
+  const site = request.headers['sec-fetch-site'];
+  const fetchSite = Array.isArray(site) ? site[0] : site;
+  if (fetchSite !== undefined && !SAME_ORIGIN.has(fetchSite.toLowerCase())) {
+    return {
+      status: 403,
+      code: 'CROSS_SITE_REQUEST',
+      message: 'A change made with a session has to come from this dashboard',
+    };
+  }
+  if (request.method.toUpperCase() === 'POST') {
+    const type = (request.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+    const length = request.headers['content-length'];
+    const bodiless =
+      type === '' &&
+      (length === undefined || length === '0') &&
+      request.headers['transfer-encoding'] === undefined;
+    if (type !== 'application/json' && !(bodiless && fetchSite?.toLowerCase() === 'same-origin')) {
+      return {
+        status: 415,
+        code: 'JSON_REQUIRED',
+        message: 'A POST made with a session is sent as application/json',
+      };
+    }
+  }
+  return null;
+}
+
 // Resolve whoever is asking, and refuse nobody. Registration needs it: the
 // first account has no credentials to present and every one after it is created
 // by an owner, so the route has to see both cases.
 export function attachPrincipal(deps: AuthDeps): preHandlerHookHandler {
-  return async function attachHook(request: FastifyRequest) {
-    await attach(deps, request);
+  return async function attachHook(request: FastifyRequest, reply: FastifyReply) {
+    const refused = crossSiteRefusal(request, await attach(deps, request));
+    if (refused !== null) {
+      return reply.code(refused.status).send(fail(refused.code, refused.message));
+    }
+    return undefined;
   };
 }
 
 export function requirePrincipal(deps: AuthDeps): preHandlerHookHandler {
   return async function principalHook(request: FastifyRequest, reply: FastifyReply) {
-    if ((await attach(deps, request)) === null) {
+    const principal = await attach(deps, request);
+    if (principal === null) {
       return reply.code(401).send(fail('UNAUTHENTICATED', NO_CREDENTIALS));
+    }
+    const refused = crossSiteRefusal(request, principal);
+    if (refused !== null) {
+      return reply.code(refused.status).send(fail(refused.code, refused.message));
+    }
+    return undefined;
+  };
+}
+
+// For a route that is somebody's decision and not a program's: who else gets
+// in. Put after the scope hook, so a key is told about its scope first and
+// told this only when the scope was not the problem.
+export function requirePerson(): preHandlerHookHandler {
+  // Async even though it does no waiting: a Fastify hook that returns something
+  // other than a promise and never calls done leaves the request hanging.
+  return async function personHook(request: FastifyRequest, reply: FastifyReply) {
+    if (request.principal?.kind !== 'session') {
+      return reply
+        .code(403)
+        .send(fail('FORBIDDEN', 'This is done by a person signed in, not by a key'));
     }
     return undefined;
   };
@@ -77,6 +167,10 @@ export function requireSiteScope(deps: AuthDeps, scope: Scope): preHandlerHookHa
     if (principal === null) {
       return reply.code(401).send(fail('UNAUTHENTICATED', NO_CREDENTIALS));
     }
+    const crossSite = crossSiteRefusal(request, principal);
+    if (crossSite !== null) {
+      return reply.code(crossSite.status).send(fail(crossSite.code, crossSite.message));
+    }
     const { siteId } = request.params as { siteId?: string };
     if (siteId === undefined) {
       return reply.code(400).send(fail('MISSING_SITE', 'This route needs a site id'));
@@ -89,7 +183,9 @@ export function requireSiteScope(deps: AuthDeps, scope: Scope): preHandlerHookHa
     if (grant === null) {
       return reply
         .code(403)
-        .send(fail('SITE_FORBIDDEN', 'This account has no role in the team that owns that site'));
+        .send(
+          fail('SITE_FORBIDDEN', 'This account has no role on that site or in the team that owns it'),
+        );
     }
     if (!grant.scopes.has(scope)) {
       return reply.code(403).send(fail('SCOPE_REQUIRED', `This route needs the ${scope} scope`));

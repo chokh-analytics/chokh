@@ -3,8 +3,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiDeps } from '../lib/api-deps.js';
 import { fail, ok } from '../lib/envelope.js';
 import { ssoBodySchema, ssoQuerySchema } from '../schemas/accounts.schema.js';
+import { startSession } from '../lib/session-cookie.js';
 import { wantsHtml } from '../lib/wants-html.js';
-import { SESSION_COOKIE } from '../services/auth.service.js';
 import { exchangeSsoToken } from '../services/sso.service.js';
 import { publicUser } from './accounts.controller.js';
 
@@ -31,17 +31,6 @@ function ssoDeps(deps: ApiDeps) {
   };
 }
 
-function setSession(deps: ApiDeps, reply: FastifyReply, userId: string): void {
-  const issued = deps.session.issue(userId, deps.now());
-  reply.setCookie(SESSION_COOKIE, issued.value, {
-    path: '/',
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: deps.cookie.secure,
-    maxAge: Math.floor(deps.session.ttlMs / 1000),
-  });
-}
-
 export function createSsoPostController(deps: ApiDeps) {
   return async function ssoPostController(request: FastifyRequest, reply: FastifyReply) {
     const parsed = ssoBodySchema.safeParse(request.body);
@@ -55,7 +44,7 @@ export function createSsoPostController(deps: ApiDeps) {
       request.log.warn({ code: result.code }, 'sso exchange refused');
       return reply.code(result.status).send(fail(result.code, result.message));
     }
-    setSession(deps, reply, result.user.id);
+    startSession(deps, reply, result.user);
     return reply.send(ok({ user: publicUser(result.user) }));
   };
 }
@@ -95,7 +84,7 @@ export function createSsoGetController(deps: ApiDeps) {
     if (!result.ok) {
       return refuseSsoGet(request, reply, result.status, result.code, result.message);
     }
-    setSession(deps, reply, result.user.id);
+    startSession(deps, reply, result.user);
     // 303, so the browser follows with a GET whatever it arrived with, and the
     // token is not in the address bar of the page that loads. next is validated to
     // be a path of this dashboard: an open redirect behind a sign-in hop is how a

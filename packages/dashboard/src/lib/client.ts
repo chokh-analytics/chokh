@@ -142,11 +142,15 @@ export function createClient(options: ClientOptions = {}): Client {
 
   return {
     get: <T,>(path: string, params?: Params) => send<T>(path, { method: 'GET' }, params),
+    // Always JSON, with an empty object when there is nothing to say. The
+    // server takes a POST made with a session only as application/json: a
+    // form on another origin cannot send that type, which is what stops one
+    // from signing somebody out or rotating a secret on their behalf.
     post: <T,>(path: string, body?: unknown) =>
       send<T>(path, {
         method: 'POST',
-        headers: body === undefined ? {} : { 'content-type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
       }),
     put: <T,>(path: string, body?: unknown) =>
       send<T>(path, {

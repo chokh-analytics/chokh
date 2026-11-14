@@ -150,6 +150,19 @@ export const createKeySchema = z.object({
 export const setMemberSchema = z.object({
   role: z.enum(ROLES as [Role, ...Role[]]),
   identity: z.boolean().default(false),
+  // What to do about the keys this person made on a site they are losing
+  // admin on. Left out, a change that would leave such keys is refused with
+  // the list, so the choice is always somebody's and never a default.
+  revokeKeys: z.boolean().optional(),
+});
+
+// The same choice on a removal, which has no body to carry it.
+export const removeMemberQuerySchema = z.object({
+  revokeKeys: z.enum(['true', 'false']).optional(),
+});
+
+export const renameTeamSchema = z.object({
+  name: z.string().trim().min(1).max(120),
 });
 
 export const siteParamsSchema = z.object({

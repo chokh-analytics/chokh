@@ -24,6 +24,8 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   UNKNOWN_SITE: 404,
   UNKNOWN_USER: 404,
   UNKNOWN_TEAM: 404,
+  // Somebody who is not in that team, or holds no role on that site.
+  UNKNOWN_MEMBER: 404,
   GOAL_NOT_FOUND: 404,
   FUNNEL_NOT_FOUND: 404,
   // The caller named something that is already there.
@@ -45,6 +47,14 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   ANNOTATION_LIMIT: 409,
   ALERT_EXISTS: 409,
   ALERT_LIMIT: 409,
+  // A team keeps an owner, and one with a password where it had one.
+  LAST_OWNER: 409,
+  // Too many others were changing that team's members at the same instant.
+  TEAM_BUSY: 409,
+  // The database has not had the migration that makes a rule true (MongoDB:
+  // the unique indexes of the access collections). Not the caller's doing and
+  // not a fault either: the store is saying what an operator has to run.
+  MIGRATION_REQUIRED: 503,
   // The caller asked for something the store cannot answer as asked.
   DOMAIN_REQUIRED: 400,
   RANGE_TOO_LONG: 400,

@@ -27,6 +27,8 @@ import {
 
 const OTHER_SITE = 's_elsewhere';
 const OTHER_TEAM = 't_elsewhere';
+// A second site of the same team, for somebody whose only role is on it.
+const SIBLING_SITE = 's_sibling';
 const SHARE_TOKEN = 'share_route_table_0123456789';
 
 let harness: Harness;
@@ -62,6 +64,7 @@ beforeAll(async () => {
   harness = await createHarness({
     sites: [
       testSite(),
+      testSite({ id: SIBLING_SITE, domains: ['sibling.example'] }),
       testSite({ id: OTHER_SITE, domains: ['elsewhere.example'], teamId: OTHER_TEAM }),
     ],
     onRoute: (route) => registered.push(route),
@@ -88,6 +91,62 @@ beforeAll(async () => {
   const target = await account({ email: 'target@test.example', role: 'viewer', teamId: OTHER_TEAM });
   targetId = target.userId;
 
+  // Roles held on the site itself (AN-TEAM01). Somebody with no place in the
+  // team at all, at each role; and the three ways a row on the site meets a
+  // role in the team: lowering it, raising it, and deciding nothing because
+  // the person owns the team.
+  const outsider = async (email: string): Promise<{ cookie: string; userId: string }> => {
+    const made = await account({ email, role: 'viewer', teamId: OTHER_TEAM });
+    await harness.store.changeTeamMember(OTHER_TEAM, made.userId, null);
+    return made;
+  };
+  const onSite = async (
+    name: string,
+    made: { cookie: string; userId: string },
+    siteId: string,
+    role: Role,
+    identity: boolean,
+    effective: Role | null,
+    effectiveIdentity = identity,
+  ): Promise<RouteCaller> => {
+    await harness.store.setSiteMember({ siteId, userId: made.userId, role, identity });
+    return {
+      ...session(name, made.cookie, effective, effectiveIdentity),
+      // A role on a site is not a place in the team: none of these owns it.
+      ownsTeam: false,
+      ownsAnyTeam: false,
+    };
+  };
+  const siteCallers: RouteCaller[] = [
+    await onSite('a viewer of the site alone', await outsider('s-viewer@test.example'), SITE_ID, 'viewer', false, 'viewer'),
+    await onSite('a viewer of the site alone with the identity flag', await outsider('s-reader@test.example'), SITE_ID, 'viewer', true, 'viewer'),
+    await onSite('an editor of the site alone', await outsider('s-editor@test.example'), SITE_ID, 'editor', false, 'editor'),
+    await onSite('an owner of the site alone', await outsider('s-owner@test.example'), SITE_ID, 'owner', true, 'owner'),
+    // An owner of the site beside this one: nothing here.
+    await onSite('an owner of another site of the same team', await outsider('sibling@test.example'), SIBLING_SITE, 'owner', true, null),
+    await onSite(
+      'an editor of the team lowered to viewer on the site',
+      await account({ email: 'lowered@test.example', role: 'editor', identity: true }),
+      SITE_ID,
+      'viewer',
+      false,
+      'viewer',
+    ),
+    await onSite(
+      'a viewer of the team raised to owner on the site',
+      await account({ email: 'raised@test.example', role: 'viewer' }),
+      SITE_ID,
+      'owner',
+      true,
+      'owner',
+    ),
+  ];
+  // An owner of the team with a viewer's row on the site is still an owner,
+  // of the site and of the team.
+  const second = await account({ email: 'second-owner@test.example', role: 'owner' });
+  await harness.store.setSiteMember({ siteId: SITE_ID, userId: second.userId, role: 'viewer', identity: false });
+  siteCallers.push(session('an owner of the team with a viewer row on the site', second.cookie, 'owner'));
+
   callers = [
     { name: 'nobody', headers: {}, principal: null, scopes: null, ownsTeam: false, ownsAnyTeam: false },
     {
@@ -109,6 +168,7 @@ beforeAll(async () => {
       SCOPES.map(async (scope) => key(`a key holding only ${scope}`, await harness.key([scope]), [scope])),
     )),
     key('a key of another site', await harness.key([...SCOPES], OTHER_SITE), null),
+    ...siteCallers,
   ];
 
   await harness.app.listen({ port: 0, host: '127.0.0.1' });
@@ -148,7 +208,7 @@ function walk(rules: readonly RouteRule[]): Promise<string[]> {
 
 describe('the route table', () => {
   it('lists every route the server registered, and no route that is not there', () => {
-    expect(registered.length).toBeGreaterThan(60);
+    expect(registered.length).toBeGreaterThan(70);
     expect(compareRoutes(registered, CORE_ROUTES)).toEqual({ unlisted: [], unregistered: [] });
     // And no row twice: a second row for a route would be walked and agree
     // with itself whatever the first one said.
@@ -224,4 +284,133 @@ describe('the route table', () => {
     const noHook = await walk([{ method: 'GET', url: '/health', needs: { kind: 'principal' } }]);
     expect(noHook).toContain('GET /health as nobody: should be refused 401 UNAUTHENTICATED, answered 200');
   }, 60_000);
+});
+
+// A change made with a session has to come from this dashboard (AN-TEAM01,
+// plugins/auth.ts). Walked over the same table: every row a session can reach
+// that is not a read is asked the way a neighbouring origin would ask it, and
+// has to refuse; the rows entered from another application by design are a
+// list of two, held here.
+describe('a change made with a session, from somewhere that is not this dashboard', () => {
+  const sessionReachable = (rule: RouteRule): boolean =>
+    rule.method !== 'GET' && rule.needs.kind !== 'public' && rule.needs.kind !== 'share';
+
+  function ask(rule: RouteRule, headers: Record<string, string>, body?: string) {
+    const params: Record<string, string> = {
+      siteId: SITE_ID,
+      teamId: TEAM_ID,
+      token: SHARE_TOKEN,
+      userId: targetId,
+    };
+    return harness.app.inject({
+      method: rule.method,
+      url: rule.url.replace(/:([A-Za-z]+)/g, (_match, name: string) => params[name] ?? 'x_nothing'),
+      headers,
+      ...(body === undefined ? {} : { payload: body }),
+    });
+  }
+
+  it('names the two routes that are entered from another application, and no other', () => {
+    expect(CORE_ROUTES.filter((rule) => rule.crossSite === true).map(routeKey)).toEqual([
+      'POST /api/sso',
+      'GET /api/sso',
+    ]);
+    // Neither reads a session: there is nothing on them for the rule to guard.
+    expect(
+      CORE_ROUTES.filter((rule) => rule.crossSite === true).every((rule) => rule.needs.kind === 'public'),
+    ).toBe(true);
+  });
+
+  it('is refused on every route a session can change something through, from a neighbour and from a stranger', async () => {
+    const rules = CORE_ROUTES.filter(sessionReachable);
+    expect(rules.length).toBeGreaterThan(20);
+    const answered: string[] = [];
+    for (const rule of rules) {
+      for (const from of ['same-site', 'cross-site']) {
+        const response = await ask(
+          rule,
+          { cookie: harness.owner.cookie, 'sec-fetch-site': from, 'content-type': 'application/json' },
+          '{}',
+        );
+        const code = (JSON.parse(response.body) as { error?: { code?: string } }).error?.code;
+        if (response.statusCode !== 403 || code !== 'CROSS_SITE_REQUEST') {
+          answered.push(`${routeKey(rule)} from ${from}: ${response.statusCode} ${code ?? ''}`);
+        }
+      }
+    }
+    expect(answered).toEqual([]);
+  });
+
+  it('is refused when a POST is not JSON, which is what a form sends, whatever the browser says of itself', async () => {
+    const posts = CORE_ROUTES.filter((rule) => sessionReachable(rule) && rule.method === 'POST');
+    expect(posts.length).toBeGreaterThan(8);
+    const answered: string[] = [];
+    for (const rule of posts) {
+      for (const [type, origin] of [
+        ['application/x-www-form-urlencoded', undefined],
+        ['text/plain', undefined],
+        ['multipart/form-data; boundary=x', 'same-origin'],
+        // No body and no type, from a browser too old to vouch for itself or
+        // from a program: not taken either.
+        [undefined, undefined],
+      ] as const) {
+        const response = await ask(
+          rule,
+          {
+            cookie: harness.owner.cookie,
+            ...(type === undefined ? {} : { 'content-type': type }),
+            ...(origin === undefined ? {} : { 'sec-fetch-site': origin }),
+          },
+          type === undefined ? undefined : '{}',
+        );
+        const code = (JSON.parse(response.body) as { error?: { code?: string } }).error?.code;
+        if (response.statusCode !== 415 || code !== 'JSON_REQUIRED') {
+          answered.push(`${routeKey(rule)} as ${type ?? 'nothing'}: ${response.statusCode} ${code ?? ''}`);
+        }
+      }
+    }
+    expect(answered).toEqual([]);
+  });
+
+  it('is taken from this dashboard: JSON, or nothing at all when the browser vouches it is same origin', async () => {
+    const rotate = CORE_ROUTES.find((rule) => rule.url.endsWith('/identify-secret/rotate')) as RouteRule;
+    expect(
+      (
+        await ask(
+          rotate,
+          { cookie: harness.owner.cookie, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json; charset=utf-8' },
+          '{}',
+        )
+      ).statusCode,
+    ).toBe(200);
+    // A page open across a deploy still posts with no body: taken, because the
+    // browser itself says where it came from.
+    expect(
+      (await ask(rotate, { cookie: harness.owner.cookie, 'sec-fetch-site': 'same-origin' })).statusCode,
+    ).toBe(200);
+    // A program with a session, which sends no such header, sends JSON.
+    expect(
+      (await ask(rotate, { cookie: harness.owner.cookie, 'content-type': 'application/json' }, '{}')).statusCode,
+    ).toBe(200);
+  });
+
+  it('does not touch a key, a read, or anybody with no session', async () => {
+    const admin = await harness.key(['admin']);
+    const rotate = CORE_ROUTES.find((rule) => rule.url.endsWith('/identify-secret/rotate')) as RouteRule;
+    // A key is presented on purpose; no browser attaches one by itself.
+    expect(
+      (await ask(rotate, { authorization: admin, 'sec-fetch-site': 'cross-site', 'content-type': 'text/plain' }, '{}'))
+        .statusCode,
+    ).toBe(200);
+    // A link into the dashboard from another site is a read, and reads are let in.
+    const read = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sites/${SITE_ID}/goals`,
+      headers: { cookie: harness.owner.cookie, 'sec-fetch-site': 'cross-site' },
+    });
+    expect(read.statusCode).toBe(200);
+    // Nobody is told about their credentials before anything else.
+    const nobody = await ask(rotate, { 'sec-fetch-site': 'cross-site' }, '{}');
+    expect(nobody.statusCode).toBe(401);
+  });
 });

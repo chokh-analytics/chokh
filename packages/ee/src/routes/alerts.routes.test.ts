@@ -301,7 +301,9 @@ describe('the alert routes on a licensed install', () => {
 
   it('sends a test message on every channel and answers each outcome', async () => {
     const id = alertIdFor(SITE_ID, DROP);
-    const response = await here.app.inject({ method: 'POST', url: `${alerts}/${id}/test`, headers: { cookie: here.owner } });
+    // As the dashboard sends it: a POST made with a session is JSON, and an
+    // empty object when there is nothing to say.
+    const response = await here.app.inject({ method: 'POST', url: `${alerts}/${id}/test`, headers: { cookie: here.owner }, payload: {} });
     expect(response.statusCode).toBe(200);
     expect(body(response).data).toEqual({
       deliveries: [
@@ -316,7 +318,7 @@ describe('the alert routes on a licensed install', () => {
     );
     expect(here.deliverer.sent[0]?.message.payload).toMatchObject({ event: 'alert.test', value: null });
 
-    const missing = await here.app.inject({ method: 'POST', url: `${alerts}/al_nobody/test`, headers: { cookie: here.owner } });
+    const missing = await here.app.inject({ method: 'POST', url: `${alerts}/al_nobody/test`, headers: { cookie: here.owner }, payload: {} });
     expect(missing.statusCode).toBe(404);
     expect(body(missing).error?.code).toBe('ALERT_NOT_FOUND');
   });

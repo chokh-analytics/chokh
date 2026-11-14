@@ -2,7 +2,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { ApiDeps } from '../lib/api-deps.js';
 import { fail, ok } from '../lib/envelope.js';
+import type { Grant } from '../lib/scopes.js';
 import { recordIdentityRead } from '../services/audit.service.js';
+import { resolvePrincipal, SESSION_COOKIE } from '../services/auth.service.js';
 import { realtime } from '../services/people.service.js';
 
 // Who is here now, as a snapshot and as a stream.
@@ -31,6 +33,16 @@ const MIN_FRAME_GAP_MS = 500;
 const REFRESH_EVERY_MS = 10_000;
 // A comment down the wire, so a proxy that closes an idle connection does not.
 const KEEPALIVE_EVERY_MS = 15_000;
+// How long a stream goes on believing what it was told about its reader when
+// it opened (AN-TEAM01). Every other route asks who is calling on every
+// request; a stream is one request that lasts as long as the tab does, so
+// without this somebody removed from a team went on being sent addresses and
+// names until they closed it. Before a frame, once this long has passed, the
+// reader is resolved again from the credentials the stream was opened with:
+// gone, or without read:stats on the site, the stream is told so and closed;
+// without read:identity, the frames go on with the address and the name
+// taken out. On the site's clock, the way a session's expiry is.
+export const STREAM_RECHECK_MS = 10_000;
 
 export function createRealtimeController(deps: ApiDeps) {
   return async function realtimeController(request: FastifyRequest, reply: FastifyReply) {
@@ -68,7 +80,12 @@ export function createRealtimeStreamController(deps: ApiDeps) {
     if (site === null || principal === null) {
       return reply.code(401).send(fail('UNAUTHENTICATED', 'Sign in first'));
     }
-    const allowed = request.grant?.scopes.has('read:identity') ?? false;
+    let allowed = request.grant?.scopes.has('read:identity') ?? false;
+    const credentials = {
+      cookie: request.cookies[SESSION_COOKIE],
+      authorization: request.headers.authorization,
+    };
+    let checkedAt = deps.now();
 
     // One audit row when the stream opens, not one per frame. A frame a second
     // would turn the log into a metronome and bury the reads somebody actually
@@ -100,8 +117,44 @@ export function createRealtimeStreamController(deps: ApiDeps) {
     let lastFrameAt = 0;
     let pending: NodeJS.Timeout | undefined;
 
+    // Who is reading, asked again. False when the stream was closed for it.
+    const stillAllowed = async (): Promise<boolean> => {
+      if (deps.now() - checkedAt < STREAM_RECHECK_MS) {
+        return true;
+      }
+      checkedAt = deps.now();
+      let grant: Grant | null = null;
+      try {
+        const current = await resolvePrincipal(
+          { store: deps.store, session: deps.session, now: deps.now },
+          credentials,
+        );
+        const fresh = await deps.store.site(site.id);
+        grant = current === null || fresh === null ? null : current.grantFor(fresh);
+      } catch (error) {
+        // The store could not say who is reading. A stream that cannot check
+        // its reader does not go on sending: it closes, and the dashboard
+        // falls back to polling, where every request is asked the usual way.
+        request.log.error({ err: error }, 'realtime stream could not recheck its reader');
+        grant = null;
+      }
+      if (grant === null || !grant.scopes.has('read:stats')) {
+        if (open) {
+          socket.write(
+            `event: error\ndata: ${JSON.stringify(
+              fail('STREAM_CLOSED', 'This stream no longer has a reader allowed to read it'),
+            )}\n\n`,
+          );
+        }
+        close();
+        return false;
+      }
+      allowed = grant.scopes.has('read:identity');
+      return true;
+    };
+
     const send = async (): Promise<void> => {
-      if (!open) {
+      if (!open || !(await stillAllowed()) || !open) {
         return;
       }
       // The throttle measures real elapsed time rather than deps.now(): the clock a
@@ -143,7 +196,7 @@ export function createRealtimeStreamController(deps: ApiDeps) {
       }
     }, KEEPALIVE_EVERY_MS);
 
-    const close = (): void => {
+    function close(): void {
       if (!open) {
         return;
       }
@@ -156,7 +209,7 @@ export function createRealtimeStreamController(deps: ApiDeps) {
       // The one thing between a long lived server and a listener leak.
       void unsubscribe();
       socket.end();
-    };
+    }
 
     request.raw.on('close', close);
     request.raw.on('error', close);
