@@ -29,6 +29,9 @@ export type RouteNeed =
   // A person, signed in, who is an owner of the team the request names (in
   // its path or in its body). Never a key.
   | { kind: 'teamOwner' }
+  // A person, signed in, who is an owner of some team, whichever. Never a
+  // key.
+  | { kind: 'anyTeamOwner' }
   // The first account of an install registers itself; every one after it is
   // created by a person who owns a team.
   | { kind: 'register' };
@@ -291,6 +294,9 @@ export function expectedOf(rule: RouteRule, caller: RouteCaller, licensed = true
     case 'teamOwner':
       if (caller.principal === null) return UNAUTHENTICATED;
       return caller.principal === 'session' && caller.ownsTeam ? afterScope : FORBIDDEN;
+    case 'anyTeamOwner':
+      if (caller.principal === null) return UNAUTHENTICATED;
+      return caller.principal === 'session' && caller.ownsAnyTeam ? afterScope : FORBIDDEN;
     case 'register':
       // No hook answers 401 here: the route has to hear from nobody, because
       // the first account has no credentials to present.

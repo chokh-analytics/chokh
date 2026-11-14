@@ -53,6 +53,9 @@ export const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   INVITATION_LIMIT: 409,
   // A team keeps an owner, and one with a password where it had one.
   LAST_OWNER: 409,
+  // The default team is never deleted, and no team is while it holds a site.
+  DEFAULT_TEAM: 409,
+  TEAM_HAS_SITES: 409,
   // Too many others were changing that team's members at the same instant.
   TEAM_BUSY: 409,
   // The database has not had the migration that makes a rule true (MongoDB:

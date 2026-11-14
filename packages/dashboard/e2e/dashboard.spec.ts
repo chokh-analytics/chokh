@@ -1272,6 +1272,15 @@ test.describe.serial('teams, invitations and the audit log', () => {
     await expect(page).toHaveURL(new RegExp(`/${SITE}/team$`));
     await expect(page.getByRole('heading', { name: 'Who can see Progsity', level: 1 })).toBeVisible();
 
+    // More than one team is part of Chokh Pro and this install has no key:
+    // the card is there, named and labelled, with nothing in it to fill in
+    // (AGENTS.md rule 10), and the team that exists is listed all the same.
+    const teams = page.getByRole('region', { name: 'More than one team' });
+    await expect(teams.getByText('Part of Chokh Pro', { exact: true })).toBeVisible();
+    await expect(teams.getByRole('list', { name: 'The teams you are in' })).toContainText('Default');
+    await expect(teams.getByRole('textbox')).toHaveCount(0);
+    await expect(teams.getByRole('button')).toHaveCount(0);
+
     // The form, from the keyboard: an address, and Enter.
     const form = page.getByRole('region', { name: 'Invite somebody' });
     await form.getByLabel('Their email').fill(INVITED);

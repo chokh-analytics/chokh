@@ -56,7 +56,9 @@ interface World {
   site?: ListedMember[];
   teamInvitations?: Invitation[];
   siteInvitations?: Invitation[];
-  // Anything that is not one of the four reads.
+  // What this install may run. No key unless a case says otherwise.
+  features?: string[];
+  // Anything that is not one of the reads.
   write?: (call: Call) => Response | undefined;
 }
 
@@ -72,6 +74,14 @@ function world(given: World = {}): () => Call[] {
           return ok({ invitations: given.teamInvitations ?? [] });
         case '/api/sites/s_test/invitations':
           return ok({ invitations: given.siteInvitations ?? [] });
+        case '/api/license':
+          return ok({
+            licensed: given.features !== undefined,
+            plan: given.features === undefined ? null : 'pro',
+            licensee: given.features === undefined ? null : 'A Test Company Ltd.',
+            expiresAt: null,
+            features: given.features ?? [],
+          });
         default:
           return undefined;
       }
@@ -120,6 +130,7 @@ describe('who the Team page is for', () => {
       'This site only, Progsity',
     ]);
     expect(calls().map((call) => call.path).sort()).toEqual([
+      '/api/license',
       '/api/sites/s_test/invitations',
       '/api/sites/s_test/members',
     ]);
@@ -452,5 +463,160 @@ describe('a role on this site only', () => {
     world();
     render(show(<Team />));
     expect(await screen.findByText('Nobody holds a role on this site alone.')).toBeInTheDocument();
+  });
+});
+
+// More than one team is part of Chokh Pro. AGENTS.md rule 10: on an install
+// with no key the card is there, named and described, with nothing in it to
+// fill in; with a key it is three controls.
+describe('more than one team', () => {
+  const TEAMS = [
+    { id: 't_own', name: 'Ours', role: 'owner' as const },
+    { id: 't_empty', name: 'Empty', role: 'owner' as const },
+    { id: 'default', name: 'First', role: 'owner' as const },
+    { id: 't_theirs', name: 'Theirs', role: 'viewer' as const },
+  ];
+
+  function paid(calls: Call[]): Call[] {
+    return calls.filter((call) => call.path.startsWith('/api/ee/'));
+  }
+
+  it('is named and described on an install with no key, with nothing in it to fill in', async () => {
+    const calls = world();
+    render(show(<Team />, { teams: TEAMS }));
+    const teams = card('More than one team');
+    expect(within(teams).getByText('Part of Chokh Pro')).toBeInTheDocument();
+    expect(
+      within(teams).getByText('More than one team is part of Chokh Pro. It is here, and a licence key turns it on.'),
+    ).toBeInTheDocument();
+    // The teams that exist are listed all the same: they work without a key.
+    const list = within(teams).getByRole('list', { name: 'The teams you are in' });
+    expect(within(list).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'OursOwner, 2 sites',
+      'EmptyOwner, no sites',
+      'FirstOwner, no sites',
+      'TheirsViewer, no sites',
+    ]);
+    await screen.findByText('Ada');
+    for (const role of ['button', 'textbox', 'combobox'] as const) {
+      expect(within(teams).queryByRole(role)).toBeNull();
+    }
+    expect(paid(calls())).toEqual([]);
+  });
+
+  it('makes a team with a key, and says who owns it', async () => {
+    const calls = world({
+      features: ['*'],
+      write: (call) =>
+        call.path === '/api/ee/teams'
+          ? ok({ team: { id: 't_new', name: (call.body as { name: string }).name, role: 'owner' } })
+          : undefined,
+    });
+    render(show(<Team />, { teams: TEAMS }));
+    const teams = card('More than one team');
+    const name = await within(teams).findByLabelText('Its name');
+    // Nothing is sent without a name.
+    await userEvent.click(within(teams).getByRole('button', { name: 'Make the team' }));
+    expect(await within(teams).findByText('A name is needed.')).toBeInTheDocument();
+    expect(paid(calls())).toEqual([]);
+
+    await userEvent.type(name, 'Clients');
+    await userEvent.click(within(teams).getByRole('button', { name: 'Make the team' }));
+    expect(await within(teams).findByRole('status')).toHaveTextContent(
+      'Clients is made, and you own it. It holds no site yet.',
+    );
+    expect(paid(calls())).toEqual([
+      expect.objectContaining({ method: 'POST', path: '/api/ee/teams', body: { name: 'Clients' } }),
+    ]);
+  });
+
+  it('deletes an empty team an owner asks twice for, and says why the others stay', async () => {
+    const calls = world({
+      features: ['teams'],
+      write: (call) => (call.method === 'DELETE' ? ok({ deleted: true }) : undefined),
+    });
+    render(show(<Team />, { teams: TEAMS }));
+    const teams = card('More than one team');
+    const remove = (team: string) => within(teams).findByRole('button', { name: `Delete the team ${team}` });
+    expect(await remove('Ours')).toBeDisabled();
+    expect(within(teams).getByText('A team that holds a site is not deleted. Move its sites first.')).toBeInTheDocument();
+    expect(await remove('First')).toBeDisabled();
+    expect(within(teams).getByText('The first team is never deleted.')).toBeInTheDocument();
+    expect(await remove('Theirs')).toBeDisabled();
+    expect(within(teams).getByText('Only an owner deletes a team.')).toBeInTheDocument();
+
+    await userEvent.click(await remove('Empty'));
+    expect(paid(calls())).toEqual([]);
+    expect(within(teams).getByText('Delete Empty? The invitations waiting on it go with it.')).toBeInTheDocument();
+    await userEvent.click(within(teams).getByRole('button', { name: 'Delete' }));
+    await waitFor(() =>
+      expect(paid(calls()).map((call) => `${call.method} ${call.path}`)).toEqual([
+        'DELETE /api/ee/teams/t_empty',
+      ]),
+    );
+    expect(await within(teams).findByRole('status')).toHaveTextContent('Empty is deleted.');
+  });
+
+  it('moves the site to another team its owner owns, asking about keys when the server does', async () => {
+    const key = { id: 'k_1', name: 'collector', siteId: 's_test', scopes: ['write:events'] };
+    const calls = world({
+      features: ['*'],
+      write: (call) =>
+        (call.body as { revokeKeys?: boolean }).revokeKeys === undefined
+          ? refused(409, 'KEYS_DECISION_REQUIRED', 'Say whether to revoke them', { keys: [key] })
+          : ok({ site: {}, moved: true }, { keysRevoked: [key], keysKept: [] }),
+    });
+    render(show(<Team />, { teams: TEAMS }));
+    const teams = card('More than one team');
+    const to = await within(teams).findByLabelText('To the team');
+    // The teams this person owns, other than the one the site is in.
+    expect(within(to).getAllByRole('option').map((option) => option.textContent)).toEqual(['Empty', 'First']);
+    await userEvent.selectOptions(to, 't_empty');
+    await userEvent.click(within(teams).getByRole('button', { name: 'Move the site' }));
+
+    const question = await within(teams).findByRole('group', { name: 'Keys on this site' });
+    expect(question).toHaveFocus();
+    expect(within(question).getByText('collector, on Progsity, with write:events')).toBeInTheDocument();
+    expect(paid(calls())).toHaveLength(1);
+    expect(paid(calls())[0]).toMatchObject({
+      method: 'PUT',
+      path: '/api/ee/sites/s_test/team',
+      body: { teamId: 't_empty' },
+    });
+
+    await userEvent.click(within(question).getByRole('button', { name: 'Revoke them and go on' }));
+    await waitFor(() => expect(paid(calls())).toHaveLength(2));
+    expect(paid(calls())[1]?.body).toEqual({ teamId: 't_empty', revokeKeys: true });
+    expect(await within(teams).findByRole('status')).toHaveTextContent('Moved to Empty.');
+    expect(within(teams).queryByRole('group', { name: 'Keys on this site' })).toBeNull();
+  });
+
+  it('says who moves a site to somebody who does not own its team, and what is missing to an owner of one team', async () => {
+    world({ features: ['*'] });
+    const first = render(show(<Team />, { team: null, scopes: ['admin', 'read:identity', 'read:stats', 'write:events'] }));
+    expect(await screen.findByText('Only an owner of the team a site is in moves it.')).toBeInTheDocument();
+    first.unmount();
+    render(show(<Team />));
+    expect(
+      await screen.findByText('To move this site, you would need to own another team to move it to.'),
+    ).toBeInTheDocument();
+  });
+
+  it('goes back to the labelled feature, with the reason, when the key ran out while the page was open', async () => {
+    world({
+      features: ['*'],
+      write: () =>
+        refused(403, 'LICENSE_REQUIRED', 'This licence key has expired', {
+          feature: 'teams',
+          reason: 'expired',
+        }),
+    });
+    render(show(<Team />, { teams: TEAMS }));
+    const teams = card('More than one team');
+    await userEvent.type(await within(teams).findByLabelText('Its name'), 'Clients');
+    await userEvent.click(within(teams).getByRole('button', { name: 'Make the team' }));
+    expect(await within(teams).findByText('The licence key on this install has expired.')).toBeInTheDocument();
+    expect(within(teams).getByText('Part of Chokh Pro')).toBeInTheDocument();
+    expect(within(teams).queryByRole('textbox')).toBeNull();
   });
 });

@@ -772,6 +772,26 @@ export const api = {
   ): Promise<Answer<{ user: PublicUser; created: boolean; scope: InvitationScope; role: Role }>> =>
     client.post('/api/invitations/accept', input),
 
+  // More than one team (AN-TEAM01), part of Chokh Pro: make one, delete an
+  // empty one, move a site to another. Each is refused 403 LICENSE_REQUIRED
+  // on an install with no key.
+  createTeam: (client: Client, name: string): Promise<Answer<{ team: MyTeam }>> =>
+    client.post('/api/ee/teams', { name }),
+
+  deleteTeam: (client: Client, teamId: string): Promise<Answer<{ deleted: boolean }>> =>
+    client.delete(`/api/ee/teams/${encodeURIComponent(teamId)}`),
+
+  moveSite: (
+    client: Client,
+    siteId: string,
+    teamId: string,
+    revokeKeys?: boolean,
+  ): Promise<Answer<{ site: PublicSite; moved: boolean }>> =>
+    client.put(`/api/ee/sites/${siteId}/team`, {
+      teamId,
+      ...(revokeKeys === undefined ? {} : { revokeKeys }),
+    }),
+
   // One page of a site's audit log or a team's. Opening it (no cursor) is
   // itself written to the log, so nothing calls this on a timer or on focus.
   audit: (

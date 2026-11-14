@@ -96,6 +96,12 @@ export const ACCESS_ACTIONS = [
   'invite:create',
   'invite:revoke',
   'invite:accept',
+  // Written by packages/ee, which makes and deletes teams and moves a site
+  // from one to another. Named here because the log, and its filter, are the
+  // core's: a row is read on an install whose key has since lapsed.
+  'team:create',
+  'team:delete',
+  'site:move',
 ] as const;
 export type AccessAction = (typeof ACCESS_ACTIONS)[number];
 

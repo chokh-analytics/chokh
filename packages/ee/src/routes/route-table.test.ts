@@ -205,7 +205,7 @@ describe('the paid routes, with a licence', () => {
         origin: '',
         rules: EE_ROUTES,
         callers: here.callers,
-        params: { siteId: SITE_ID },
+        params: { siteId: SITE_ID, teamId: TEAM_ID },
       }),
     ).toEqual([]);
   });
@@ -234,7 +234,7 @@ describe('the paid routes, asked from somewhere that is not this dashboard', () 
       await walkCrossSite({
         app: here.app,
         rules: EE_ROUTES,
-        params: { siteId: SITE_ID },
+        params: { siteId: SITE_ID, teamId: TEAM_ID },
         session: { cookie: here.owner },
       }),
     ).toEqual([]);
@@ -265,7 +265,7 @@ describe('the paid routes, with no licence', () => {
         origin: '',
         rules: EE_ROUTES,
         callers: here.callers,
-        params: { siteId: SITE_ID },
+        params: { siteId: SITE_ID, teamId: TEAM_ID },
         licensed: false,
       }),
     ).toEqual([]);
@@ -286,7 +286,7 @@ describe('the paid routes, with no licence', () => {
         },
       ],
       callers: here.callers,
-      params: { siteId: SITE_ID },
+      params: { siteId: SITE_ID, teamId: TEAM_ID },
       licensed: false,
     });
     expect(disagreements).toContain(

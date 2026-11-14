@@ -59,6 +59,7 @@ process that has been up for a month.
 | `src/alerts/evaluate.ts` | The tick: claim, read, decide, say so |
 | `src/alerts/deliver.ts` | Email, Telegram and the signed webhook behind one interface |
 | `src/alerts/messages.ts` | Every sentence an alert says |
+| `src/teams/teams.routes.ts` | Making a team, deleting one, moving a site between two |
 
 ### The public keys are empty
 
@@ -243,6 +244,60 @@ of the same cadence is `409 DIGEST_EXISTS`; there is no edit route, delete
 and add again. `send` mails the last complete period now, whatever the hour,
 and answers each address's outcome; it does not claim the period, so the
 scheduled send still goes at its hour.
+
+## More than one team
+
+Behind the feature `teams`. What is paid is three acts and nothing else:
+making a team, deleting one, and moving a site from one to another. A team that
+exists goes on working with no key: its members, its sites, its invitations and
+its audit log are the core's, and so is a team the SSO exchange made on
+somebody's first arrival. A key that lapses takes nothing away. It refuses the
+next new team.
+
+```
+POST   /api/ee/teams               a person who owns some team
+DELETE /api/ee/teams/:teamId       a person who owns that team
+PUT    /api/ee/sites/:siteId/team  a person who owns the team the site is in, and the one it goes to
+```
+
+Never a key: who is in which team, and which team reads which site, is a
+person's decision. Each route asks who is calling first and about the licence
+second, so somebody who owns nothing is told that and not which feature lives
+there.
+
+```
+POST /api/ee/teams   { "name": "Clients" }
+201  { "team": { "id": "t_3f9a1c20", "name": "Clients", "role": "owner" } }
+```
+
+Whoever makes a team owns it, alone, and it holds no site until one is created
+in it (`POST /api/sites` with its `teamId`, which is the core's) or moved to
+it. One person owns at most 50 (`409 TEAM_LIMIT`).
+
+**Deleting.** Never the team `default` (`409 DEFAULT_TEAM`), and never one that
+still holds a site (`409 TEAM_HAS_SITES`): move its sites first. The
+invitations waiting on it go with it, and their links then open nothing.
+
+**Moving a site.** `PUT /api/ee/sites/:siteId/team { "teamId": "t_3f9a1c20" }`.
+From the next request the team it left no longer reads it and the team it
+joined does; nothing is cached in a session that would say otherwise. The
+roles held on the site itself (somebody invited to that one site) are rows
+about the site and go with it untouched. The move is written to three logs:
+the team it left, the team it joined, and the site's own.
+
+A key goes on working whoever made it. So when keys on the site were made by
+people who will not administer it after the move, the move is refused
+`409 KEYS_DECISION_REQUIRED` with the list (id, name, scopes, never a token)
+until the request says `revokeKeys: true` or `false`, the question a removal
+asks.
+
+**Two things at the same instant.** A team that holds a site is not deleted,
+and that has to hold when a site is created in a team, or moved to it, while
+that team is being deleted. The store looks and then writes, so each side
+looks again after its own write: between the two looks every order of the
+steps is seen by one of them, and whichever sees it puts the team back as it
+was. The deletion then answers `409 TEAM_HAS_SITES`. The one loss is the
+invitations that were waiting on the team, which went with it.
 
 ## The fixture route
 

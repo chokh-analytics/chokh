@@ -86,6 +86,9 @@ export interface Who {
   // What GET /api/me said this person may do on the site.
   scopes?: string[];
   email?: string;
+  // Every team this person is in, when the one that owns the site is not
+  // the whole story.
+  teams?: { id: string; name: string; role: 'owner' | 'editor' | 'viewer' }[];
 }
 
 const OWNER_SCOPES = ['admin', 'read:identity', 'read:stats', 'write:events'];
@@ -100,7 +103,7 @@ export function show(page: JSX.Element, who: Who = {}): JSX.Element {
       actor: { kind: 'session', id: 'u_me' },
       user: { id: 'u_me', email: who.email ?? 'owner@test.example' },
       sites: [site, OTHER_SITE],
-      teams: team === null ? [] : [{ id: 't_own', name: 'Ours', role: team }],
+      teams: who.teams ?? (team === null ? [] : [{ id: 't_own', name: 'Ours', role: team }]),
     },
     site,
     now: NOW,

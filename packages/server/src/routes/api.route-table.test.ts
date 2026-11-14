@@ -252,6 +252,16 @@ describe('the route table', () => {
     const register = row('POST /api/auth/register');
     expect(expectedOf(register, nobody)).toEqual({ status: 403, code: 'FORBIDDEN' });
     expect(expectedOf(register, stranger)).toBe('allowed');
+    // A person who owns some team, whichever: the stranger owns another one.
+    const anyOwner: RouteRule = { method: 'POST', url: '/api/x', needs: { kind: 'anyTeamOwner' } };
+    expect(expectedOf(anyOwner, nobody)).toEqual({ status: 401, code: 'UNAUTHENTICATED' });
+    expect(expectedOf(anyOwner, editor)).toEqual({ status: 403, code: 'FORBIDDEN' });
+    expect(expectedOf(anyOwner, owner)).toBe('allowed');
+    expect(expectedOf(anyOwner, stranger)).toBe('allowed');
+    expect(expectedOf({ ...anyOwner, feature: 'anything' }, stranger, false)).toEqual({
+      status: 403,
+      code: 'LICENSE_REQUIRED',
+    });
     // A paid row on an install with no licence: the scope first, then the key.
     const paid: RouteRule = { ...row('GET /api/sites/:siteId'), feature: 'anything' };
     expect(expectedOf(paid, nobody, false)).toEqual({ status: 401, code: 'UNAUTHENTICATED' });

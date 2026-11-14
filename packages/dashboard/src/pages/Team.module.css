@@ -317,3 +317,13 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* The name of a form that shares its card with other things: said as a
+   heading and not hidden, so the card reads as a list and two forms. */
+.legend {
+  padding: 0;
+  margin-bottom: var(--s1);
+  font-size: var(--t-body);
+  font-weight: 600;
+  color: var(--ink);
+}

@@ -117,7 +117,11 @@ const BUDGETS = [
   // two lists, the keys question and the roles still standing, AuditLog at
   // 3,019 B with the form and the table, Invite at 1,822 B with its three
   // forms, and the tab row the three site pages share at 484 B.
-  { name: 'routes', pattern: /\.js$/, bytes: 61 * 1024 },
+  // Raised to 62 KB the same day by the commit that spent it, more than one
+  // team (AN-TEAM01): measured at 62,500 B, the Team chunk now 5,619 B with
+  // the card that lists the teams, makes one, deletes an empty one and moves
+  // the site, or names the feature where there is no key.
+  { name: 'routes', pattern: /\.js$/, bytes: 62 * 1024 },
   // Raised to 15 KB on 2026-09-24 by the commit that spent it, the Alerts
   // page: measured at 14,994 B, Alerts 723 B and the annotations panel 482 B.
   // Raised to 16 KB on 2026-09-25 by the commit that spent it, the shared

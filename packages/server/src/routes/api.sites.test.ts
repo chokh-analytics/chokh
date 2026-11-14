@@ -111,6 +111,43 @@ describe('POST /api/sites', () => {
     );
   });
 
+  // A team that holds a site is never deleted (the store refuses), and the
+  // deletion can still land between this route's look at the team and its
+  // write: it looked, saw no site, and removed the team. The route looks
+  // again after it has written.
+  it('puts the team back, as it was, when it was deleted at the instant a site was created in it', async () => {
+    await harness.store.createTeam({ id: 't_spare', name: 'Spare', members: [] });
+    const second = await harness.account({ email: 'second@test.example', role: 'editor', teamId: 't_spare' });
+    await harness.store.setTeamMember('t_spare', {
+      userId: harness.owner.userId,
+      role: 'owner',
+      identity: true,
+    });
+    const before = await harness.store.team('t_spare');
+    const createSite = harness.store.createSite.bind(harness.store);
+    harness.store.createSite = async (site) => {
+      // Empty at this moment, so the store lets it go.
+      await harness.store.deleteTeam('t_spare');
+      await createSite(site);
+    };
+    const response = await create({ name: 'Late', domains: ['late.example'], teamId: 't_spare' });
+    harness.store.createSite = createSite;
+
+    expect(response.statusCode).toBe(201);
+    const made = envelope<Created>(response.body).data?.site.id ?? '';
+    // The site is nobody's orphan: its team is there, with who was in it.
+    expect(await harness.store.team('t_spare')).toEqual(before);
+    expect(before?.members.map((member) => member.userId).sort()).toEqual(
+      [harness.owner.userId, second.userId].sort(),
+    );
+    const read = await harness.app.inject({
+      method: 'GET',
+      url: `/api/sites/${made}`,
+      headers: { cookie: harness.owner.cookie },
+    });
+    expect(read.statusCode).toBe(200);
+  });
+
   it('refuses a key, because a site is created by a person', async () => {
     const response = await harness.app.inject({
       method: 'POST',

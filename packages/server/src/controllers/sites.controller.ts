@@ -75,6 +75,16 @@ export function createCreateSiteController(deps: ApiDeps) {
     if (!created.ok) {
       return reply.code(created.status).send(fail(created.code, created.message));
     }
+    // A team that holds a site is never deleted, and that has to hold when the
+    // deletion and this creation happen at the same instant: the deletion
+    // looked, saw no site, and removed the team between the check above and
+    // the write. Each side looks again after its own write, and between the
+    // two looks every order of the four steps is seen by at least one of
+    // them. Seen from this side, the team is put back as it was read, which
+    // is what the deletion being refused would have left.
+    if (team !== null && (await deps.store.team(teamId)) === null) {
+      await attempt(() => deps.store.createTeam(team));
+    }
     return reply.code(201).send(
       ok({
         site: publicSite(created.data.site),

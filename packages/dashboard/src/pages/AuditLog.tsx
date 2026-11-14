@@ -101,6 +101,9 @@ const ACTIONS: Readonly<Record<string, string>> = {
   'invite:create': messages.audit.actionInviteCreate,
   'invite:revoke': messages.audit.actionInviteRevoke,
   'invite:accept': messages.audit.actionInviteAccept,
+  'team:create': messages.audit.actionTeamCreate,
+  'team:delete': messages.audit.actionTeamDelete,
+  'site:move': messages.audit.actionSiteMove,
 };
 
 // Who acted, in the words somebody reading the log would use: the name, then

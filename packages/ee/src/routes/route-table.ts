@@ -2,6 +2,7 @@ import type { RouteRule } from '@chokh/server';
 
 import { ALERTS_FEATURE } from '../alerts/conditions.js';
 import { DIGESTS_FEATURE } from '../digests/period.js';
+import { TEAMS_FEATURE } from '../teams/teams.routes.js';
 import { PING_FEATURE } from './ee.routes.js';
 
 // Every paid route and what it asks of a caller, as data: the scope on the
@@ -35,4 +36,30 @@ export const EE_ROUTES: readonly RouteRule[] = [
   paid('POST', `${SITE}/digests`, 'admin', DIGESTS_FEATURE),
   paid('DELETE', `${SITE}/digests/:digestId`, 'admin', DIGESTS_FEATURE),
   paid('POST', `${SITE}/digests/:digestId/send`, 'admin', DIGESTS_FEATURE),
+
+  // More than one team. Not a scope on a site: a person who owns a team, said
+  // three ways. Making one asks for an owner of any team; deleting one, for an
+  // owner of the team in the path; moving a site, for an owner of the team the
+  // site is in (and, past the licence, of the team it goes to, which the walk
+  // names as the same one so that the first check is the one it meets).
+  {
+    method: 'POST',
+    url: '/api/ee/teams',
+    needs: { kind: 'anyTeamOwner' },
+    feature: TEAMS_FEATURE,
+    body: ({ serial }) => ({ name: `Probe ${serial}` }),
+  },
+  {
+    method: 'DELETE',
+    url: '/api/ee/teams/:teamId',
+    needs: { kind: 'teamOwner' },
+    feature: TEAMS_FEATURE,
+  },
+  {
+    method: 'PUT',
+    url: '/api/ee/sites/:siteId/team',
+    needs: { kind: 'teamOwner' },
+    feature: TEAMS_FEATURE,
+    body: ({ params }) => ({ teamId: params['teamId'] }),
+  },
 ];

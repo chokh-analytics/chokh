@@ -19,6 +19,7 @@ import { sendDigest, startDigestTick } from '../digests/run.js';
 import { requireLicense } from '../license/guard.js';
 import type { DeliveryEnv } from '../license/env.js';
 import type { LicenseState } from '../license/state.js';
+import { registerTeamRoutes } from '../teams/teams.routes.js';
 
 // Every paid route, in one file, the way the core keeps its own in one file:
 // the whole authorization model is readable in one place, and a route that
@@ -73,6 +74,11 @@ export async function registerEeRoutes(
 ): Promise<void> {
   const auth = { store: deps.store, session: deps.session, now: deps.now };
   const store = deps.store;
+
+  // More than one team: making one, deleting one, moving a site between two
+  // (AN-TEAM01). In a file of its own, with the same two hooks in the same
+  // order on each route.
+  registerTeamRoutes(app, deps, state);
 
   // The frame's own health probe, and the feature AN-EE01 is verified against.
   //
