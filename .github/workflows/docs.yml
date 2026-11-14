@@ -1,0 +1,83 @@
+# The docs site (packages/docs): built, its links checked, its pages audited
+# for accessibility, and published to GitHub Pages from main once Pages is on.
+#
+# Publishing waits on two things, both the repository owner's: Pages switched
+# on with "GitHub Actions" as its source (Settings, Pages), and the repository
+# variable DOCS_PAGES set to `on` (Settings, Secrets and variables, Actions,
+# Variables). Until both, every push still builds and checks the site, and
+# the deploy job is skipped: merging publishes nothing.
+#
+# Every action is named by the commit it is at, with its version beside it,
+# as in release-packages.yml: a tag can be moved to other code, a commit
+# cannot.
+name: Docs
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Nothing by default. Each job says what it needs.
+permissions: {}
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build, check the links, audit accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The docs package and nothing else: the site reads the dashboard's
+      # tokens as a file, so the rest of the workspace is not installed.
+      - run: pnpm install --frozen-lockfile --filter @chokh/docs
+
+      - run: pnpm --filter @chokh/docs typecheck
+
+      - run: pnpm --filter @chokh/docs test
+
+      - run: pnpm --filter @chokh/docs site
+
+      - run: pnpm --filter @chokh/docs site:links
+
+      - run: pnpm --filter @chokh/docs exec playwright install --with-deps chromium
+
+      # Every page at a phone's width and a desktop's, in both themes: a score
+      # of 1 each, or the job fails.
+      - run: pnpm --filter @chokh/docs site:a11y
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: packages/docs/dist
+
+  deploy:
+    name: publish to GitHub Pages
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DOCS_PAGES == 'on'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
