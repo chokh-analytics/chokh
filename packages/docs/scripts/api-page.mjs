@@ -1,5 +1,6 @@
 // The API reference page and the OpenAPI file, from the routes and the
 // examples api-reference.mjs recorded.
+import { DEMO_SITE } from '../../dashboard/e2e/demo-site.mjs';
 import { allRoutes, jsonSchema } from './api-reference.mjs';
 
 // Who may call a route, from the route table, in words.
@@ -106,7 +107,7 @@ install whose licence key names its feature.
 Times are Unix milliseconds. A report's \`from\` and \`to\` also take a date
 and time written as ISO 8601.
 
-**About the examples.** They come from Saltwind Coffee, a site invented for
+**About the examples.** They come from ${DEMO_SITE.name}, a site invented for
 these pages, recorded from the server at noon UTC on 1 October 2026. An id
 the server made at random is shown as \`g_example1\` and so on, and every
 list is cut to its first three items. Routes of Chokh Pro, a redirect, the

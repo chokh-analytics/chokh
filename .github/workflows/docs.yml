@@ -63,15 +63,25 @@ jobs:
 
       - run: pnpm --filter @chokh/docs site:generate --check
 
+      # The dashboard's demo, built for the docs' address, which the site
+      # carries under demo/.
+      - run: pnpm --filter @chokh/docs site:demo
+
       - run: pnpm --filter @chokh/docs site
 
       - run: pnpm --filter @chokh/docs site:links
 
-      - run: pnpm --filter @chokh/docs exec playwright install --with-deps chromium
+      # Firefox and WebKit as well as Chromium, for the demo: it has to work
+      # in Safari's engine and in Firefox, storage refused or not.
+      - run: pnpm --filter @chokh/docs exec playwright install --with-deps chromium firefox webkit
 
       # Every page at a phone's width and a desktop's, in both themes: a score
       # of 1 each, or the job fails.
       - run: pnpm --filter @chokh/docs site:a11y
+
+      # The demo in Chromium, Firefox and WebKit, each with storage and
+      # without: drawn, refusing a change, and never asking a server.
+      - run: pnpm --filter @chokh/docs site:demo-check
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

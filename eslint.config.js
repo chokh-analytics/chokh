@@ -31,6 +31,7 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      '**/dist-demo/**',
       '**/build/**',
       '**/.next/**',
       '**/next-env.d.ts',

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chokh demo</title>
+    <meta name="description" content="The Chokh dashboard over invented data, in your browser." />
+    <!-- A demo of invented data: nothing here is worth indexing. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      /* The theme, before the first paint, as index.html does it. */
+      try {
+        var choice = localStorage.getItem('chokh:theme');
+        if (choice === 'light' || choice === 'dark') {
+          document.documentElement.setAttribute('data-theme', choice);
+        }
+      } catch (error) {
+        /* A private window has no storage. The system preference still works. */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/demo/main.tsx"></script>
+  </body>
+</html>

@@ -16,6 +16,18 @@ function isChoice(value: unknown): value is ThemeChoice {
   return value === 'light' || value === 'dark' || value === 'system';
 }
 
+// The browser's localStorage, or nothing. In a browser that blocks a site's
+// data, reading `localStorage` itself throws, before any method is called, so
+// the guards inside readChoice and writeChoice are too late: the access has
+// to be guarded where it is made, here, once.
+export function themeStorage(): Storage | undefined {
+  try {
+    return typeof localStorage === 'undefined' ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 // What the person chose, or 'system' when they never did. Storage can throw in
 // a private window and can hold anything a previous version wrote, so both are
 // answered the same way: by the default.

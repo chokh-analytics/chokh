@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# The dashboard's demo build (packages/dashboard/vite.demo.config.ts).
+dist-demo/
 build/
 coverage/
 *.tsbuildinfo

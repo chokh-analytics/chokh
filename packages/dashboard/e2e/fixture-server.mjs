@@ -12,32 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  AUDIT,
-  ENGAGEMENT,
-  EVENTS,
-  FUNNELS,
-  GOALS,
-  INVITATION_PREVIEW,
-  ME,
-  SITE_INVITATIONS,
-  SITE_MEMBERS,
-  TEAM_INVITATIONS,
-  TEAM_MEMBERS,
-  PROFILE,
-  REALTIME,
-  aggregateFor,
-  breakdownFor,
-  funnelStats,
-  goalStats,
-  journeys,
-  properties,
-  timeseries,
-} from './fixture-data.mjs';
-
-// What a goal read says about itself: raw rows, back as far as the site keeps
-// them.
-const RAW = { retentionDays: 180, rawOnly: true };
+import { answer, REALTIME_FRAME } from './fixture-answers.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, '..', 'dist');
@@ -53,18 +28,9 @@ const TYPES = {
   '.ico': 'image/x-icon',
 };
 
-function send(res, status, body, meta) {
+function send(res, { status, body }) {
   res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(JSON.stringify(meta === undefined ? body : { ...body, meta }));
-}
-
-function ok(res, data, meta) {
-  send(res, 200, { success: true, data }, meta);
-}
-
-function refuse(res, status, code, message) {
-  res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ success: false, error: { code, message } }));
+  res.end(JSON.stringify(body));
 }
 
 async function serveFile(res, path) {
@@ -81,105 +47,12 @@ async function serveFile(res, path) {
   }
 }
 
+// What fixture-answers.mjs says, unlicensed, as an install with no key is.
+// Whoever opens an invitation link is nobody yet: the page asking from
+// /invite is told so, and draws the form somebody new would see.
 function api(url, res, req) {
-  const path = url.pathname;
-  const params = url.searchParams;
-  if (path === '/api/me') {
-    // Whoever opens an invitation link is nobody yet: the page asking from
-    // /invite is told so, and draws the form somebody new would see.
-    if (new URL(req.headers.referer ?? 'http://x/').pathname === '/invite') {
-      return refuse(res, 401, 'UNAUTHENTICATED', 'Sign in first');
-    }
-    return ok(res, ME);
-  }
-  // Who can reach the site, who is waiting, and the record of who looked at
-  // whom (AN-TEAM01), for the Team, Audit log and invitation pictures.
-  if (path === '/api/teams/default/members') {
-    return ok(res, TEAM_MEMBERS);
-  }
-  if (path === '/api/sites/s_demo/members') {
-    return ok(res, SITE_MEMBERS, { siteId: 's_demo' });
-  }
-  if (path === '/api/teams/default/invitations') {
-    return ok(res, TEAM_INVITATIONS);
-  }
-  if (path === '/api/sites/s_demo/invitations') {
-    return ok(res, SITE_INVITATIONS);
-  }
-  if (path.endsWith('/audit')) {
-    return ok(res, AUDIT, { identity: true, limit: 50 });
-  }
-  if (path === '/api/invitations/lookup') {
-    return ok(res, INVITATION_PREVIEW);
-  }
-  // The public share (AN-RPT01) of the demo site, one token. Its report
-  // routes end the way a site's do, so the handlers below answer them.
-  if (path === '/api/share/tok_demo') {
-    return ok(res, {
-      site: { name: 'Progsity', timezone: 'Asia/Dhaka' },
-      protected: false,
-      unlocked: true,
-    });
-  }
-  if (path.endsWith('/annotations')) {
-    return ok(res, { annotations: [] });
-  }
-  if (path.endsWith('/stats/aggregate')) {
-    const goal = params.get('goal');
-    return ok(res, aggregateFor(goal), goal === null ? undefined : RAW);
-  }
-  if (path.endsWith('/stats/timeseries')) {
-    return ok(res, timeseries(params.get('interval') ?? 'day'));
-  }
-  if (path.endsWith('/stats/breakdown')) {
-    const goal = params.get('goal');
-    return ok(
-      res,
-      breakdownFor(params.get('dim') ?? 'page', Number(params.get('limit') ?? 10), goal),
-      goal === null ? undefined : RAW,
-    );
-  }
-  if (path.endsWith('/stats/goals')) {
-    return ok(res, goalStats(), RAW);
-  }
-  if (path.endsWith('/stats/events')) {
-    return ok(res, EVENTS, RAW);
-  }
-  if (path.endsWith('/stats/properties')) {
-    return ok(res, properties(params.get('event') ?? '', params.get('property')), RAW);
-  }
-  if (path.endsWith('/stats/journeys')) {
-    return ok(res, journeys(Number(params.get('branches') ?? 5)), RAW);
-  }
-  if (path.endsWith('/stats/funnel')) {
-    return ok(res, funnelStats(params.get('funnel')), { ...RAW, funnel: params.get('funnel') });
-  }
-  if (path.endsWith('/funnels')) {
-    return ok(res, { funnels: FUNNELS }, { siteId: 's_demo', max: 50, maxSteps: 8 });
-  }
-  if (path.endsWith('/goals')) {
-    return ok(res, { goals: GOALS }, { siteId: 's_demo', max: 50 });
-  }
-  if (path.endsWith('/stats/engagement')) {
-    return ok(res, ENGAGEMENT, { retentionDays: 180 });
-  }
-  if (path.endsWith('/realtime')) {
-    // No identity, which is the default an install has: the address column is
-    // absent and the page says which permission would show it.
-    return ok(res, REALTIME, { identity: false });
-  }
-  if (path.includes('/visitors/')) {
-    return ok(res, PROFILE, { identity: false });
-  }
-  if (path.includes('/users/')) {
-    return refuse(
-      res,
-      403,
-      'FORBIDDEN',
-      'This lookup names a person, so it needs the read:identity permission.',
-    );
-  }
-  return refuse(res, 404, 'NOT_FOUND', `Nothing answers ${path}`);
+  const invite = new URL(req.headers.referer ?? 'http://x/').pathname === '/invite';
+  return send(res, answer(url.pathname, url.searchParams, { invite }));
 }
 
 const server = createServer((req, res) => {
@@ -187,7 +60,7 @@ const server = createServer((req, res) => {
 
   // Both servers answer this, so one helper can wait for either.
   if (url.pathname === '/health') {
-    return ok(res, { status: 'ok' });
+    return send(res, answer('/health', url.searchParams));
   }
 
   if (url.pathname.startsWith('/api/')) {
@@ -203,7 +76,7 @@ const server = createServer((req, res) => {
         'cache-control': 'no-store',
         connection: 'keep-alive',
       });
-      res.write(`data: ${JSON.stringify({ success: true, data: REALTIME })}
+      res.write(`data: ${JSON.stringify(REALTIME_FRAME)}
 
 `);
       return undefined;

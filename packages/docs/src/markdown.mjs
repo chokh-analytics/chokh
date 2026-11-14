@@ -88,7 +88,9 @@ function highlight(code, lang) {
 // A fresh renderer for one build, so a base path is never carried from one
 // build into another.
 export function createRenderer({ base, examples = null }) {
-  const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+  // HTML in a page is allowed: the pages are ours, and the home page's first
+  // screen (a picture of the product in each theme, two actions) is HTML.
+  const md = new MarkdownIt({ html: true, linkify: false, typographer: false });
 
   // A block that names a file takes the file's text. A name that leaves
   // examples/ or a file that is not there stops the build.

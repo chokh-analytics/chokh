@@ -25,7 +25,7 @@ install whose licence key names its feature.
 Times are Unix milliseconds. A report's `from` and `to` also take a date
 and time written as ISO 8601.
 
-**About the examples.** They come from Saltwind Coffee, a site invented for
+**About the examples.** They come from Quillmoor Coffee, a site invented for
 these pages, recorded from the server at noon UTC on 1 October 2026. An id
 the server made at random is shown as `g_example1` and so on, and every
 list is cut to its first three items. Routes of Chokh Pro, a redirect, the
@@ -141,15 +141,15 @@ Who is asking: the account or the key, and every site it can read with its role 
     },
     "user": {
       "id": "u_example1",
-      "email": "owner@saltwind.example",
-      "name": "Ayla Moreno"
+      "email": "mira@quillmoor.example",
+      "name": "Mira Okafor"
     },
     "sites": [
       {
-        "id": "s_saltwind",
-        "name": "Saltwind Coffee",
+        "id": "s_demo",
+        "name": "Quillmoor Coffee",
         "domains": [
-          "saltwind.example"
+          "quillmoor.example"
         ],
         "teamId": "default",
         "settings": {
@@ -227,10 +227,10 @@ The sites the caller can read.
   "data": {
     "sites": [
       {
-        "id": "s_saltwind",
-        "name": "Saltwind Coffee",
+        "id": "s_demo",
+        "name": "Quillmoor Coffee",
         "domains": [
-          "saltwind.example"
+          "quillmoor.example"
         ],
         "teamId": "default",
         "settings": {
@@ -291,10 +291,10 @@ One site and its settings.
   "success": true,
   "data": {
     "site": {
-      "id": "s_saltwind",
-      "name": "Saltwind Coffee",
+      "id": "s_demo",
+      "name": "Quillmoor Coffee",
       "domains": [
-        "saltwind.example"
+        "quillmoor.example"
       ],
       "teamId": "default",
       "settings": {
@@ -362,7 +362,7 @@ The site's keys, without their tokens.
     "keys": [
       {
         "id": "k_example1",
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "name": "Checkout server",
         "scopes": [
           "write:events"
@@ -434,7 +434,7 @@ The headline numbers for a range: visitors, visits, pageviews, bounce rate, visi
     "previous": null
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -508,7 +508,7 @@ The same numbers by minute, hour, day, week or month.
     "previous": null
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -578,7 +578,7 @@ One dimension's rows (pages, sources, countries, devices and the rest), with the
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -615,7 +615,7 @@ Time on page and scroll depth by page.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -689,7 +689,7 @@ Custom events and how often each happened.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -745,7 +745,7 @@ One event's properties and their values.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -783,7 +783,7 @@ Each goal's conversions and conversion rate.
     "rows": [
       {
         "goal": {
-          "siteId": "s_saltwind",
+          "siteId": "s_demo",
           "id": "g_example1",
           "name": "Order paid",
           "kind": "event",
@@ -800,7 +800,7 @@ Each goal's conversions and conversion rate.
       },
       {
         "goal": {
-          "siteId": "s_saltwind",
+          "siteId": "s_demo",
           "id": "g_example2",
           "name": "Saw the menu",
           "kind": "page",
@@ -819,7 +819,7 @@ Each goal's conversions and conversion rate.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -855,7 +855,7 @@ A saved funnel: how many reached each step, and where they dropped off.
   "success": true,
   "data": {
     "funnel": {
-      "siteId": "s_saltwind",
+      "siteId": "s_demo",
       "id": "f_example1",
       "name": "Home to checkout",
       "steps": [
@@ -903,7 +903,7 @@ A saved funnel: how many reached each step, and where they dropped off.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1020,7 +1020,7 @@ The paths visits took from the page they came in on.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1089,7 +1089,7 @@ Retention cohorts: of the visitors first seen in a week or month, how many came 
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1161,7 +1161,7 @@ Daily, weekly and monthly active visitors, and stickiness.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1232,7 +1232,7 @@ First touch against last touch for one goal: what first brought each converting 
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1270,7 +1270,7 @@ The most active people of the range, as rows of the people directory; their name
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1335,7 +1335,7 @@ Core Web Vitals by page, at the 75th percentile.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1373,7 +1373,7 @@ JavaScript errors, grouped by message and place.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1414,7 +1414,7 @@ Of the people the site's server named, the share no browser row carries: an esti
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -1460,7 +1460,7 @@ Who is on the site now, and on which page.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "identity": true
   }
 }
@@ -1557,7 +1557,7 @@ One visitor's visits and events.
 {
   "success": true,
   "data": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "visitorId": "u:cust_1042",
     "firstSeenAt": 1790856000000,
     "lastSeenAt": 1790856000000,
@@ -1571,12 +1571,12 @@ One visitor's visits and events.
         "ts": 1790856000000,
         "type": "event",
         "name": "order_paid",
-        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
       },
       {
         "ts": 1790856000000,
         "type": "identify",
-        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
       }
     ],
     "userId": "cust_1042",
@@ -1610,7 +1610,7 @@ One identified person's visits, events and traits.
 {
   "success": true,
   "data": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "visitorIds": [
       "u:cust_1042"
     ],
@@ -1626,12 +1626,12 @@ One identified person's visits, events and traits.
         "ts": 1790856000000,
         "type": "event",
         "name": "order_paid",
-        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
       },
       {
         "ts": 1790856000000,
         "type": "identify",
-        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
       }
     ],
     "userId": "cust_1042",
@@ -1684,7 +1684,7 @@ The site's goals.
   "data": {
     "goals": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "g_example1",
         "name": "Order paid",
         "kind": "event",
@@ -1693,7 +1693,7 @@ The site's goals.
         "createdAt": 1790856000000
       },
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "g_example2",
         "name": "Saw the menu",
         "kind": "page",
@@ -1704,7 +1704,7 @@ The site's goals.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "max": 50
   }
 }
@@ -1811,7 +1811,7 @@ The site's funnels.
   "data": {
     "funnels": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "f_example1",
         "name": "Home to checkout",
         "steps": [
@@ -1838,7 +1838,7 @@ The site's funnels.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "max": 50,
     "maxSteps": 8,
     "windows": [
@@ -1883,7 +1883,7 @@ The site's saved segments.
   "data": {
     "segments": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "sg_example1",
         "name": "From Google",
         "filters": [
@@ -1899,7 +1899,7 @@ The site's saved segments.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "max": 50
   }
 }
@@ -1941,7 +1941,7 @@ The marks drawn on the chart in a range.
   "data": {
     "annotations": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "an_example1",
         "at": 1790510400000,
         "kind": "campaign",
@@ -1952,7 +1952,7 @@ The marks drawn on the chart in a range.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "from": 1790251200000,
     "to": 1790856000000,
     "max": 1000
@@ -2011,7 +2011,7 @@ What a share link shows: the site's name and whether a password is asked for.
   "success": true,
   "data": {
     "site": {
-      "name": "Saltwind Coffee",
+      "name": "Quillmoor Coffee",
       "timezone": "UTC"
     },
     "protected": false,
@@ -2070,7 +2070,7 @@ The headline numbers, through a share link.
     "previous": null
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -2144,7 +2144,7 @@ The chart, through a share link.
     "previous": null
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -2214,7 +2214,7 @@ One dimension's rows, through a share link.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000
@@ -2250,7 +2250,7 @@ The goals, through a share link.
     "rows": [
       {
         "goal": {
-          "siteId": "s_saltwind",
+          "siteId": "s_demo",
           "id": "g_example1",
           "name": "Order paid",
           "kind": "event",
@@ -2267,7 +2267,7 @@ The goals, through a share link.
       },
       {
         "goal": {
-          "siteId": "s_saltwind",
+          "siteId": "s_demo",
           "id": "g_example2",
           "name": "Saw the menu",
           "kind": "page",
@@ -2286,7 +2286,7 @@ The goals, through a share link.
     "rawOnly": true
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "timezone": "UTC",
     "from": 1790251200000,
     "to": 1790856000000,
@@ -2315,7 +2315,7 @@ The chart's marks, through a share link.
   "data": {
     "annotations": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "id": "an_example1",
         "at": 1790510400000,
         "kind": "campaign",
@@ -2326,7 +2326,7 @@ The chart's marks, through a share link.
     ]
   },
   "meta": {
-    "siteId": "s_saltwind",
+    "siteId": "s_demo",
     "from": 1790251200000,
     "to": 1790856000000,
     "max": 1000
@@ -2361,8 +2361,8 @@ A team's members and their roles.
     "members": [
       {
         "userId": "u_example1",
-        "email": "owner@saltwind.example",
-        "name": "Ayla Moreno",
+        "email": "mira@quillmoor.example",
+        "name": "Mira Okafor",
         "role": "owner",
         "identity": true,
         "managed": false
@@ -2419,7 +2419,7 @@ Who has a role on this one site.
     "members": []
   },
   "meta": {
-    "siteId": "s_saltwind"
+    "siteId": "s_demo"
   }
 }
 ```
@@ -2498,7 +2498,7 @@ The site's invitations still waiting.
     "invitations": []
   },
   "meta": {
-    "siteId": "s_saltwind"
+    "siteId": "s_demo"
   }
 }
 ```
@@ -2602,12 +2602,12 @@ The same log for one site.
   "data": {
     "rows": [
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "ts": 1790856000000,
         "actor": {
           "kind": "session",
           "id": "u_example1",
-          "email": "owner@saltwind.example"
+          "email": "mira@quillmoor.example"
         },
         "action": "read:identity",
         "route": "GET /api/sites/:siteId/users/:userId/presence",
@@ -2619,12 +2619,12 @@ The same log for one site.
         "kind": "identity"
       },
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "ts": 1790856000000,
         "actor": {
           "kind": "session",
           "id": "u_example1",
-          "email": "owner@saltwind.example"
+          "email": "mira@quillmoor.example"
         },
         "action": "read:identity",
         "route": "GET /api/sites/:siteId/users/:userId",
@@ -2637,12 +2637,12 @@ The same log for one site.
         "kind": "identity"
       },
       {
-        "siteId": "s_saltwind",
+        "siteId": "s_demo",
         "ts": 1790856000000,
         "actor": {
           "kind": "session",
           "id": "u_example1",
-          "email": "owner@saltwind.example"
+          "email": "mira@quillmoor.example"
         },
         "action": "read:identity",
         "route": "GET /api/sites/:siteId/visitors/:visitorId",
@@ -2657,8 +2657,8 @@ The same log for one site.
     ],
     "accounts": {
       "u_example1": {
-        "email": "owner@saltwind.example",
-        "name": "Ayla Moreno"
+        "email": "mira@quillmoor.example",
+        "name": "Mira Okafor"
       }
     },
     "next": "cursor_example1"

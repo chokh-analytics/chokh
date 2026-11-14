@@ -808,3 +808,75 @@ dialog::backdrop {
     scroll-behavior: auto;
   }
 }
+
+/* The home page's first screen: two actions, and the product in the reader's
+ * theme. */
+.hero {
+  margin: 0 0 var(--s6);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin: 0 0 var(--s5) !important;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--s5);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+}
+
+.action:hover {
+  border-color: var(--accent);
+}
+
+.action.primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.hero-shot {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-sm);
+}
+
+.hero-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot-dark {
+  display: none !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .shot-light {
+    display: none !important;
+  }
+
+  :root:not([data-theme='light']) .shot-dark {
+    display: block !important;
+  }
+}
+
+:root[data-theme='dark'] .shot-light {
+  display: none !important;
+}
+
+:root[data-theme='dark'] .shot-dark {
+  display: block !important;
+}

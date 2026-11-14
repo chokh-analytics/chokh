@@ -4,6 +4,11 @@ lead: Open source, first-party web analytics you host yourself. One process carr
 description: Chokh is open source, first-party web analytics you host yourself: a tracker under 3 KB, a collector, a stats API and a dashboard in one process.
 ---
 
+<div class="hero">
+<p class="hero-actions"><a class="action primary" href="self-hosting/">Run it</a> <a class="action" href="demo/">Open the demo</a></p>
+<a class="hero-shot" href="demo/" aria-label="Open the demo"><img class="shot-light" src="images/dashboard-overview-light.png" width="1440" height="1100" alt="The Chokh dashboard's overview: visitors, pageviews, bounce rate and visit duration, a chart of the week, and the top pages, sources, countries and devices."><img class="shot-dark" src="images/dashboard-overview-dark.png" width="1440" height="1100" alt="The same overview in the dark theme."></a>
+</div>
+
 Chokh (চোখ, "eye") counts the people who visit your site on a server you run,
 and keeps what it counts there. By default it sets no cookie and stores no full
 address; a site that signs people in can choose a persistent visitor id and

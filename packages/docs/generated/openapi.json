@@ -618,15 +618,15 @@
                     },
                     "user": {
                       "id": "u_example1",
-                      "email": "owner@saltwind.example",
-                      "name": "Ayla Moreno"
+                      "email": "mira@quillmoor.example",
+                      "name": "Mira Okafor"
                     },
                     "sites": [
                       {
-                        "id": "s_saltwind",
-                        "name": "Saltwind Coffee",
+                        "id": "s_demo",
+                        "name": "Quillmoor Coffee",
                         "domains": [
-                          "saltwind.example"
+                          "quillmoor.example"
                         ],
                         "teamId": "default",
                         "settings": {
@@ -737,10 +737,10 @@
                   "data": {
                     "sites": [
                       {
-                        "id": "s_saltwind",
-                        "name": "Saltwind Coffee",
+                        "id": "s_demo",
+                        "name": "Quillmoor Coffee",
                         "domains": [
-                          "saltwind.example"
+                          "quillmoor.example"
                         ],
                         "teamId": "default",
                         "settings": {
@@ -958,10 +958,10 @@
                   "success": true,
                   "data": {
                     "site": {
-                      "id": "s_saltwind",
-                      "name": "Saltwind Coffee",
+                      "id": "s_demo",
+                      "name": "Quillmoor Coffee",
                       "domains": [
-                        "saltwind.example"
+                        "quillmoor.example"
                       ],
                       "teamId": "default",
                       "settings": {
@@ -1209,7 +1209,7 @@
                     "keys": [
                       {
                         "id": "k_example1",
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "name": "Checkout server",
                         "scopes": [
                           "write:events"
@@ -1501,7 +1501,7 @@
                     "previous": null
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -1764,7 +1764,7 @@
                     "previous": null
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -1985,7 +1985,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -2151,7 +2151,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -2478,7 +2478,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -2681,7 +2681,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -2848,7 +2848,7 @@
                     "rows": [
                       {
                         "goal": {
-                          "siteId": "s_saltwind",
+                          "siteId": "s_demo",
                           "id": "g_example1",
                           "name": "Order paid",
                           "kind": "event",
@@ -2865,7 +2865,7 @@
                       },
                       {
                         "goal": {
-                          "siteId": "s_saltwind",
+                          "siteId": "s_demo",
                           "id": "g_example2",
                           "name": "Saw the menu",
                           "kind": "page",
@@ -2884,7 +2884,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3058,7 +3058,7 @@
                   "success": true,
                   "data": {
                     "funnel": {
-                      "siteId": "s_saltwind",
+                      "siteId": "s_demo",
                       "id": "f_example1",
                       "name": "Home to checkout",
                       "steps": [
@@ -3106,7 +3106,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3386,7 +3386,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3507,7 +3507,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3664,7 +3664,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3800,7 +3800,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -3897,7 +3897,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -4045,7 +4045,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -4133,7 +4133,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -4214,7 +4214,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -4285,7 +4285,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "identity": true
                   }
                 }
@@ -4561,7 +4561,7 @@
                 "example": {
                   "success": true,
                   "data": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "visitorId": "u:cust_1042",
                     "firstSeenAt": 1790856000000,
                     "lastSeenAt": 1790856000000,
@@ -4575,12 +4575,12 @@
                         "ts": 1790856000000,
                         "type": "event",
                         "name": "order_paid",
-                        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+                        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
                       },
                       {
                         "ts": 1790856000000,
                         "type": "identify",
-                        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+                        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
                       }
                     ],
                     "userId": "cust_1042",
@@ -4649,7 +4649,7 @@
                 "example": {
                   "success": true,
                   "data": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "visitorIds": [
                       "u:cust_1042"
                     ],
@@ -4665,12 +4665,12 @@
                         "ts": 1790856000000,
                         "type": "event",
                         "name": "order_paid",
-                        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+                        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
                       },
                       {
                         "ts": 1790856000000,
                         "type": "identify",
-                        "sessionId": "VxiLqkfaYyOp9wtV-wmJ7N"
+                        "sessionId": "dlfwz9ud86gZn5JcGWM6_8"
                       }
                     ],
                     "userId": "cust_1042",
@@ -4783,7 +4783,7 @@
                   "data": {
                     "goals": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "g_example1",
                         "name": "Order paid",
                         "kind": "event",
@@ -4792,7 +4792,7 @@
                         "createdAt": 1790856000000
                       },
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "g_example2",
                         "name": "Saw the menu",
                         "kind": "page",
@@ -4803,7 +4803,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "max": 50
                   }
                 }
@@ -4999,7 +4999,7 @@
                   "data": {
                     "funnels": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "f_example1",
                         "name": "Home to checkout",
                         "steps": [
@@ -5026,7 +5026,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "max": 50,
                     "maxSteps": 8,
                     "windows": [
@@ -5235,7 +5235,7 @@
                   "data": {
                     "segments": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "sg_example1",
                         "name": "From Google",
                         "filters": [
@@ -5251,7 +5251,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "max": 50
                   }
                 }
@@ -5467,7 +5467,7 @@
                   "data": {
                     "annotations": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "an_example1",
                         "at": 1790510400000,
                         "kind": "campaign",
@@ -5478,7 +5478,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "from": 1790251200000,
                     "to": 1790856000000,
                     "max": 1000
@@ -5729,7 +5729,7 @@
                   "success": true,
                   "data": {
                     "site": {
-                      "name": "Saltwind Coffee",
+                      "name": "Quillmoor Coffee",
                       "timezone": "UTC"
                     },
                     "protected": false,
@@ -5962,7 +5962,7 @@
                     "previous": null
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -6225,7 +6225,7 @@
                     "previous": null
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -6446,7 +6446,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000
@@ -6611,7 +6611,7 @@
                     "rows": [
                       {
                         "goal": {
-                          "siteId": "s_saltwind",
+                          "siteId": "s_demo",
                           "id": "g_example1",
                           "name": "Order paid",
                           "kind": "event",
@@ -6628,7 +6628,7 @@
                       },
                       {
                         "goal": {
-                          "siteId": "s_saltwind",
+                          "siteId": "s_demo",
                           "id": "g_example2",
                           "name": "Saw the menu",
                           "kind": "page",
@@ -6647,7 +6647,7 @@
                     "rawOnly": true
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "timezone": "UTC",
                     "from": 1790251200000,
                     "to": 1790856000000,
@@ -6716,7 +6716,7 @@
                   "data": {
                     "annotations": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "id": "an_example1",
                         "at": 1790510400000,
                         "kind": "campaign",
@@ -6727,7 +6727,7 @@
                     ]
                   },
                   "meta": {
-                    "siteId": "s_saltwind",
+                    "siteId": "s_demo",
                     "from": 1790251200000,
                     "to": 1790856000000,
                     "max": 1000
@@ -6815,8 +6815,8 @@
                     "members": [
                       {
                         "userId": "u_example1",
-                        "email": "owner@saltwind.example",
-                        "name": "Ayla Moreno",
+                        "email": "mira@quillmoor.example",
+                        "name": "Mira Okafor",
                         "role": "owner",
                         "identity": true,
                         "managed": false
@@ -7048,7 +7048,7 @@
                     "members": []
                   },
                   "meta": {
-                    "siteId": "s_saltwind"
+                    "siteId": "s_demo"
                   }
                 }
               }
@@ -7372,7 +7372,7 @@
                     "invitations": []
                   },
                   "meta": {
-                    "siteId": "s_saltwind"
+                    "siteId": "s_demo"
                   }
                 }
               }
@@ -7816,12 +7816,12 @@
                   "data": {
                     "rows": [
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "ts": 1790856000000,
                         "actor": {
                           "kind": "session",
                           "id": "u_example1",
-                          "email": "owner@saltwind.example"
+                          "email": "mira@quillmoor.example"
                         },
                         "action": "read:identity",
                         "route": "GET /api/sites/:siteId/users/:userId/presence",
@@ -7833,12 +7833,12 @@
                         "kind": "identity"
                       },
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "ts": 1790856000000,
                         "actor": {
                           "kind": "session",
                           "id": "u_example1",
-                          "email": "owner@saltwind.example"
+                          "email": "mira@quillmoor.example"
                         },
                         "action": "read:identity",
                         "route": "GET /api/sites/:siteId/users/:userId",
@@ -7851,12 +7851,12 @@
                         "kind": "identity"
                       },
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "ts": 1790856000000,
                         "actor": {
                           "kind": "session",
                           "id": "u_example1",
-                          "email": "owner@saltwind.example"
+                          "email": "mira@quillmoor.example"
                         },
                         "action": "read:identity",
                         "route": "GET /api/sites/:siteId/visitors/:visitorId",
@@ -7869,12 +7869,12 @@
                         "kind": "identity"
                       },
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "ts": 1790856000000,
                         "actor": {
                           "kind": "session",
                           "id": "u_example1",
-                          "email": "owner@saltwind.example"
+                          "email": "mira@quillmoor.example"
                         },
                         "action": "read:identity",
                         "route": "GET /api/sites/:siteId/people",
@@ -7887,12 +7887,12 @@
                         "kind": "identity"
                       },
                       {
-                        "siteId": "s_saltwind",
+                        "siteId": "s_demo",
                         "ts": 1790856000000,
                         "actor": {
                           "kind": "session",
                           "id": "u_example1",
-                          "email": "owner@saltwind.example"
+                          "email": "mira@quillmoor.example"
                         },
                         "action": "read:identity",
                         "route": "GET /api/sites/:siteId/realtime",
@@ -7905,8 +7905,8 @@
                     ],
                     "accounts": {
                       "u_example1": {
-                        "email": "owner@saltwind.example",
-                        "name": "Ayla Moreno"
+                        "email": "mira@quillmoor.example",
+                        "name": "Mira Okafor"
                       }
                     },
                     "next": "cursor_example1"

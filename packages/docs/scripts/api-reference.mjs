@@ -9,6 +9,8 @@
 // same pages, and CI can hold the committed ones to it.
 import { zodToJsonSchema } from 'zod-to-json-schema';
 
+import { DEMO_SITE } from '../../dashboard/e2e/demo-site.mjs';
+
 // Read before the server is imported: its environment is parsed on import.
 process.env.LOG_LEVEL = 'silent';
 process.env.NODE_ENV = 'development';
@@ -35,12 +37,13 @@ const PAID = loaded.extensions.flatMap((extension) => (extension.reference === u
 const EE_ROUTES = PAID.flatMap((reference) => reference.routes);
 const EE_ROUTE_DOCS = PAID.flatMap((reference) => reference.docs);
 
-// The invented install every example comes from.
+// The invented install every example comes from: the business the demo
+// and the README's pictures show (packages/dashboard/e2e/demo-site.mjs).
 export const DEMO = {
-  siteId: 's_saltwind',
-  siteName: 'Saltwind Coffee',
-  domain: 'saltwind.example',
-  owner: 'owner@saltwind.example',
+  siteId: DEMO_SITE.id,
+  siteName: DEMO_SITE.name,
+  domain: DEMO_SITE.domain,
+  owner: DEMO_SITE.owner.email,
 };
 // Thursday 1 October 2026, noon UTC. A constant, never the clock.
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
@@ -146,7 +149,7 @@ export async function recordExamples() {
     return response;
   };
 
-  await must('POST', '/api/auth/register', { body: { email: DEMO.owner, password: PASSWORD, name: 'Ayla Moreno' } });
+  await must('POST', '/api/auth/register', { body: { email: DEMO.owner, password: PASSWORD, name: DEMO_SITE.owner.name } });
   const login = await must('POST', '/api/auth/login', { body: { email: DEMO.owner, password: PASSWORD } });
   const cookie = `${login.cookies[0].name}=${login.cookies[0].value}`;
   const site = `/api/sites/${DEMO.siteId}`;
@@ -169,7 +172,7 @@ export async function recordExamples() {
       type: 'pageview',
       ts: visit.at + index * 40_000,
       path,
-      title: `Saltwind Coffee ${path}`,
+      title: `${DEMO.siteName} ${path}`,
       ...(index === 0 && visit.ref !== '' ? { referrer: visit.ref } : {}),
     }));
     if (visit.pages.includes('/shop/checkout')) {

@@ -1,0 +1,23 @@
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  padding: var(--s2) var(--gutter);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: var(--t-body);
+}
+
+.text {
+  margin: 0;
+  max-width: 90ch;
+}
+
+.link {
+  color: var(--accent-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}

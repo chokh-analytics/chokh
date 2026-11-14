@@ -27,6 +27,7 @@ const OUT = resolve(HERE, '..', 'screenshots');
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
+  ['01-overview-dark', 'dashboard-overview-dark.png'],
   ['02-realtime-dark', 'dashboard-realtime-dark.png'],
   ['05-geo-light', 'dashboard-geo-light.png'],
   ['07-people-dark', 'dashboard-people-dark.png'],

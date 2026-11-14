@@ -14,13 +14,15 @@
 
 import { finishJourneys, journeyPath, journeyStepCounts, topJourneyPages } from '@chokh/store';
 
+import { DEMO_SITE } from './demo-site.mjs';
+
 // A Friday, so the week in the charts has a shape rather than a plateau.
 export const NOW = Date.UTC(2026, 8, 18, 9, 30, 0);
 
 export const SITE = {
-  id: 's_demo',
-  name: 'Progsity',
-  domains: ['progsity.io'],
+  id: DEMO_SITE.id,
+  name: DEMO_SITE.name,
+  domains: [DEMO_SITE.domain],
   teamId: 'default',
   settings: {
     ipMode: 'anonymized',
@@ -40,7 +42,7 @@ const OWNER_SCOPES = ['admin', 'read:identity', 'read:stats', 'write:events'];
 
 export const ME = {
   actor: { kind: 'session', id: 'u_demo' },
-  user: { id: 'u_demo', email: 'owner@chokh.test', name: 'Abu Jafar' },
+  user: { id: 'u_demo', email: DEMO_SITE.owner.email, name: DEMO_SITE.owner.name },
   // What this person may do on each site, as GET /api/me answers it.
   sites: [
     { ...SITE, scopes: OWNER_SCOPES, role: 'owner' },
@@ -53,7 +55,7 @@ export const ME = {
       role: 'owner',
     },
   ],
-  teams: [{ id: 'default', name: 'Progsity', role: 'owner' }],
+  teams: [{ id: 'default', name: DEMO_SITE.name, role: 'owner' }],
 };
 
 // Who can reach the site (AN-TEAM01), for the Team page's picture: an owner,
@@ -62,12 +64,12 @@ export const ME = {
 const DAY = 86_400_000;
 
 export const TEAM_MEMBERS = {
-  team: { id: 'default', name: 'Progsity' },
+  team: { id: 'default', name: DEMO_SITE.name },
   members: [
-    { userId: 'u_demo', email: 'owner@chokh.test', name: 'Abu Jafar', role: 'owner', identity: true, managed: false },
-    { userId: 'u_ada', email: 'ada@progsity.test', name: 'Ada Rahman', role: 'editor', identity: true, managed: false },
-    { userId: 'u_grace', email: 'grace@progsity.test', name: 'Grace Chowdhury', role: 'viewer', identity: false, managed: false },
-    { userId: 'sso_staff_7', email: 'support@progsity.test', name: 'Support desk', role: 'viewer', identity: false, managed: true },
+    { userId: 'u_demo', email: DEMO_SITE.owner.email, name: DEMO_SITE.owner.name, role: 'owner', identity: true, managed: false },
+    { userId: 'u_ada', email: 'ada@quillmoor.example', name: 'Ada Rahman', role: 'editor', identity: true, managed: false },
+    { userId: 'u_grace', email: 'grace@quillmoor.example', name: 'Grace Chowdhury', role: 'viewer', identity: false, managed: false },
+    { userId: 'sso_staff_7', email: 'support@quillmoor.example', name: 'Support desk', role: 'viewer', identity: false, managed: true },
   ],
 };
 
@@ -95,7 +97,7 @@ function invitation(id, email, scope, role, over = {}) {
 
 export const TEAM_INVITATIONS = {
   invitations: [
-    invitation('inv_1', 'new.colleague@progsity.test', { kind: 'team', id: 'default' }, 'editor'),
+    invitation('inv_1', 'new.colleague@quillmoor.example', { kind: 'team', id: 'default' }, 'editor'),
     invitation('inv_2', 'contractor@studio.test', { kind: 'team', id: 'default' }, 'viewer', {
       invitedBy: 'u_gone',
       usable: false,
@@ -108,11 +110,11 @@ export const SITE_INVITATIONS = { invitations: [] };
 // What an invitation link answers whoever opens it.
 export const INVITATION_PREVIEW = {
   invitation: {
-    email: 'new.colleague@progsity.test',
-    scope: { kind: 'team', id: 'default', name: 'Progsity' },
+    email: 'new.colleague@quillmoor.example',
+    scope: { kind: 'team', id: 'default', name: DEMO_SITE.name },
     role: 'editor',
     identity: false,
-    invitedBy: 'Abu Jafar',
+    invitedBy: DEMO_SITE.owner.name,
     expiresAt: NOW + 6 * DAY,
     accountExists: false,
   },
@@ -123,7 +125,7 @@ function auditRow(id, minutesAgo, action, kind, route, over = {}) {
     id: String(id),
     siteId: 's_demo',
     ts: NOW - minutesAgo * 60_000,
-    actor: { kind: 'session', id: 'u_demo', email: 'owner@chokh.test' },
+    actor: { kind: 'session', id: 'u_demo', email: DEMO_SITE.owner.email },
     action,
     kind,
     route,
@@ -135,12 +137,12 @@ function auditRow(id, minutesAgo, action, kind, route, over = {}) {
 export const AUDIT = {
   rows: [
     auditRow(9, 4, 'read:identity', 'identity', 'GET /api/sites/:siteId/visitors/:visitorId', {
-      actor: { kind: 'session', id: 'u_ada', email: 'ada@progsity.test' },
+      actor: { kind: 'session', id: 'u_ada', email: 'ada@quillmoor.example' },
       target: 'v_abcdef0001',
       fields: ['ips', 'traits', 'userId'],
     }),
     auditRow(8, 22, 'read:identity', 'identity', 'GET /api/sites/:siteId/people', {
-      actor: { kind: 'session', id: 'u_ada', email: 'ada@progsity.test' },
+      actor: { kind: 'session', id: 'u_ada', email: 'ada@quillmoor.example' },
       target: 'rahim@example.test',
       fields: ['traits', 'userId'],
     }),
@@ -168,8 +170,8 @@ export const AUDIT = {
     }),
   ],
   accounts: {
-    u_demo: { email: 'owner@chokh.test', name: 'Abu Jafar' },
-    u_ada: { email: 'ada@progsity.test', name: 'Ada Rahman' },
+    u_demo: { email: DEMO_SITE.owner.email, name: DEMO_SITE.owner.name },
+    u_ada: { email: 'ada@quillmoor.example', name: 'Ada Rahman' },
     u_client: { email: 'marketing@client.test', name: 'A client' },
   },
   next: null,
@@ -226,20 +228,20 @@ export const AGGREGATE = {
 const ROWS = {
   page: [
     '/',
-    '/courses/competitive-programming',
-    '/playground',
-    '/pricing',
-    '/learn/c',
-    '/contests',
-    '/blog/why-we-built-chokh',
+    '/shop/beans',
+    '/menu',
+    '/subscriptions',
+    '/brew-guides',
+    '/events',
+    '/journal/autumn-blend',
     '/about',
-    '/docs/install',
-    '/courses/dsa',
-    '/login',
+    '/visit-us',
+    '/shop/grinders',
+    '/account',
     '/contact',
   ],
-  entry: ['/', '/courses/competitive-programming', '/pricing', '/playground', '/learn/c'],
-  exit: ['/pricing', '/', '/checkout', '/playground', '/docs/install'],
+  entry: ['/', '/shop/beans', '/subscriptions', '/menu', '/brew-guides'],
+  exit: ['/subscriptions', '/', '/checkout', '/menu', '/visit-us'],
   channel: ['organic', 'direct', 'social', 'referral', 'ai', 'email'],
   referrer: [
     'google.com',
@@ -274,7 +276,7 @@ const ROWS = {
   device: ['mobile', 'desktop', 'tablet'],
   screen: ['360-767', '768-1023', '1024-1439', '1440+'],
   lang: ['bn', 'en', 'hi', 'ur'],
-  event: ['signup', '404', 'playground_run', 'checkout_start'],
+  event: ['signup', '404', 'brew_guide_open', 'checkout_start'],
 };
 
 // A different curve per dimension, because every card showing the same five
@@ -338,13 +340,13 @@ export const ENGAGEMENT = {
   dim: 'page',
   rawOnly: true,
   rows: [
-    { key: '/blog/why-we-built-chokh', avgTimeOnPageMs: 214_000, avgScrollDepth: 86, leaves: 412 },
-    { key: '/learn/c', avgTimeOnPageMs: 186_000, avgScrollDepth: 71, leaves: 388 },
-    { key: '/courses/competitive-programming', avgTimeOnPageMs: 96_000, avgScrollDepth: 54, leaves: 640 },
-    { key: '/pricing', avgTimeOnPageMs: 41_000, avgScrollDepth: 49, leaves: 512 },
-    { key: '/playground', avgTimeOnPageMs: 302_000, avgScrollDepth: 31, leaves: 260 },
+    { key: '/journal/autumn-blend', avgTimeOnPageMs: 214_000, avgScrollDepth: 86, leaves: 412 },
+    { key: '/brew-guides', avgTimeOnPageMs: 186_000, avgScrollDepth: 71, leaves: 388 },
+    { key: '/shop/beans', avgTimeOnPageMs: 96_000, avgScrollDepth: 54, leaves: 640 },
+    { key: '/subscriptions', avgTimeOnPageMs: 41_000, avgScrollDepth: 49, leaves: 512 },
+    { key: '/menu', avgTimeOnPageMs: 302_000, avgScrollDepth: 31, leaves: 260 },
     // Opened often, never closed yet: no number, and not a zero.
-    { key: '/contests', avgTimeOnPageMs: null, avgScrollDepth: null, leaves: 0 },
+    { key: '/events', avgTimeOnPageMs: null, avgScrollDepth: null, leaves: 0 },
   ],
 };
 
@@ -512,11 +514,11 @@ export const FUNNELS = [
   {
     siteId: 's_demo',
     id: 'f_course',
-    name: 'Course page to paid',
+    name: 'Shop page to order',
     window: '7d',
     steps: [
-      { kind: 'page', match: '/courses/*', name: 'A course page' },
-      { kind: 'page', match: '/pricing', name: '/pricing' },
+      { kind: 'page', match: '/shop/*', name: 'A shop page' },
+      { kind: 'page', match: '/subscriptions', name: '/subscriptions' },
       { kind: 'event', match: 'checkout_start', name: 'Started checkout' },
       { kind: 'page', match: '/*/checkout/done', name: 'Checked out', goalId: 'g_checkout' },
     ],
@@ -561,18 +563,18 @@ export function funnelStats(funnelId) {
 // The paths of the week, by how many visits took each, folded by the store's
 // own functions so the flow is the shape the journeys route answers.
 const WALKS = [
-  [['/', '/courses/competitive-programming', '/pricing', '/checkout'], 610],
-  [['/', '/courses/competitive-programming', '/learn/c'], 540],
-  [['/', '/pricing', '/checkout', '/checkout/done'], 380],
-  [['/', '/playground'], 720],
-  [['/', '/contests', '/contests/round-1'], 260],
-  [['/courses/competitive-programming', '/pricing', '/checkout', '/checkout/done', '/learn/c'], 410],
-  [['/courses/competitive-programming', '/learn/c', '/playground'], 330],
-  [['/learn/c', '/playground', '/learn/c', '/playground'], 520],
-  [['/learn/c'], 440],
-  [['/pricing', '/checkout'], 290],
-  [['/blog/why-we-built-chokh', '/', '/courses/competitive-programming'], 180],
-  [['/playground', '/learn/c'], 210],
+  [['/', '/shop/beans', '/subscriptions', '/checkout'], 610],
+  [['/', '/shop/beans', '/brew-guides'], 540],
+  [['/', '/subscriptions', '/checkout', '/checkout/done'], 380],
+  [['/', '/menu'], 720],
+  [['/', '/events', '/events/cupping-night'], 260],
+  [['/shop/beans', '/subscriptions', '/checkout', '/checkout/done', '/brew-guides'], 410],
+  [['/shop/beans', '/brew-guides', '/menu'], 330],
+  [['/brew-guides', '/menu', '/brew-guides', '/menu'], 520],
+  [['/brew-guides'], 440],
+  [['/subscriptions', '/checkout'], 290],
+  [['/journal/autumn-blend', '/', '/shop/beans'], 180],
+  [['/menu', '/brew-guides'], 210],
   [['/about'], 120],
 ];
 
@@ -588,7 +590,7 @@ export const EVENTS = {
   visitors: AGGREGATE.metrics.visitors,
   rows: [
     { key: 'signup', visitors: 930, events: 1_104 },
-    { key: 'playground_run', visitors: 612, events: 4_870 },
+    { key: 'brew_guide_open', visitors: 612, events: 4_870 },
     { key: 'checkout_start', visitors: 348, events: 391 },
     { key: '404', visitors: 121, events: 143 },
     { key: 'quiz_start', visitors: 96, events: 188 },

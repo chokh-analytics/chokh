@@ -66,6 +66,22 @@ docker compose -f docker-compose.mongodb.yml up -d
 ```
 ````
 
+## The demo
+
+`/demo/` is the dashboard itself, built by `site:demo` from
+`packages/dashboard/vite.demo.config.ts`, over the frozen fixture the README's
+pictures are taken from (`packages/dashboard/e2e/fixture-data.mjs`). There is
+no server: every request it makes to `/api` is answered in the page from the
+same answers the fixture server gives (`e2e/fixture-answers.mjs`), and a
+change is refused. The business it shows is invented and named in one place,
+`packages/dashboard/e2e/demo-site.mjs`. `site:demo-check` opens it in
+Chromium, Firefox and WebKit, with storage and without.
+
+```bash
+pnpm --filter @chokh/docs site:demo        # build the demo for the docs' address
+pnpm --filter @chokh/docs site:demo-check  # open it in every browser installed
+```
+
 ## How it is made
 
 | Where | What |

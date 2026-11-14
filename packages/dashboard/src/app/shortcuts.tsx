@@ -6,7 +6,7 @@ import { resolvePreset, shiftRange } from '../lib/range.js';
 import { messages } from '../messages/en.js';
 import { ShortcutSheet, type ShortcutGroup } from '../ui/ShortcutSheet.js';
 import styles from './shortcuts.module.css';
-import { nextChoice, readChoice, writeChoice, applyChoice } from '../theme/theme.js';
+import { nextChoice, readChoice, writeChoice, applyChoice, themeStorage } from '../theme/theme.js';
 import { useApp } from './context.js';
 import { useShortcuts } from './useShortcuts.js';
 import { useViewQuery } from './useViewQuery.js';
@@ -160,7 +160,7 @@ export function Shortcuts(): JSX.Element | null {
     compare: () => set({ ...query, compare: query.compare === null ? DEFAULT_COMPARE : null }),
     clearFilters: () => set({ ...query, filters: [] }),
     theme: () => {
-      const store = typeof localStorage === 'undefined' ? undefined : localStorage;
+      const store = themeStorage();
       const prefersDark =
         typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
       const next = nextChoice(readChoice(store), prefersDark);

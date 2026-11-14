@@ -13,7 +13,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "site:examples": "tsc -p tsconfig.examples.json",
-    "site:generate": "node scripts/generate.mjs"
+    "site:generate": "node scripts/generate.mjs",
+    "site:demo": "node scripts/demo.mjs",
+    "site:demo-check": "node scripts/demo-check.mjs"
   },
   "devDependencies": {
     "@chokh/next": "workspace:*",

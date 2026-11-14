@@ -13,6 +13,7 @@ import { Link, useLocation, useRoute } from 'wouter';
 import { api } from '../lib/api.js';
 import {
   readChoice,
+  themeStorage,
   writeChoice,
   applyChoice,
   nextChoice,
@@ -79,7 +80,7 @@ function NavLink({ to, label }: { to: string; label: string }): JSX.Element {
 
 function ThemeToggle(): JSX.Element {
   const [choice, setChoice] = useState<ThemeChoice>(() =>
-    readChoice(typeof localStorage === 'undefined' ? undefined : localStorage),
+    readChoice(themeStorage()),
   );
   const prefersDark =
     typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
@@ -92,7 +93,7 @@ function ThemeToggle(): JSX.Element {
       onClick={() => {
         const next = nextChoice(choice, prefersDark);
         setChoice(next);
-        writeChoice(typeof localStorage === 'undefined' ? undefined : localStorage, next);
+        writeChoice(themeStorage(), next);
         applyChoice(document.documentElement, next);
       }}
     >

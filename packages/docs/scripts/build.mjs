@@ -4,13 +4,14 @@
 //
 //   pnpm --filter @chokh/docs site            # served under /chokh/
 //   DOCS_BASE=/ pnpm --filter @chokh/docs site
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from 'esbuild';
 import MiniSearch from 'minisearch';
 
+import { DEMO_SITE } from '../../dashboard/e2e/demo-site.mjs';
 import { site } from '../site.config.mjs';
 import { createRenderer, splitFrontMatter } from '../src/markdown.mjs';
 import { checkNav } from '../src/nav.mjs';
@@ -154,6 +155,40 @@ writeFileSync(join(DIST, 'search-index.json'), JSON.stringify(search));
 
 // The OpenAPI file the API reference page links to, as generated.
 copyFileSync(join(GENERATED, 'openapi.json'), join(DIST, 'openapi.json'));
+
+// The README's pictures of the dashboard, which the home page shows.
+cpSync(join(ROOT, '..', '..', 'docs', 'images'), join(DIST, 'images'), { recursive: true });
+
+// The demo: the dashboard's demo build (scripts/demo.mjs), under demo/. It
+// is one page that routes in the browser, and a static host answers a path
+// only with a file, so every page of it a link can point at gets a copy of
+// that page at its own address. A path not in this list still works when it
+// is reached from inside the demo; only opening it cold would not.
+const DEMO_BUILD = join(ROOT, '..', 'dashboard', 'dist-demo');
+if (!existsSync(join(DEMO_BUILD, 'demo.html'))) {
+  throw new Error('There is no demo build: run pnpm --filter @chokh/docs site:demo first');
+}
+const demoPage = readFileSync(join(DEMO_BUILD, 'demo.html'), 'utf8');
+if (!demoPage.includes(`${site.base}demo/assets/`)) {
+  throw new Error(`The demo was built for another address than ${site.base}demo/: run site:demo again`);
+}
+cpSync(DEMO_BUILD, join(DIST, 'demo'), { recursive: true });
+rmSync(join(DIST, 'demo', 'demo.html'));
+const DEMO_PAGES = [
+  '',
+  DEMO_SITE.id,
+  ...['realtime', 'pages', 'sources', 'geo', 'devices', 'events', 'goals', 'funnels', 'people', 'retention', 'health', 'alerts', 'settings', 'team', 'audit'].map(
+    (page) => `${DEMO_SITE.id}/${page}`,
+  ),
+  `${DEMO_SITE.id}/people/v/v_abcdef0001`,
+  'share/tok_demo',
+  'share/tok_demo/embed',
+];
+for (const page of DEMO_PAGES) {
+  const folder = join(DIST, 'demo', page);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'index.html'), demoPage);
+}
 
 writeFileSync(
   join(DIST, 'favicon.svg'),

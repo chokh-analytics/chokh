@@ -35,7 +35,10 @@ a collector, a stats API, a realtime stream and a dashboard.
 
 ## The dashboard
 
-![The Chokh overview, light](docs/images/dashboard-overview-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-overview-dark.png">
+  <img alt="The Chokh overview" src="docs/images/dashboard-overview-light.png">
+</picture>
 
 Six numbers, one chart, four cards, and nothing else on the first screen. Every
 number carries a comparison, because a number on its own is not something

@@ -299,7 +299,7 @@ const registered = await must(
   await fetch(`${base}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...OWNER, name: 'Abu Jafar' }),
+    body: JSON.stringify({ ...OWNER, name: 'Mira Okafor' }),
   }),
 );
 const cookie = registered.headers.get('set-cookie')?.split(';')[0] ?? '';
