@@ -156,7 +156,12 @@ success envelope. A failure on either is the ordinary envelope.
 | `POST /api/sites/:siteId/identify-secret/rotate` | `admin` | Returns the new secret once |
 | `GET`/`POST /api/sites/:siteId/keys` | `admin` | The token is shown once |
 | `DELETE /api/sites/:siteId/keys/:keyId` | `admin` | Takes effect immediately |
-| `PUT /api/teams/:teamId/members/:userId` | owner of the team | Role and identity flag |
+| `GET /api/teams/:teamId/members` | owner of the team, a person | Who is in it, what each holds, and who is signed in by another application |
+| `PUT /api/teams/:teamId/members/:userId` | owner of the team, a person | Role and identity flag; `revokeKeys` when it asks |
+| `DELETE /api/teams/:teamId/members/:userId` | owner of the team, a person | Take somebody out; `?revokeKeys=true` or `false` when it asks |
+| `PATCH /api/teams/:teamId` | owner of the team, a person | Rename it |
+| `GET /api/sites/:siteId/members` | `admin`, a person | The roles held on this one site |
+| `PUT`/`DELETE /api/sites/:siteId/members/:userId` | `admin`, a person | Give, change or take away a role on this one site |
 | `GET /api/sites/:siteId/stats/aggregate` | `read:stats` | Totals for a range |
 | `GET /api/sites/:siteId/stats/timeseries` | `read:stats` | `interval=minute\|hour\|day\|week\|month` |
 | `GET /api/sites/:siteId/stats/breakdown` | `read:stats` | `dim=page\|referrer\|country\|…` |
@@ -570,13 +575,17 @@ with `UNSUPPORTED_DIMENSION` rather than answered empty.
 sets `chokh_session`: `httpOnly`, `SameSite=Lax`, `Secure` in production. The
 password is hashed with argon2id.
 
-There is no session table. The cookie carries the user id and an expiry, signed
-with `SESSION_SECRET`, and who that user is now is read from the store on every
-request. Removing somebody from a team therefore takes effect on their next
-request rather than when their cookie runs out. What it costs is revocation:
-"sign this person out of every browser" needs a row to invalidate, and nothing
-here asks for that yet. Shorten `SESSION_TTL_HOURS` if that trade is wrong for
-you.
+There is no session table. The cookie carries the user id, an expiry and a
+count, signed with `SESSION_SECRET`, and who that user is now is read from the
+store on every request, so a changed role decides the very next request. The
+count is how many times that account's sessions have been ended: the account's
+row carries it, the cookie carries what it was when the cookie was made, and a
+cookie from before the count moved is refused. It moves when somebody is
+removed, given a lower role or loses the identity flag, on a team or on a
+site, so that person is signed out of every browser at once and signs in again
+as what they now are. A raise ends nothing. A cookie from before the count
+existed reads as zero, which is what every account's count was, so an upgrade
+signs nobody out.
 
 `SESSION_SECRET` is required in production. Without one the server generates
 another on every boot, which signs everybody out on a deploy and, with two
@@ -616,6 +625,57 @@ of one team and a viewer of another:
 their role; anybody else only when the `identity` flag is set on their
 membership. Reading the numbers and reading who the numbers are about are two
 different permissions.
+
+**A role on one site.** Beside a role in the team, a person can hold a role on
+a single site (`PUT /api/sites/:siteId/members/:userId`), and need not be in
+the team at all: somebody given one site sees that one. What they may do on a
+site is decided in this order, and the order is the rule:
+
+1. An owner of the team is an owner of every site in it. No row on a site can
+   lower that.
+2. Otherwise the row on the site, when there is one. It may give more than the
+   team role or less.
+3. Otherwise the team role.
+4. Otherwise nothing, and the site answers `403 SITE_FORBIDDEN`.
+
+**What a change of membership does.** Every change, by an owner or by the SSO
+exchange, goes through one function, and four things follow it:
+
+- *A team keeps an owner, and keeps one who has a password where it had one.*
+  The last of either cannot be lowered or removed, by themselves or anybody:
+  `409 LAST_OWNER`. The second half is what stops a team being left to
+  accounts that sign in through another application, which would be nobody at
+  all on the day that application is down. The check and the write are one
+  act in every store, so two owners lowering each other at the same moment
+  cannot both succeed.
+- *A lowering ends that person's sessions*, as above.
+- *The invitations they sent and could no longer send are revoked.*
+- *The keys they made are asked about.* A key belongs to a site, not to its
+  maker, so somebody who minted an `admin` key and then stops being an admin
+  still has `admin` through the key. Nothing decides that silently: a change
+  that would leave such keys is refused with `409 KEYS_DECISION_REQUIRED` and
+  the list (id, name, scopes, site; never a token), and goes through with
+  `revokeKeys: true` or `false`.
+
+Each change writes one row to the audit log, about the team or about the site.
+
+An account the SSO exchange signs in (`sso_…`) is managed by the application
+that signs it in, whole: its team role is not edited here, it is not removed
+here, and it is given no role on a single site, each answered
+`409 MANAGED_BY_SSO`. Whatever it was given here would outlive a permission
+that application later takes away.
+
+**A change has to come from this dashboard.** The session cookie is
+`SameSite=Lax`, which stops another site's form from carrying it but not a
+page on another origin of the same site (a sibling hostname). So a request
+that carries a session and is not a read is refused with
+`403 CROSS_SITE_REQUEST` unless the browser's own `Sec-Fetch-Site` header says
+`same-origin` or `none`, or is absent; and a `POST` made with a session has to
+be `application/json` (`415 JSON_REQUIRED`), the one type a form cannot send.
+A program driving the API with a session cookie sends its `POST`s as JSON,
+with `{}` when it has nothing to say. A key is held to neither: a key is
+presented on purpose. The SSO exchange is the one thing entered from another
+application by design, and it reads no session.
 
 A site with no `teamId` belongs to the team `default`, which is what the first
 registered account owns. A fresh install is therefore usable the moment somebody
@@ -662,6 +722,12 @@ The nudge that wakes a stream travels over Redis pub/sub when `REDIS_URL` is set
 so a dashboard on one container wakes on a batch accepted by another, and over an
 emitter in this process when it is not. Losing it costs at most ten seconds of
 latency, because the refresh timer is still there.
+
+A stream is one request that lasts as long as the tab does, so every ten
+seconds, before a frame, it asks again who is reading: somebody removed, or
+whose key was deleted, is sent one `event: error` frame (`STREAM_CLOSED`) and
+the stream ends; somebody who lost `read:identity` goes on receiving frames
+with the address and the name taken out.
 
 Behind Nginx, turn buffering off for this path or nothing arrives until Nginx
 decides it has enough:
@@ -736,6 +802,15 @@ exist: it puts the token in a URL.
 
 An install with no `SSO_SECRET` refuses every exchange. An SSO endpoint nobody
 configured is an open door.
+
+The exchange is also a grant: the token's `role` and `identity` are what the
+person is from that arrival on, and it is held to the rule a change made by
+hand is held to. A token that would lower a team's last owner is refused with
+`409 LAST_OWNER`: nobody is signed in, nothing is changed, and the team's log
+gets a row. When an arrival lowers somebody, the sessions they had are ended
+before the new one is made. It cannot ask about the keys they made, so it
+keeps them and the row names them. Whoever holds `SSO_SECRET` can make an
+owner of any team, by design: treat it as the install's root credential.
 
 ### There is no CORS
 
