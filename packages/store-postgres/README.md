@@ -96,6 +96,20 @@ found it, and running it twice creates nothing the second time. `--verify-only`
 changes nothing and exits 1 unless it reports `missing: 0`, so a deployment can
 gate on it. An index nobody declared is reported and never dropped.
 
+It adds what a release declared and an install lacks: a table, a column, an
+index, a `CHECK` on a table. It changes one kind of thing that already exists,
+and only in one direction: a column an earlier release declared `NOT NULL` and
+a later one does not has the rule taken off (`audit_log.site_id`, so a row of
+the log can be about a team). The report says `columns relaxed:` when it did,
+and `--verify-only` counts such a column as missing until it has. Nothing is
+ever dropped, retyped or made stricter, so no row an install holds can fail a
+migration, with one exception that is the point of it: a `CHECK` is tested
+against the rows that are there, and a row that breaks it fails the apply, which
+rolls back whole.
+
+An image from before a migration keeps working against the database after it:
+it writes the columns it knows and never reads the ones it does not.
+
 The database has to be `UTF8`. Every official image and managed service creates
 one; a database made by hand on Windows takes the machine's code page unless
 told otherwise, and would refuse the first page title outside it, so the

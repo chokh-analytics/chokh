@@ -42,6 +42,22 @@ through the server's container:
 docker compose -f docker-compose.mongodb.yml exec server node packages/store-mongo/dist/migrate.js --apply
 ```
 
+### What waits for it, and what does not
+
+MongoDB answers a read with no index, slowly, so everything Chokh did before it
+had teams of more than one person still works on a database nobody migrated:
+collecting, every report, accounts, keys, the audit log. That has always been
+true and stays true.
+
+Three collections are different: `site_members`, `invitations` and
+`identities`. What keeps their rows single is a unique index (one role per
+person and site, one invitation waiting per address, one account per outside
+identity), and a rule like that cannot rest on somebody remembering to run a
+command. So until `--apply` has made those indexes, a write to any of the three
+is refused with `MIGRATION_REQUIRED` and the command to run. The adapter looks
+once and remembers a yes; after a refusal it looks again, so the first write
+after the migration goes through with no restart.
+
 `packages/server/README.md` has the rest: why 5.0 is the floor, how retention
 works on a TTL index, and what each number in a report means.
 
