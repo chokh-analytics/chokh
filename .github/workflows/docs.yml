@@ -44,13 +44,20 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # The docs package and nothing else: the site reads the dashboard's
-      # tokens as a file, so the rest of the workspace is not installed.
-      - run: pnpm install --frozen-lockfile --filter @chokh/docs
+      # The whole workspace: the examples compile against the packages'
+      # sources, which import their own dependencies.
+      - run: pnpm install --frozen-lockfile
 
       - run: pnpm --filter @chokh/docs typecheck
 
       - run: pnpm --filter @chokh/docs test
+
+      # Every code sample on the site is a file, compiled here against the
+      # packages it uses: a renamed option fails this, not a reader.
+      - run: pnpm --filter @chokh/docs site:examples
+
+      # The pages generated from the code are what the code says today.
+      - run: pnpm --filter @chokh/docs site:generate --check
 
       - run: pnpm --filter @chokh/docs site
 

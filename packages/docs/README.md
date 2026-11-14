@@ -13,6 +13,8 @@ pnpm --filter @chokh/docs site:serve    # serve dist/ on http://127.0.0.1:4120/c
 pnpm --filter @chokh/docs site:links    # every link inside the site arrives
 pnpm --filter @chokh/docs site:a11y     # Lighthouse accessibility, every page, phone and desktop, both themes
 pnpm --filter @chokh/docs test          # the generator's own cases
+pnpm --filter @chokh/docs site:examples # compile every code sample against the packages
+pnpm --filter @chokh/docs site:generate # rewrite the pages that come from the code (--check to compare)
 ```
 
 `DOCS_BASE=/` builds it for a domain of its own instead of
@@ -35,6 +37,21 @@ description: What a search engine shows.
 The title is the page's only `h1`, so the Markdown starts at `##`. A link to
 another page is written from the site's root, `[Licence](/licence/)`, and the
 build puts the base path in front of it.
+
+A code sample that is code (TypeScript, JavaScript) is a file under
+`examples/`, named on the block, so CI compiles it against the packages
+(`site:examples`) and a renamed option fails there instead of in front of a
+reader:
+
+````markdown
+```tsx React file=react/root.tsx
+```
+````
+
+Pages that come from the code are written by `scripts/generate.mjs` into
+`generated/` and committed; `site:generate --check` in CI fails when one is
+not what the code says. Today that is the environment page, from
+`packages/server/src/config/env.docs.json` and `packages/ee/src/env.docs.json`.
 
 Code blocks in a row, each with a label after its language, are one set of
 tabs, and a reader's choice is remembered across pages:

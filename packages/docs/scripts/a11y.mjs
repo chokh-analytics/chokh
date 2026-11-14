@@ -16,9 +16,13 @@ const port = Number(process.env.PORT ?? 4121);
 const base = `http://127.0.0.1:${port}`;
 const DEBUG_PORT = 9223;
 
+// Every page in the navigation, so a new page is audited without anybody
+// remembering to add it here.
 const PAGES = [
-  { name: 'home', path: site.base },
-  { name: 'licence', path: `${site.base}licence/` },
+  ...site.nav.flatMap((group) => group.pages).map((slug) => ({
+    name: slug === 'index' ? 'home' : slug,
+    path: slug === 'index' ? site.base : `${site.base}${slug}/`,
+  })),
   // The page an unknown address gets. By its own file, since Lighthouse
   // will not audit an answer of 404.
   { name: 'not found', path: `${site.base}404.html` },

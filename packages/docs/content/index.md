@@ -9,11 +9,6 @@ and keeps what it counts there. By default it sets no cookie and stores no full
 address; a site that signs people in can choose a persistent visitor id and
 full addresses instead, as settings of that site.
 
-> These docs are new. The guides for each framework, self-hosting, the API
-> reference and a comparison with other tools are being written now. Until
-> they are here, the [README on GitHub](https://github.com/chokh-analytics/chokh#readme)
-> has the long form.
-
 ## Run it
 
 Docker Compose starts the dashboard and the collector on

@@ -1088,8 +1088,13 @@ empty and events are still collected.
 
 ## Environment
 
+Every variable is also described in `src/config/env.docs.json`, which a test
+holds to the schema and from which the docs site's Environment page is
+generated.
+
 | Variable | Default | What it does |
 | --- | --- | --- |
+| `NODE_ENV` | `development` | `production` requires a database and `SESSION_SECRET`, and makes cookies secure |
 | `HOST`, `PORT` | `127.0.0.1`, `4100` | Where the server listens |
 | `LOG_LEVEL` | `info` | pino level. What a line holds: see [What a log line holds](#what-a-log-line-holds) |
 | `DASHBOARD_DIR` | the sibling package's `dist` | The built dashboard to serve |
@@ -1111,6 +1116,7 @@ empty and events are still collected.
 | `SSO_MAX_AGE_SECONDS` | `300` | The longest life an SSO token may claim |
 | `AUTH_RATE_LIMIT` | `10` | Sign-in and registration attempts a minute, per address; the SSO exchange, and looking at and using an invitation, each on a count of their own |
 | `INVITE_TTL_HOURS` | `168` | How long an invitation can be used for, 1 to 720 |
+| `SHARE_RATE_LIMIT` | `120` | Reads of a public share a minute, per address |
 | `COOKIE_SECURE` | yes in production | `false` lets a developer sign in over plain http |
 
 `CHOKH_LICENSE_KEY` and the five variables that say where alerts go

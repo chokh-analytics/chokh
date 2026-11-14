@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "checkJs": true,
+    "noUnusedLocals": false,
+    "types": ["node", "react"]
+  },
+  "include": ["examples/**/*.ts", "examples/**/*.tsx", "examples/**/*.mjs"]
+}

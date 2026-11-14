@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { createRenderer, slugify, splitFrontMatter } from './markdown.mjs';
@@ -56,6 +58,17 @@ describe('a page of the docs', () => {
       { id: null, heading: null, text: 'Intro with code and a link over two lines.' },
       { id: 'keys', heading: 'Keys', text: 'A key is signed.' },
     ]);
+  });
+
+  it('takes a code block from a file under examples/, and refuses one outside it', () => {
+    const examples = fileURLToPath(new URL('../examples/', import.meta.url));
+    const renderer = createRenderer({ base: '/chokh/', examples });
+    const { html } = renderer.render('```tsx React file=react/signup-button.tsx\n```\n');
+    expect(html).toContain('data-label="React"');
+    expect(html).toContain('useTrack');
+    expect(() => renderer.render('```ts file=../package.json\n```\n')).toThrow(/not a file under examples/);
+    expect(() => renderer.render('```ts file=react/missing.tsx\n```\n')).toThrow(/ENOENT/);
+    expect(() => createRenderer({ base: '/' }).render('```ts file=react/root.tsx\n```\n')).toThrow(/not a file under examples/);
   });
 
   it('wraps a table so it scrolls in its own box', () => {

@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
 import MarkdownIt from 'markdown-it';
 import Prism from 'prismjs';
@@ -64,13 +66,17 @@ function escapeHtml(text) {
 }
 
 // `bash PostgreSQL` is the language bash and the tab label PostgreSQL.
+// `tsx Next.js file=next/app/layout.tsx` also names a file under examples/
+// whose text is the block, so a sample is a file CI compiles and not a copy.
 function parseInfo(info) {
-  const trimmed = info.trim();
+  const fileMatch = /(?:^|\s)file=(\S+)/.exec(info);
+  const trimmed = info.replace(/(?:^|\s)file=\S+/, '').trim();
+  const file = fileMatch === null ? null : fileMatch[1];
   const space = trimmed.search(/\s/);
   if (space === -1) {
-    return { lang: trimmed, label: null };
+    return { lang: trimmed, label: null, file };
   }
-  return { lang: trimmed.slice(0, space), label: trimmed.slice(space).trim() };
+  return { lang: trimmed.slice(0, space), label: trimmed.slice(space).trim(), file };
 }
 
 function highlight(code, lang) {
@@ -81,8 +87,23 @@ function highlight(code, lang) {
 
 // A fresh renderer for one build, so a base path is never carried from one
 // build into another.
-export function createRenderer({ base }) {
+export function createRenderer({ base, examples = null }) {
   const md = new MarkdownIt({ html: false, linkify: false, typographer: false });
+
+  // A block that names a file takes the file's text. A name that leaves
+  // examples/ or a file that is not there stops the build.
+  md.core.ruler.push('code_files', (state) => {
+    for (const token of state.tokens) {
+      const { file } = token.type === 'fence' ? parseInfo(token.info) : { file: null };
+      if (file === null) {
+        continue;
+      }
+      if (examples === null || file.split('/').includes('..')) {
+        throw new Error(`A code block names ${file}, which is not a file under examples/`);
+      }
+      token.content = readFileSync(join(examples, file), 'utf8').replace(/\r\n/g, '\n');
+    }
+  });
 
   // Consecutive labelled code blocks become one set of tabs: an opening and a
   // closing block around the run, and each block marked as a panel.

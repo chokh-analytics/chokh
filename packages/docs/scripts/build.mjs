@@ -20,22 +20,34 @@ import { SEARCH_OPTIONS } from '../src/search-options.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 const CONTENT = join(ROOT, 'content');
+// Pages written by scripts/generate.mjs from the code (the environment, the
+// API reference), committed, and checked in CI against what the code says.
+const GENERATED = join(ROOT, 'generated');
+const EXAMPLES = join(ROOT, 'examples');
 const DIST = join(ROOT, 'dist');
 const started = Date.now();
 
-// Every page, read once, checked against the navigation both ways.
-const files = readdirSync(CONTENT).filter((name) => name.endsWith('.md'));
-const listed = checkNav(
-  site.nav,
-  files.map((name) => name.slice(0, -3)),
-);
+// Every page, read once, checked against the navigation both ways. A page is
+// written by hand in content/ or generated in generated/, never both.
+const where = new Map();
+for (const folder of [CONTENT, GENERATED]) {
+  for (const name of readdirSync(folder).filter((file) => file.endsWith('.md'))) {
+    const slug = name.slice(0, -3);
+    if (where.has(slug)) {
+      throw new Error(`${slug}.md is in content/ and in generated/`);
+    }
+    where.set(slug, folder);
+  }
+}
+const listed = checkNav(site.nav, [...where.keys()]);
 
-const renderer = createRenderer({ base: site.base });
+const renderer = createRenderer({ base: site.base, examples: EXAMPLES });
 const pages = listed.map((slug) => {
-  const source = readFileSync(join(CONTENT, `${slug}.md`), 'utf8').replace(/\r\n/g, '\n');
+  const folder = where.get(slug);
+  const source = readFileSync(join(folder, `${slug}.md`), 'utf8').replace(/\r\n/g, '\n');
   const { data, body } = splitFrontMatter(source);
   if (data.title === undefined) {
-    throw new Error(`content/${slug}.md has no title in its front matter`);
+    throw new Error(`${slug}.md has no title in its front matter`);
   }
   const rendered = renderer.render(body);
   return {
@@ -45,7 +57,8 @@ const pages = listed.map((slug) => {
     title: data.title,
     description: data.description,
     lead: data.lead,
-    edit: `${site.editBase}${slug}.md`,
+    // A generated page is changed where it comes from, which its own text names.
+    edit: folder === CONTENT ? `${site.editBase}${slug}.md` : undefined,
     ...rendered,
   };
 });

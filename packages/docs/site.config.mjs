@@ -22,7 +22,9 @@ export const site = {
   // The navigation, in order. A slug is the page's file name under content/
   // without `.md`, and `index` is the home page.
   nav: [
-    { section: 'Start here', pages: ['index'] },
+    { section: 'Start here', pages: ['index', 'quickstart'] },
+    { section: 'Guides', pages: ['nextjs', 'server-events', 'first-party'] },
+    { section: 'Running it', pages: ['self-hosting', 'environment'] },
     { section: 'The project', pages: ['licence'] },
   ],
 };
