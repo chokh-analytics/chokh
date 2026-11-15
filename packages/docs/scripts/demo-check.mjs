@@ -2,11 +2,14 @@
 // once as it is and once with the page's storage refused, the way a private
 // window refuses it. For each: the banner says what the demo is, the
 // dashboard draws the overview and Realtime from a link opened cold, a
-// change is refused in the envelope, nothing on the page fails, and no
+// report's CSV download is made in the page, a change is refused in the
+// envelope, nothing on the page fails, and no
 // request for /api leaves the browser, because nothing answers there.
 //
 //   pnpm --filter @chokh/docs site:demo-check            # every browser installed
 //   DEMO_BROWSERS=chromium pnpm --filter @chokh/docs site:demo-check
+import { readFileSync } from 'node:fs';
+
 import { chromium, firefox, webkit } from '@playwright/test';
 
 import { DEMO_SITE } from '../../dashboard/e2e/demo-site.mjs';
@@ -59,6 +62,22 @@ try {
             problems.push(`opened at ${page.url()}, not the site's overview`);
           }
           await page.getByText(DEMO_SITE.name).first().waitFor({ timeout: 10_000 });
+          // A report's Download CSV is a link into /api, which nothing here
+          // answers: the click has to give a file made in the page, send
+          // nothing out of it, and leave the reader on the report.
+          const before = page.url();
+          const [download] = await Promise.all([
+            page.waitForEvent('download', { timeout: 15_000 }),
+            page.getByRole('link', { name: 'Download CSV' }).first().click(),
+          ]);
+          const saved = await download.path();
+          const text = saved === null ? '' : readFileSync(saved, 'utf8');
+          if (!/^[a-z_]+,/.test(text)) {
+            problems.push(`the CSV download began ${JSON.stringify(text.slice(0, 40))}`);
+          }
+          if (page.url() !== before) {
+            problems.push(`a download left the report for ${page.url()}`);
+          }
           // A page opened cold, as a shared link opens it.
           await page.goto(`${base}${DEMO_SITE.id}/realtime`);
           await page.getByText('Live', { exact: false }).first().waitFor({ timeout: 20_000 });

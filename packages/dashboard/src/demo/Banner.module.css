@@ -21,3 +21,23 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+.short {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .banner {
+    flex-wrap: nowrap;
+    padding: var(--s2) var(--gutter);
+    font-size: 13px;
+  }
+
+  .short {
+    display: block;
+  }
+
+  .long {
+    display: none;
+  }
+}

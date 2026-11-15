@@ -1,4 +1,5 @@
 import { installDemoApi } from './demo-api.js';
+import { installDemoDownloads } from './downloads.js';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -15,6 +16,8 @@ import '../theme/base.css';
 // it is, with its API answered in the page and its addresses under the base
 // path the docs site serves it from.
 installDemoApi();
+// A report's Download link goes to /api, which nothing answers here.
+installDemoDownloads();
 
 const container = document.getElementById('root');
 if (container === null) {
