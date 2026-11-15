@@ -2,9 +2,11 @@ import { defaultSiteSettings, type StoredEvent } from '@chokh/store';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { openPool } from './db.js';
 import { apply } from './migrate.js';
-import { dropEmptyPartitionsBefore, listPartitions } from './partitions.js';
+import { createPartitionManager, dropEmptyPartitionsBefore, listPartitions } from './partitions.js';
 import { createPostgresStore, type PostgresStore } from './postgres.store.js';
+import { createPurge } from './purge.js';
 import { createTestDatabase, type TestDatabase } from './testing/database.js';
 
 // What a purge deletes is the conformance suite's to say. These are what it
@@ -117,8 +119,9 @@ describe('the tidying after a purge', () => {
   beforeAll(async () => {
     db = await createTestDatabase('tidying');
     await apply(db.pool, { now: () => NOW });
-    // A statement limit shorter than the half second a drop waits for events.
-    store = await createPostgresStore({ url: db.url, now: () => NOW, statementTimeoutMs: 150 });
+    // At the adapter's own statement limit. The one purge these cases run
+    // under a short limit is opened for that case alone, below.
+    store = await createPostgresStore({ url: db.url, now: () => NOW });
     for (const id of ['s_short', 's_long']) {
       await store.createSite({
         id,
@@ -161,6 +164,14 @@ describe('the tidying after a purge', () => {
   });
 
   it('is not an error when the statement limit ends the wait for events before the lock timeout does', async () => {
+    // A statement limit shorter than the half second a drop waits for events,
+    // on a purge of its own, the adapter's own pool and nothing else. Not a
+    // store opened at that limit: opening one reads the catalog a hundred
+    // times, and making a month writes and syncs files, and on a runner whose
+    // disk other test files are writing to either took longer than 150 ms
+    // (AN-PGT01). This case is about the wait for events, not about them.
+    const brief = openPool({ url: db.url, statementTimeoutMs: 150 });
+    const purge = createPurge({ pool: brief, partitions: createPartitionManager(brief, () => NOW) });
     const reader = await db.pool.connect();
     try {
       await reader.query('BEGIN');
@@ -169,13 +180,14 @@ describe('the tidying after a purge', () => {
       // events, behind a report that is reading. At 150 ms the statement limit
       // cancels the wait, long before the lock timeout would have: the purge
       // answers what it deleted all the same, and nothing is dropped.
-      const purged = await store.purge('s_long', AUGUST_FIRST);
+      const purged = await purge.purge('s_long', AUGUST_FIRST);
       expect(purged).toEqual({ events: 2, sessions: 2, visitors: 1 });
       expect(await months()).toEqual(['events_p202606', 'events_p202607', 'events_p202609', 'events_p202610']);
       await reader.query('COMMIT');
     } finally {
       await reader.query('ROLLBACK').catch(() => undefined);
       reader.release();
+      await brief.end();
     }
     // The next hourly pass has the table to itself for the instant it needs.
     expect(await store.purge('s_long', AUGUST_FIRST)).toEqual({ events: 0, sessions: 0, visitors: 0 });

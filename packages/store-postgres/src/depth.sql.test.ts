@@ -490,15 +490,22 @@ describe('the plans of the deeper reads, at a busy quarter', () => {
   });
 
   it('lets the long jobs run past the limit that cancels a report', async () => {
-    // A store whose statements may run 150 ms, and a database in which the
-    // statement each long job is made of takes 400 ms whatever the machine: a
-    // trigger sleeps once per statement. Not timed against real work, because
-    // how long real work takes is the machine's business (a purge of 180,000
-    // rows took 168 ms on a CI runner).
-    const LIMIT = 150;
+    // A store whose statements may run a second, and a database in which the
+    // statement each long job is made of takes a second and a half whatever
+    // the machine: a trigger sleeps once per statement. Not timed against real
+    // work, because how long real work takes is the machine's business (a
+    // purge of 180,000 rows took 168 ms on a CI runner).
+    //
+    // A second and not less, because everything else the store sends runs
+    // under the same limit: opening it reads the catalog a hundred times, and
+    // each job sends ordinary statements around its long one. On a runner
+    // whose disk other test files are writing to, ordinary statements were
+    // measured at up to half a second, and at 150 ms this case once failed in
+    // the opening rather than in anything it is about (AN-PGT01).
+    const LIMIT = 1_000;
     await db.pool.query(
       `CREATE FUNCTION slow_statement() RETURNS trigger LANGUAGE plpgsql
-         AS $$ BEGIN PERFORM pg_sleep(0.4); RETURN NULL; END $$`,
+         AS $$ BEGIN PERFORM pg_sleep(1.5); RETURN NULL; END $$`,
     );
     const slow = (name: string, action: string, table: string): Promise<unknown> =>
       db.pool.query(

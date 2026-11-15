@@ -151,7 +151,11 @@ describe('the adapter on its own pool', () => {
     store = await createPostgresStore({
       url: db.url,
       poolSize: 3,
-      statementTimeoutMs: 400,
+      // Clear of how long an ordinary statement takes on a busy runner (up to
+      // half a second, measured), since opening the store and every case here
+      // run under it, and far short of the five seconds the one statement
+      // meant to be cancelled would take (AN-PGT01).
+      statementTimeoutMs: 1_000,
       onIdleError: (error) => idle.push(error),
       now: () => NOW,
     });
