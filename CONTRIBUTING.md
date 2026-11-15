@@ -34,7 +34,7 @@ one image is a complete install.
 | Events, goals, funnels, filters, segments, annotations | Alerts by email, Telegram and webhook |
 | CSV and JSON exports, the public share page and the embed | Scheduled email and PDF digests |
 | The stats API, the SSE stream, the SDKs, one team with owner, editor and viewer | Multi-team and OIDC single sign-on |
-| Retention up to 400 days, the audit log | Retention beyond 400 days, white-label, priority support |
+| Retention of 1 to 3650 days per site, the audit log | White-label, priority support |
 | Vitals, errors, retention cohorts, journeys | Session replay, heatmaps, surveys, experiments, flags |
 
 Two rules follow, and review enforces both mechanically:

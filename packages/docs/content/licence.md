@@ -20,7 +20,7 @@ version 1.0. Both are copyright BWJ Tech Ltd.
 | Events, goals, funnels, filters, segments, annotations | Alerts by email, Telegram and webhook |
 | CSV and JSON exports, the public share page and the embed | Scheduled email and PDF digests |
 | The stats API, the live stream, the SDKs, one team with owner, editor and viewer, roles on a single site, invitations | More than one team, and single sign-on through OpenID Connect |
-| Retention up to 400 days, the audit log | Retention beyond 400 days, white-label, priority support |
+| Retention of 1 to 3650 days per site, the audit log | White-label, priority support |
 | Vitals, errors, retention cohorts, journeys | Session replay, heatmaps, surveys, experiments, flags |
 
 What `packages/ee` holds today is alerts, digests, more than one team and
