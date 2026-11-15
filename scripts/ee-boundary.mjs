@@ -65,7 +65,9 @@ const NAMES_KEY = new Set(['packages/dashboard/src/messages/en.ts']);
 const READS_KEY =
   /process\.env\s*(?:\.\s*CHOKH_LICENSE_KEY|\[\s*['"`]CHOKH_LICENSE_KEY['"`]\s*\])|(?:^|[^\w'"`])CHOKH_LICENSE_KEY\s*:/m;
 
-const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', 'test-results', 'lighthouse', 'screenshots']);
+// Build output too: dist-demo is the dashboard's demo, which carries the
+// dashboard's messages file as the dashboard's own dist does.
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-demo', '.git', 'test-results', 'lighthouse', 'screenshots']);
 const SOURCE = /\.(ts|tsx|mjs|js|json)$/;
 
 function walk(dir, found = []) {

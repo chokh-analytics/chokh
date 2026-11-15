@@ -1,0 +1,45 @@
+name: Something is wrong
+description: Chokh did something it should not, or did not do something it should.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem? Do not open an issue: report it privately, as [SECURITY.md](https://github.com/chokh-analytics/chokh/blob/main/SECURITY.md) says.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: The fewest steps, from a fresh install if you can.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Which Chokh
+      description: The image digest or the commit you run, and the npm package versions if any.
+    validations:
+      required: true
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options:
+        - PostgreSQL
+        - MongoDB
+        - Not relevant
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: What the log says
+      description: The lines around it. A log line holds no address and no token, but look before you paste.
+      render: text

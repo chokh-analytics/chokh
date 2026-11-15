@@ -1,0 +1,21 @@
+name: An idea
+description: Something Chokh could do that it does not.
+labels: ['idea']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The question you want answered, or the job you want done, before any solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: How you imagine it working, if you have a picture of it.
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround, or the other tool.

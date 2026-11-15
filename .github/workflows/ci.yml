@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Nothing by default. Each job says what it needs, which for all but one is
+# to read the code.
+permissions: {}
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -12,6 +16,8 @@ jobs:
   verify:
     name: build, typecheck, lint, test, tracker size
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # Presence is a Redis sorted set when a deployment has Redis and a map when
     # it does not, and both back the same product, so both pass the same
@@ -49,11 +55,9 @@ jobs:
       CHOKH_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -64,7 +68,7 @@ jobs:
       # mongodb-memory-server actually writes it under pnpm; the old
       # node_modules/.cache path was never written, so every run downloaded cold.
       - name: Cache the mongod the conformance suite runs on
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/mongodb-binaries
           key: mongod-${{ runner.os }}-7.0.24
@@ -296,6 +300,8 @@ jobs:
   postgres-floor:
     name: the Postgres adapter on PostgreSQL 15, the oldest it supports
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # The README promises PostgreSQL 15 or newer. The job above proves the
     # version the compose file runs; this one proves the promise, with the same
@@ -317,11 +323,9 @@ jobs:
       CHOKH_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -353,6 +357,8 @@ jobs:
   core-only:
     name: the core builds and boots with packages/ee deleted
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     # "The core is MIT and free to self-host in full" is a promise, and this is
     # the only thing that makes it checkable. Delete the paid directory, drop
@@ -364,11 +370,9 @@ jobs:
     # it fails the answer is never "add a flag": it means the core grew a
     # dependency on the half that is not free.
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -401,6 +405,35 @@ jobs:
           [ "${code}" = "401" ]
           kill "${server}"
 
+  secrets:
+    name: no secret in the repository or its history
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Every commit of every branch, so a secret added and then deleted is
+      # still found.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Gitleaks' own released binary (MIT), checked against the SHA-256
+      # GitHub lists for the release asset. Not its GitHub Action: that one
+      # needs a licence key for an organisation's repository and is under a
+      # licence of its own. What it reports that is not a secret is in
+      # .gitleaksignore, by exact fingerprint.
+      - name: Gitleaks 8.30.1
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      - name: Scan every commit
+        run: ./gitleaks git --log-opts="--all" --redact --no-banner -v .
+
   cla:
     name: every contributor has signed the CLA
     runs-on: ubuntu-latest
@@ -416,9 +449,8 @@ jobs:
       pull-requests: read
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -429,12 +461,12 @@ jobs:
   packages:
     name: the npm packages packed, checked and loaded from a consumer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -452,12 +484,12 @@ jobs:
   tracker-e2e:
     name: tracker smoke in a real browser
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -473,12 +505,12 @@ jobs:
   react-e2e:
     name: '@chokh/react with the real tracker in a real browser'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -495,6 +527,8 @@ jobs:
   next-e2e:
     name: '@chokh/next in an App Router app on Next ${{ matrix.next }}, against the real server'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -502,11 +536,9 @@ jobs:
         # claims both, so both are proved.
         next: ['15', '16']
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -530,12 +562,12 @@ jobs:
   dashboard-e2e:
     name: dashboard smoke and accessibility in a real browser
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
@@ -574,7 +606,7 @@ jobs:
 
       - name: The audit, whatever it said
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dashboard-accessibility
           path: packages/dashboard/lighthouse/accessibility.json
@@ -587,6 +619,8 @@ jobs:
   compose:
     name: docker compose up on ${{ matrix.store }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -602,8 +636,7 @@ jobs:
       # stack it is talking to.
       COMPOSE_FILE: ${{ matrix.file }}
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # No variable set and no file edited first: what the README's one line
       # does on a machine that has never seen the product.
       - name: Start the stack from nothing

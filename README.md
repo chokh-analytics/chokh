@@ -1,11 +1,35 @@
 # Chokh
 
-**Status: pre-release.** Nothing here is stable yet. The engine is being built
-ticket by ticket; see [AGENTS.md](AGENTS.md) for how the work is run.
+[![CI](https://github.com/chokh-analytics/chokh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/chokh-analytics/chokh/actions/workflows/ci.yml)
 
-Chokh (চোখ, "eye") is open source, first-party web analytics you host
-yourself. One process carries the whole product: a tracker script under 3 KB,
-a collector, a stats API, a realtime stream and a dashboard.
+Open source, first-party web analytics you host yourself. One process carries
+the whole product: a tracker script under 3 KB, a collector, a stats API, a
+realtime stream and a dashboard. No cookie and no full address by default, and
+the data stays on your server.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-overview-dark.png">
+  <img alt="The Chokh overview: visitors, pageviews, bounce rate and visit duration, a chart of the week, and the top pages, sources, countries and devices" src="docs/images/dashboard-overview-light.png">
+</picture>
+
+```bash
+git clone https://github.com/chokh-analytics/chokh.git
+cd chokh
+docker compose up
+```
+
+Then open `http://localhost:4100`, register the first account and add a site.
+
+**[Docs](https://chokh-analytics.github.io/chokh/)** ·
+**[Demo](https://chokh-analytics.github.io/chokh/demo/)**, over invented data ·
+**[Compared with Plausible, Umami and GA4](https://chokh-analytics.github.io/chokh/compare/)** ·
+**[API](https://chokh-analytics.github.io/chokh/api/)**
+
+MIT core, `packages/ee` commercial: everything is free to host except a few
+features for larger teams, which need a licence key. [What is in each half](#what-is-free-and-what-is-not).
+
+Chokh (চোখ) means "eye". It is before its 1.0: it runs in production, and
+its API may still change.
 
 ## What it gives you
 
@@ -35,13 +59,9 @@ a collector, a stats API, a realtime stream and a dashboard.
 
 ## The dashboard
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-overview-dark.png">
-  <img alt="The Chokh overview" src="docs/images/dashboard-overview-light.png">
-</picture>
-
-Six numbers, one chart, four cards, and nothing else on the first screen. Every
-number carries a comparison, because a number on its own is not something
+The overview, pictured above, is six numbers, one chart, four cards, and
+nothing else on the first screen. Every number carries a comparison, because a
+number on its own is not something
 anybody can act on. Clicking any row filters the whole page rather than opening
 another one: click a country and the pages, the sources and the devices become
 that country's.
@@ -541,6 +561,15 @@ with as many sites and as many people on it as you like.
 Patches are welcome on either side of that line. Read
 [CONTRIBUTING.md](CONTRIBUTING.md) first: there is a contributor licence
 agreement, and the line has a rule.
+
+## How this is built
+
+Chokh is built one ticket at a time, each reviewed before the next starts.
+[AGENTS.md](AGENTS.md) is the rulebook the work follows: what review refuses,
+the layering, the API's envelope. [CONTRIBUTING.md](CONTRIBUTING.md) is for
+anybody sending a change, [SECURITY.md](SECURITY.md) for reporting a
+vulnerability, and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for how people here
+treat each other.
 
 ## License
 

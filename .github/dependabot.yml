@@ -1,0 +1,16 @@
+# Keeps the workflows' actions current. They are pinned by commit, with the
+# version beside each; Dependabot reads that and proposes the next commit.
+# Actions only, once a month, in one pull request. npm packages are not
+# updated from here: alerts and security updates for them are a repository
+# setting (Settings, Code security).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
