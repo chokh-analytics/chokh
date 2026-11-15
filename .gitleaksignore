@@ -1,10 +1,14 @@
 # What gitleaks reports in this repository's history that is not a secret,
 # each by its exact fingerprint (commit:file:rule:line), so anything new it
 # finds still fails CI. Found by the first full scan, 2026-11-15, 184 commits.
+# No value is repeated here: a comment that quoted one was itself reported.
 
-# A share token made up for the store's conformance suite: tok_one_1234567890.
+# A share token made up for the store's conformance suite.
 940b06d4f8d825918ed195d041c25a4a7988e96d:packages/store/src/conformance/accounts.ts:generic-api-key:241
-# Its second made-up token: tok_two_1234567890.
+# Its second made-up share token.
 940b06d4f8d825918ed195d041c25a4a7988e96d:packages/store/src/conformance/accounts.ts:generic-api-key:248
 # A malformed token the licence verifier's test refuses ("not a Chokh key").
 23c39b8f26784b944b8093b82b78fda140444047:packages/ee/src/license/verify.test.ts:generic-api-key:167
+# The first version of this file, whose comment quoted the second made-up
+# share token. History keeps it.
+9f3c989019933694a9224f3208163ef83bb50525:.gitleaksignore:generic-api-key:7
