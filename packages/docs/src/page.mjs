@@ -59,7 +59,7 @@ function NavList({ nav, current, base }) {
                 href: `${base}${page.path}`,
                 ...(page.slug === current ? { 'aria-current': 'page' } : {}),
               },
-              page.title,
+              page.menu ?? page.title,
             ),
           ),
         ),

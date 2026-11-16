@@ -35,7 +35,9 @@ description: What a search engine shows.
 ---
 ```
 
-The title is the page's only `h1`, so the Markdown starts at `##`. A link to
+The title is the page's only `h1`, so the Markdown starts at `##`. A title too long for
+the menu's column gets a shorter name there with one more line, `menu: Comparison`;
+the page, the browser tab and a search still show the title. A link to
 another page is written from the site's root, `[Licence](/licence/)`, and the
 build puts the base path in front of it.
 

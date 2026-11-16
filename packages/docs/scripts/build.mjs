@@ -56,6 +56,8 @@ const pages = listed.map((slug) => {
     // The home page is the site's root, every other page a folder of its own.
     path: slug === 'index' ? '' : `${slug}/`,
     title: data.title,
+    // A shorter name for the menu, when the title is too long for its column.
+    menu: data.menu ?? data.title,
     description: data.description,
     lead: data.lead,
     // A generated page is changed where it comes from, which its own text names.

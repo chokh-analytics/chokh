@@ -1,5 +1,6 @@
 ---
 title: Chokh, Plausible, Umami and GA4
+menu: Comparison
 lead: What each one is, what it costs, and what it does, from each product's own pages, read on 15 November 2026.
 description: A comparison of Chokh with Plausible, Umami and Google Analytics 4, every claim linked to the product's own documentation or pricing page.
 ---

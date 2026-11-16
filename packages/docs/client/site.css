@@ -255,6 +255,18 @@ kbd {
   padding: var(--s5) 0;
 }
 
+/* A box that scrolls cuts what reaches outside it, and the highlight of the
+   page you are on reaches left of the text by its padding. So the box itself
+   is moved left by that much and padded back, and the text stays in line with
+   the heading above it. The room on the right keeps the highlight clear of
+   the scrollbar on a short window. */
+.sidebar {
+  margin-left: calc(-1 * var(--s3));
+  padding-left: var(--s3);
+  padding-right: var(--s2);
+  scrollbar-width: thin;
+}
+
 .nav-group + .nav-group {
   margin-top: var(--s5);
 }
@@ -766,6 +778,8 @@ dialog::backdrop {
   .sidebar {
     position: static;
     max-height: none;
+    margin-left: 0;
+    padding-right: 0;
     border-bottom: 1px solid var(--line);
   }
 
