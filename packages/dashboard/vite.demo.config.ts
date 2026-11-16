@@ -8,8 +8,8 @@ import { defineConfig } from 'vite';
 // into dist-demo/, apart from the dashboard the server serves, which never
 // carries any of this.
 //
-//   DEMO_BASE=/chokh/demo/ pnpm --filter @chokh/dashboard build:demo
-const base = process.env.DEMO_BASE ?? '/chokh/demo/';
+//   DEMO_BASE=/demo/ pnpm --filter @chokh/dashboard build:demo
+const base = process.env.DEMO_BASE ?? '/demo/';
 
 export default defineConfig({
   plugins: [react()],

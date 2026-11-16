@@ -24,7 +24,7 @@ if (container === null) {
   throw new Error('Root element not found');
 }
 
-// The base path without its last slash, as the router wants it: /chokh/demo.
+// The base path without its last slash, as the router wants it: /demo.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 // The docs are the folder above the demo's.
 const docs = `${base.replace(/\/[^/]*$/, '')}/`;

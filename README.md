@@ -20,10 +20,10 @@ docker compose up
 
 Then open `http://localhost:4100`, register the first account and add a site.
 
-**[Docs](https://chokh-analytics.github.io/chokh/)** ·
-**[Demo](https://chokh-analytics.github.io/chokh/demo/)**, over invented data ·
-**[Compared with Plausible, Umami and GA4](https://chokh-analytics.github.io/chokh/compare/)** ·
-**[API](https://chokh-analytics.github.io/chokh/api/)**
+**[Docs](https://chokh.dev/)** ·
+**[Demo](https://chokh.dev/demo/)**, over invented data ·
+**[Compared with Plausible, Umami and GA4](https://chokh.dev/compare/)** ·
+**[API](https://chokh.dev/api/)**
 
 MIT core, `packages/ee` commercial: everything is free to host except a few
 features for larger teams, which need a licence key. [What is in each half](#what-is-free-and-what-is-not).

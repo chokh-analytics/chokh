@@ -8,8 +8,8 @@ a second.
 ## Commands
 
 ```bash
-pnpm --filter @chokh/docs site          # build into dist/, served under /chokh/
-pnpm --filter @chokh/docs site:serve    # serve dist/ on http://127.0.0.1:4120/chokh/
+pnpm --filter @chokh/docs site          # build into dist/, served at the root
+pnpm --filter @chokh/docs site:serve    # serve dist/ on http://127.0.0.1:4120/
 pnpm --filter @chokh/docs site:links    # every link inside the site arrives
 pnpm --filter @chokh/docs site:a11y     # Lighthouse accessibility, every page, phone and desktop, both themes
 pnpm --filter @chokh/docs test          # the generator's own cases
@@ -17,8 +17,9 @@ pnpm --filter @chokh/docs site:examples # compile every code sample against the 
 pnpm --filter @chokh/docs site:generate # rewrite the pages that come from the code (--check to compare)
 ```
 
-`DOCS_BASE=/` builds it for a domain of its own instead of
-`https://chokh-analytics.github.io/chokh/`.
+The site is built for its own domain, `https://chokh.dev/`. `DOCS_BASE=/chokh/`
+builds it for a folder instead, as GitHub Pages serves a project without a
+domain (`https://chokh-analytics.github.io/chokh/`).
 
 ## Writing a page
 

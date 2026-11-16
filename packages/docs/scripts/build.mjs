@@ -2,8 +2,8 @@
 // stylesheet with hashed names, the two font files, a search index and a 404
 // page. A static tree, served as it is by any host.
 //
-//   pnpm --filter @chokh/docs site            # served under /chokh/
-//   DOCS_BASE=/ pnpm --filter @chokh/docs site
+//   pnpm --filter @chokh/docs site                      # served at the root, as on chokh.dev
+//   DOCS_BASE=/chokh/ pnpm --filter @chokh/docs site    # served under a folder
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -8,6 +8,11 @@
 # the deploy job is skipped: merging publishes nothing. Once both are set, a
 # push to main publishes, and so does a manual run of this workflow on main.
 #
+# The site is built for a domain of its own, https://chokh.dev/ (the base path
+# is the root, packages/docs/site.config.mjs). The domain is named in the
+# repository's Pages settings, not in a CNAME file: Pages ignores that file
+# when a workflow publishes.
+#
 # Every action is named by the commit it is at, with its version beside it,
 # as in release-packages.yml: a tag can be moved to other code, a commit
 # cannot.

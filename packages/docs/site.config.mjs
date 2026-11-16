@@ -2,10 +2,11 @@
 // pages. The build refuses a page that is not in the navigation and an entry
 // in the navigation that has no page, so the two cannot drift apart.
 
-// Where the site is served from, ending in a slash. GitHub Pages serves a
-// project's site under the repository's name, so the default is that; a
-// domain of its own later is this one setting (DOCS_BASE=/).
-const base = process.env.DOCS_BASE ?? '/chokh/';
+// Where the site is served from, ending in a slash. The site has a domain of
+// its own, https://chokh.dev/, so the default is the root. Without a domain,
+// GitHub Pages serves a project's site under the repository's name, and a
+// build for that is this one setting (DOCS_BASE=/chokh/).
+const base = process.env.DOCS_BASE ?? '/';
 if (!base.startsWith('/') || !base.endsWith('/')) {
   throw new Error(`DOCS_BASE has to start and end with a slash, and is ${JSON.stringify(base)}`);
 }
