@@ -87,4 +87,4 @@ If you are contributing on behalf of a company, put the company name in the
 "Signing as" column. The person adding the row represents that they are
 authorised to bind it.
 
-Questions: support@progsity.io.
+Questions: jakaria@bwjtech.com.

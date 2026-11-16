@@ -104,4 +104,4 @@ Conventional Commits. One change per pull request, with the smallest diff that
 does the job: no unrelated refactor, no cleanup outside the change. Say in the
 description what you verified and paste what it printed.
 
-Questions: support@progsity.io.
+Questions: jakaria@bwjtech.com.
