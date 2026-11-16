@@ -3,7 +3,8 @@
 // window refuses it. For each: the banner says what the demo is, the
 // dashboard draws the overview and Realtime from a link opened cold, a
 // report's CSV download is made in the page, a change is refused in the
-// envelope, nothing on the page fails, and no
+// envelope, Retention, Health and People each draw a report and no error
+// card, nothing on the page fails, and no
 // request for /api leaves the browser, because nothing answers there.
 //
 //   pnpm --filter @chokh/docs site:demo-check            # every browser installed
@@ -19,6 +20,16 @@ import { startServer } from './serve.mjs';
 const port = Number(process.env.PORT ?? 4122);
 const base = `http://127.0.0.1:${port}${site.base}demo/`;
 const ENGINES = { chromium, firefox, webkit };
+// Retention's three tabs, Health's three, and the people directory.
+const REPORTS = [
+  'retention',
+  'retention?view=activity',
+  'retention?view=attribution',
+  'health',
+  'health?view=errors',
+  'health?view=coverage',
+  'people',
+];
 const wanted = (process.env.DEMO_BROWSERS ?? 'chromium,firefox,webkit').split(',');
 
 // What a private window does to storage, as near as a page can be told:
@@ -91,6 +102,29 @@ try {
           });
           if (refused.status !== 403 || refused.code !== 'DEMO_READ_ONLY') {
             problems.push(`a change answered ${refused.status} ${refused.code}`);
+          }
+          // The reports with windows of their own, every tab, and the people
+          // directory, each opened cold: a route the fixture does not answer
+          // draws an error card saying "Nothing answers" with its address.
+          // (The callbacks run in the page, where document is a global.)
+          for (const report of REPORTS) {
+            await page.goto(`${base}${DEMO_SITE.id}/${report}`);
+            await page.getByRole('link', { name: 'Overview' }).first().waitFor({ timeout: 20_000 });
+            await page.waitForFunction(
+              () => globalThis.document.querySelectorAll('[class*="skeleton"]').length === 0,
+              undefined,
+              { timeout: 20_000 },
+            );
+            const drawn = await page.evaluate(() => ({
+              text: globalThis.document.body.innerText,
+              alerts: [...globalThis.document.querySelectorAll('main [role="alert"]')].map((node) => node.textContent),
+            }));
+            if (drawn.text.includes('Nothing answers')) {
+              const line = drawn.text.split('\n').find((each) => each.includes('Nothing answers'));
+              problems.push(`${report} drew "${line?.trim()}"`);
+            } else if (drawn.alerts.length > 0) {
+              problems.push(`${report} drew an error: ${drawn.alerts[0]?.trim().slice(0, 80)}`);
+            }
           }
         } catch (error) {
           problems.push(error instanceof Error ? error.message.split('\n')[0] : String(error));

@@ -1,4 +1,4 @@
-// The thirty-four pictures: seventeen views, two themes.
+// The thirty-eight pictures: nineteen views, two themes.
 //
 // A developer decides in about ten seconds of screenshots whether a dashboard
 // is worth installing, so these are a deliverable rather than a debugging aid,
@@ -22,7 +22,7 @@ const OUT = resolve(HERE, '..', 'screenshots');
 // The ones the README and the docs' Features page carry, and every one of
 // them is embedded in one or the other: a picture committed and referenced
 // from nowhere is a file nobody can find and nobody can delete. All
-// thirty-four are taken every run and the rest are not committed, because a
+// thirty-eight are taken every run and the rest are not committed, because a
 // picture on a page has to be in the repository to be on the page and the
 // others are a regenerable command away. The Features page shows a view in
 // the reader's own theme, so the views it carries are here in both.
@@ -46,6 +46,10 @@ const README_SHOTS = new Map([
   ['15-team-light', 'dashboard-team-light.png'],
   ['15-team-dark', 'dashboard-team-dark.png'],
   ['16-audit-dark', 'dashboard-audit-dark.png'],
+  ['18-retention-light', 'dashboard-retention-light.png'],
+  ['18-retention-dark', 'dashboard-retention-dark.png'],
+  ['19-health-light', 'dashboard-health-light.png'],
+  ['19-health-dark', 'dashboard-health-dark.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser
 // suite drives never take each other's place: a screenshot of live data is a
@@ -90,6 +94,12 @@ const PAGES = [
     path: '/invite#chi_an-invented-token-for-the-picture-000000000000',
     guard: 'main form',
   },
+  // Who comes back (AN-PPL01): twelve weekly cohorts, the grid shaded by the
+  // share of each that returned.
+  { name: '18-retention', path: `/${SITE}/retention` },
+  // Page speed (AN-VIT01): the five vitals at the 75th percentile, by device,
+  // and the slow pages.
+  { name: '19-health', path: `/${SITE}/health` },
 ];
 const THEMES = ['light', 'dark'];
 

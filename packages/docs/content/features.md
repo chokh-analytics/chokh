@@ -85,7 +85,7 @@ report to the visits that saw it.
 
 ## Who comes back
 
-<p class="feature-meta"><span class="tag">Free</span></p>
+<p class="feature-meta"><span class="tag">Free</span> <a href="../demo/s_demo/retention/">Open it in the demo</a></p>
 
 - **Cohorts**: people grouped by the week or month they were first seen, and
   the share of each group that returned in every later one.
@@ -97,6 +97,8 @@ report to the visits that saw it.
 It needs visitor ids that last, which is [a setting of the
 site](/quickstart/#what-is-counted-and-what-is-kept); on a cookieless site
 the report says why nobody is seen to return.
+
+<a class="shot" href="../demo/s_demo/retention/" aria-label="Open Retention in the demo"><img class="shot-light" src="../images/dashboard-retention-light.png" width="1440" height="1100" loading="lazy" alt="Retention: twelve weekly cohorts as a grid, each row the people first seen that week and each cell the share of them who came back in a later week, shaded by that share."><img class="shot-dark" src="../images/dashboard-retention-dark.png" width="1440" height="1100" loading="lazy" alt="The same cohort grid in the dark theme."></a>
 
 ## People you identify
 
@@ -113,12 +115,14 @@ log.
 
 ## Page speed and errors
 
-<p class="feature-meta"><span class="tag">Free</span></p>
+<p class="feature-meta"><span class="tag">Free</span> <a href="../demo/s_demo/health/">Open it in the demo</a></p>
 
 Core Web Vitals as your own visitors met them (LCP, INP, CLS, FCP and TTFB),
 by page and by kind of device, and the JavaScript errors their browsers
 raised. Each is a small script of its own, loaded only on a site that asks
 for it, so a site that does not want them pays nothing for them.
+
+<a class="shot" href="../demo/s_demo/health/" aria-label="Open Health in the demo"><img class="shot-light" src="../images/dashboard-health-light.png" width="1440" height="1100" loading="lazy" alt="Health: LCP, INP and CLS at the 75th percentile, each rated with the share of good, needs improvement and poor page loads and a figure per device, then FCP and TTFB, then the slow pages."><img class="shot-dark" src="../images/dashboard-health-dark.png" width="1440" height="1100" loading="lazy" alt="The same Health report in the dark theme."></a>
 
 ## Segments, routes and marks on the chart
 

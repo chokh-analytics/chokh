@@ -15,14 +15,15 @@ export default defineConfig({
   plugins: [react()],
   base,
   resolve: {
-    // The fixture takes four functions of the journeys report from the
-    // store's index, which also holds the server's code (node:crypto among
-    // it). In the browser, the index means the one file those four live in,
-    // which needs nothing but the contract the dashboard already reads.
+    // The fixture takes the functions of the journeys, retention and health
+    // reports from the store's index, which also holds the server's code
+    // (node:crypto among it). In the browser, the index means the three files
+    // those functions live in (e2e/store-browser.mjs), which need nothing but
+    // the contract and the calendar the dashboard already reads.
     alias: [
       {
         find: /^@chokh\/store$/,
-        replacement: fileURLToPath(new URL('../store/src/journey.ts', import.meta.url)),
+        replacement: fileURLToPath(new URL('./e2e/store-browser.mjs', import.meta.url)),
       },
     ],
   },

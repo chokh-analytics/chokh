@@ -12,7 +12,24 @@
 // fixture that answers a shape the server never sends proves the dashboard
 // against a server that does not exist.
 
-import { finishJourneys, journeyPath, journeyStepCounts, topJourneyPages } from '@chokh/store';
+import {
+  VITAL_METRICS,
+  activityPlan,
+  addCohortCell,
+  cohortPlan,
+  finishActivity,
+  finishAttribution,
+  finishCohorts,
+  finishJourneys,
+  foldCoverage,
+  foldErrors,
+  foldVitals,
+  journeyPath,
+  journeyStepCounts,
+  powerMinDays,
+  topJourneyPages,
+  vitalBucket,
+} from '@chokh/store';
 
 import { DEMO_SITE } from './demo-site.mjs';
 
@@ -31,6 +48,10 @@ export const SITE = {
     retentionDays: 180,
     timezone: 'Asia/Dhaka',
     allowUnsignedIdentify: false,
+    // JavaScript errors are collected, with their stacks, so Health has its
+    // errors to show (AN-VIT01).
+    errorCapture: true,
+    errorStacks: true,
     excludeIps: [],
     excludePaths: [],
     excludeQueryParams: [],
@@ -640,4 +661,546 @@ export function properties(event, property) {
     })),
     rawOnly: true,
   };
+}
+
+// ------------------------------------------------- retention (AN-PPL01)
+//
+// Each retention and health read takes its own window, which the page works
+// out from its own clock: the frozen one in the screenshots, the reader's in
+// the demo. So these answer the window they are asked, and every number goes
+// through the store's own functions (the plan, then the finish or the fold),
+// so the shape is the one the routes answer and the buckets are the site's
+// calendar. A window ends at the end of the site's today, and these reads take
+// the last instant before it as now: today is still running, and so is the
+// week or the month it is in, as on a real install.
+
+const TZ = SITE.settings.timezone;
+const HOUR = 3_600_000;
+
+// A small fixed wobble, so no two cells of a grid read the same and no run of
+// the fixture differs from the last.
+function wobble(seed, size) {
+  return ((((seed * 2_654_435_761) >>> 0) % 1_000) / 1_000 - 0.5) * 2 * size;
+}
+
+// A whole split into whole parts by weight, the parts adding up to exactly
+// the whole (largest remainder), so a column of a report adds up.
+function share(total, weights) {
+  const sum = weights.reduce((acc, weight) => acc + weight, 0);
+  const exact = weights.map((weight) => (total * weight) / sum);
+  const parts = exact.map(Math.floor);
+  let left = total - parts.reduce((acc, part) => acc + part, 0);
+  const order = exact
+    .map((value, index) => ({ index, rest: value - Math.floor(value) }))
+    .sort((a, b) => b.rest - a.rest || a.index - b.index);
+  for (const { index } of order) {
+    if (left <= 0) break;
+    parts[index] += 1;
+    left -= 1;
+  }
+  return parts;
+}
+
+// The start of the site's today in a window that ends with it: a time a row
+// was last seen is put before it, so it is never in the reader's future.
+function startOfLastDay(to) {
+  const plan = activityPlan({ siteId: SITE.id, from: to - 1, to }, TZ);
+  return plan.starts[plan.starts.length - 1];
+}
+
+// Of the people first seen in a week (or a month), the share back in each
+// later one: a steep first drop, then a floor of regulars, which is what a
+// shop with a subscription looks like. About two in three of a week's 15.2K
+// visitors are new, so a weekly cohort is near 9.8K.
+const COHORT_SHAPE = {
+  week: { size: 9_800, first: 0.155, keep: 0.68, floor: 0.034 },
+  month: { size: 38_500, first: 0.21, keep: 0.62, floor: 0.052 },
+};
+
+export function cohorts(from, to, interval) {
+  const plan = cohortPlan({ siteId: SITE.id, from, to, interval }, TZ);
+  const now = to - 1;
+  const shape = COHORT_SHAPE[interval];
+  const last = plan.starts.length - 1;
+  // The bucket still running has seen only part of its people.
+  const elapsed = (bucket) =>
+    Math.min(1, (now - plan.starts[bucket]) / (plan.ends[bucket] - plan.starts[bucket]));
+  const counts = new Map();
+  plan.starts.forEach((_start, cohort) => {
+    const grown = 0.88 + (0.12 * cohort) / Math.max(1, last);
+    const size = Math.round(shape.size * grown * (1 + wobble(cohort + 1, 0.05)) * elapsed(cohort));
+    addCohortCell(counts, cohort, cohort, size);
+    for (let bucket = cohort + 1; bucket <= last; bucket += 1) {
+      const k = bucket - cohort;
+      const rate = shape.floor + (shape.first - shape.floor) * shape.keep ** (k - 1);
+      const back = Math.round(size * rate * (1 + wobble(cohort * 31 + k, 0.09)) * elapsed(bucket));
+      addCohortCell(counts, cohort, bucket, back);
+    }
+  });
+  return finishCohorts(plan, counts, now);
+}
+
+// The overview's week, Monday first, as the shape of every week.
+const WEEKDAY = [2_140, 2_410, 2_260, 2_580, 2_890, 1_620, 1_340];
+
+// How many days of the range people came on: most once, a few on many. The
+// weights are the curve's shape; the visitors are worked out from them, so the
+// person-days the curve holds are the days' own visitors added up. The second
+// term is the regulars, thinning out towards every day of the window.
+function curveWeights(days) {
+  return Array.from({ length: days }, (_value, index) => 0.47 ** index + 0.0016 * 0.94 ** index);
+}
+
+export function activity(from, to) {
+  const plan = activityPlan({ siteId: SITE.id, from, to }, TZ);
+  const now = to - 1;
+  // Every day the plan reads, the month before the range included.
+  const all = plan.starts.map((start, index) => {
+    // Monday is 0, read at the site's noon.
+    const weekday = (new Date(start + 12 * HOUR).getUTCDay() + 6) % 7;
+    const trend = 0.92 + (0.08 * index) / plan.starts.length;
+    const running = plan.ends[index] > now ? 0.6 : 1;
+    return Math.round(WEEKDAY[weekday] * 1.04 * trend * (1 + wobble(index + 7, 0.06)) * running);
+  });
+  const sum = (end, width) =>
+    all.slice(Math.max(0, end - width + 1), end + 1).reduce((acc, value) => acc + value, 0);
+  const tally = { dau: [], wau: [], mau: [], curve: [], visitors: 0, returning: 0 };
+  for (let day = 0; day < plan.days; day += 1) {
+    const at = plan.offset + day;
+    tally.dau.push(all[at]);
+    // Some of a week's people come on more than one day of it, so a week
+    // is the overview's 15.2K; more of a month's do.
+    tally.wau.push(Math.round(sum(at, 7) * 0.96));
+    tally.mau.push(Math.round(sum(at, 30) * 0.74));
+  }
+  const personDays = tally.dau.reduce((acc, value) => acc + value, 0);
+  const weights = curveWeights(plan.days);
+  const meanDays =
+    weights.reduce((acc, weight, index) => acc + weight * (index + 1), 0) /
+    weights.reduce((acc, weight) => acc + weight, 0);
+  tally.visitors = Math.round(personDays / meanDays);
+  tally.curve = share(tally.visitors, weights);
+  // Everybody on more than one day came back, and so did a fifth of the
+  // one-day people, first seen before the range began.
+  tally.returning = tally.visitors - tally.curve[0] + Math.round(tally.curve[0] * 0.2);
+  return finishActivity(plan, tally, now);
+}
+
+// ------------------------------------------------- people (AN-PPL02)
+
+// Invented people, plainly: first and last names put together for this file,
+// at addresses under .example, which can never be anybody's.
+const NAMED = [
+  ['Tamsin Holloway', 'pro'],
+  ['Idris Fenwick', 'free'],
+  ['Noor Abernethy', 'pro'],
+  ['Oskar Ludlow', 'free'],
+  ['Priya Marchetti', 'team'],
+  ['Wren Ashdown', 'pro'],
+  ['Kofi Brightwell', 'free'],
+  ['Lena Quayle', 'pro'],
+  ['Matteo Corrigan', 'free'],
+  ['Sabine Okonjo', 'team'],
+  ['Hugo Pemberly', 'free'],
+  ['Yara Castellan', 'pro'],
+  ['Felix Ravenscroft', 'free'],
+  ['Amara Lindqvist', 'pro'],
+  ['Desmond Achterberg', 'free'],
+  ['Ines Vanterpool', 'team'],
+  ['Rohan Kestrel', 'free'],
+  ['Mei Thornbury', 'pro'],
+  ['Bastian Okoro', 'free'],
+  ['Clio Wetherell', 'pro'],
+  ['Teodor Marchbank', 'free'],
+  ['Zainab Ellery', 'pro'],
+];
+
+const DEVICE_NAMES = ROWS.agent.map((agent) => `${agent.browser} on ${agent.os}`);
+// The profile the README shows, as its row: anonymous, as its own page draws it.
+const PROFILE_ROW = 3;
+
+// Twenty-eight people, most recent first. The first three are online now
+// (the ids Realtime lists), so the directory marks them.
+export const PEOPLE = Array.from({ length: 28 }, (_row, index) => {
+  if (index === PROFILE_ROW) {
+    return {
+      visitorId: PROFILE.visitorId,
+      firstSeenAt: PROFILE.firstSeenAt,
+      lastSeenAt: PROFILE.lastSeenAt,
+      sessions: PROFILE.sessions,
+      pageviews: PROFILE.pageviews,
+      homeGeo: PROFILE.homeGeo,
+      devices: PROFILE.devices,
+      ips: [],
+    };
+  }
+  const place = PLACES[(index * 3) % PLACES.length];
+  const sessions = Math.max(1, Math.round(38 / (1 + index * 0.35)));
+  const row = {
+    visitorId:
+      index < 3 ? visitor(index, 0).visitorId : `v_${(index * 104_729 + 7_919).toString(36)}q`,
+    firstSeenAt: NOW - (12 + ((index * 17) % 160)) * 86_400_000,
+    lastSeenAt: NOW - (index < 3 ? index * 60_000 : (index * index * 0.6 + index) * HOUR),
+    sessions,
+    pageviews: Math.round(sessions * (2.1 + (index % 4) * 0.4)),
+    homeGeo: { country: place.country, city: place.city, lat: place.lat, lon: place.lon },
+    devices: [DEVICE_NAMES[index % DEVICE_NAMES.length]],
+    ips: [],
+  };
+  if (index % 7 === 5) {
+    return row;
+  }
+  // One name per person, in order: the named rows before this one each took
+  // one, and a row past the names stays anonymous.
+  const before = Array.from({ length: index }, (_each, at) => at).filter(
+    (at) => at !== PROFILE_ROW && at % 7 !== 5,
+  ).length;
+  const named = NAMED[before];
+  if (named === undefined) {
+    return row;
+  }
+  const [name, plan] = named;
+  const email = `${name.toLowerCase().replace(' ', '.')}@quillmoor.example`;
+  return { ...row, userId: `cus_${4_100 + index * 37}`, traits: { name, email, plan } };
+});
+
+// One page of the directory. The search matches a piece of the visitor id,
+// the userId or any trait value, as the store's does; the cursor is where the
+// page before stopped.
+export function peoplePage({ limit, cursor, identifiedOnly, q }) {
+  const wanted = (q ?? '').toLowerCase();
+  const rows = PEOPLE.filter((row) => !identifiedOnly || row.userId !== undefined).filter(
+    (row) =>
+      wanted === '' ||
+      [row.visitorId, row.userId ?? '', ...Object.values(row.traits ?? {})].some((value) =>
+        value.toLowerCase().includes(wanted),
+      ),
+  );
+  const start = cursor !== null && cursor.startsWith('c_') ? Number(cursor.slice(2)) || 0 : 0;
+  const people = rows.slice(start, start + limit);
+  return { people, next: start + limit < rows.length ? `c_${start + limit}` : null };
+}
+
+// The most active people of a window: the regulars of the directory, on more
+// days the longer the window, each last seen before the window's last day.
+export function powerUsers(from, to, limit) {
+  const plan = activityPlan({ siteId: SITE.id, from, to }, TZ);
+  const minDays = powerMinDays(plan.days);
+  const today = startOfLastDay(to);
+  const regulars = PEOPLE.filter((row) => row.sessions > 6).slice(0, limit);
+  const top = Math.round(plan.days * 0.82);
+  const people = regulars.map((row, index) => {
+    const activeDays = Math.max(minDays, top - Math.round((index * (top - minDays)) / regulars.length));
+    // The directory's own time where the window holds it, as in the
+    // pictures; otherwise the evening before the window's last day.
+    const inside = row.lastSeenAt >= from && row.lastSeenAt < to;
+    return {
+      ...row,
+      lastSeenAt: inside ? row.lastSeenAt : today - (index * 2 + 1) * HOUR,
+      activeDays,
+      visits: activeDays + Math.round(activeDays * (0.6 - index * 0.02)),
+    };
+  });
+  return { people, days: plan.days, minDays, rawOnly: true };
+}
+
+// ------------------------------------------------- attribution
+
+// What first brought the people who converted, and what brought the visit
+// they converted in, as weights of the first touch and of the last. Direct
+// gains in the last touch: people come back by typing the address, or from a
+// mail.
+const TOUCHES = {
+  channel: [
+    ['organic', 34, 26],
+    ['direct', 22, 38],
+    ['social', 16, 10],
+    ['referral', 12, 8],
+    ['ai', 9, 5],
+    ['email', 7, 13],
+  ],
+  referrer: [
+    ['', 30, 47],
+    ['google.com', 26, 21],
+    ['facebook.com', 14, 9],
+    ['chatgpt.com', 10, 6],
+    ['news.ycombinator.com', 8, 4],
+    ['linkedin.com', 7, 8],
+    ['t.co', 5, 5],
+  ],
+  utm_source: [
+    ['', 78, 70],
+    ['newsletter', 10, 17],
+    ['facebook', 8, 9],
+    ['partner', 4, 4],
+  ],
+  utm_medium: [
+    ['', 78, 70],
+    ['email', 10, 17],
+    ['social', 8, 9],
+    ['cpc', 4, 4],
+  ],
+  utm_campaign: [
+    ['', 80, 72],
+    ['launch', 9, 12],
+    ['ramadan-2026', 7, 11],
+    ['alumni', 4, 5],
+  ],
+  entry: [
+    ['/', 31, 36],
+    ['/shop/beans', 24, 18],
+    ['/subscriptions', 15, 24],
+    ['/menu', 12, 9],
+    ['/brew-guides', 11, 8],
+    ['/journal/autumn-blend', 7, 5],
+  ],
+};
+
+// Converters a week, as the events report and the goals report count them:
+// 930 signed up, 259 checked out.
+const CONVERTERS_A_WEEK = { g_signup: 930, g_checkout: 259 };
+
+export function attribution(from, to, goal, dim) {
+  const days = Math.max(1, Math.round((to - from) / 86_400_000));
+  // Each converter once over the whole range, so a longer one is a little
+  // less than its weeks added up.
+  const visitors = Math.round(((CONVERTERS_A_WEEK[goal.id] ?? 120) * days * 0.92) / 7);
+  const completions = Math.round(visitors * 1.18);
+  const rows = TOUCHES[dim];
+  const [first, last] = [1, 2].map((column) => {
+    const weights = rows.map((row) => row[column]);
+    const people = share(visitors, weights);
+    const times = share(completions, weights);
+    return new Map(rows.map((row, index) => [row[0], { visitors: people[index], completions: times[index] }]));
+  });
+  return finishAttribution(dim, goal, first, last);
+}
+
+// ------------------------------------------------- health (AN-VIT01)
+
+// The pages with a speed worth reading, how busy each is next to the home
+// page, and their medians on a desktop. The shop's photos make its page slow,
+// the journal shifts as its images arrive, and the events page is a heavy
+// embed.
+const VITAL_PAGES = [
+  ['/', 1, { LCP: 1_650, INP: 110, CLS: 0.03, FCP: 980, TTFB: 260 }],
+  ['/shop/beans', 0.69, { LCP: 2_700, INP: 230, CLS: 0.05, FCP: 1_350, TTFB: 340 }],
+  ['/menu', 0.48, { LCP: 1_900, INP: 95, CLS: 0.08, FCP: 1_100, TTFB: 280 }],
+  ['/subscriptions', 0.33, { LCP: 1_500, INP: 140, CLS: 0.02, FCP: 900, TTFB: 300 }],
+  ['/brew-guides', 0.23, { LCP: 2_150, INP: 90, CLS: 0.04, FCP: 1_200, TTFB: 250 }],
+  ['/events', 0.16, { LCP: 3_600, INP: 310, CLS: 0.06, FCP: 1_900, TTFB: 520 }],
+  ['/journal/autumn-blend', 0.11, { LCP: 2_400, INP: 85, CLS: 0.19, FCP: 1_250, TTFB: 240 }],
+  ['/about', 0.05, { LCP: 1_300, INP: 70, CLS: 0.01, FCP: 820, TTFB: 230 }],
+];
+
+// The share of the samples each kind of device sends, how much slower it is,
+// and how much more its layout shifts (a narrow screen reflows more).
+const VITAL_DEVICES = [
+  ['desktop', 0.38, 1, 0.8],
+  ['mobile', 0.55, 1.45, 1.25],
+  ['tablet', 0.07, 1.2, 1],
+];
+
+// The share of pageviews that report each metric: not every visit interacts,
+// so INP has the fewest.
+const VITAL_REACH = { LCP: 0.9, INP: 0.55, CLS: 0.92, FCP: 0.95, TTFB: 0.96 };
+
+// A spread around the median, as multiples of it and their weights, so the
+// p75 sits about a third above the median.
+const SPREAD = [
+  [0.45, 4],
+  [0.6, 8],
+  [0.75, 12],
+  [0.88, 14],
+  [1, 14],
+  [1.15, 12],
+  [1.35, 10],
+  [1.6, 8],
+  [2, 5],
+  [2.7, 3],
+];
+
+// The home page's samples a week, on every device together.
+const VITAL_SAMPLES_A_WEEK = 3_900;
+
+export function vitals(from, to, device, sort) {
+  const days = Math.max(1, Math.round((to - from) / 86_400_000));
+  const cells = [];
+  VITAL_PAGES.forEach(([page, weight, medians], pageIndex) => {
+    for (const [name, deviceShare, slower, shifts] of VITAL_DEVICES) {
+      if (device !== null && device !== name) continue;
+      for (const metric of VITAL_METRICS) {
+        const samples = Math.round(
+          ((VITAL_SAMPLES_A_WEEK * days) / 7) * weight * deviceShare * VITAL_REACH[metric],
+        );
+        if (samples === 0) continue;
+        const counts = share(
+          samples,
+          SPREAD.map(([, n]) => n),
+        );
+        const histogram = new Map();
+        SPREAD.forEach(([factor], index) => {
+          const value =
+            medians[metric] *
+            (metric === 'CLS' ? shifts : slower) *
+            factor *
+            (1 + wobble(pageIndex * 13 + index, 0.04));
+          const q = vitalBucket(metric, value);
+          if (q !== null && counts[index] > 0) histogram.set(q, (histogram.get(q) ?? 0) + counts[index]);
+        });
+        cells.push({ page, device: name, metric, buckets: [...histogram].map(([q, n]) => ({ q, n })) });
+      }
+    }
+  });
+  return foldVitals(cells, sort);
+}
+
+// Four weeks of errors as the collector keeps them: a scrubbed message, the
+// newest row as its sample, and the pages and browsers it happened on. Each
+// has been happening since `since` days before the window's last day and was
+// last seen `lastHour` hours before that day began; a shorter window holds
+// the share of it that falls inside.
+const ERRORS = [
+  {
+    message: "TypeError: Cannot read properties of undefined (reading 'roast')",
+    count: 412,
+    visitors: 233,
+    pages: [['/shop/beans', 301], ['/subscriptions', 88], ['/shop/grinders', 23]],
+    browsers: [['Chrome', 260], ['Samsung Internet', 98], ['Edge', 54]],
+    sample: {
+      page: '/shop/beans',
+      browser: 'Chrome',
+      frame: 'https://quillmoor.example/assets/shop-3f9a1c.js:1:48211',
+      stack:
+        "TypeError: Cannot read properties of undefined (reading 'roast')\n    at roastLabel (https://quillmoor.example/assets/shop-3f9a1c.js:1:48211)\n    at Array.map (<anonymous>)\n    at renderBeans (https://quillmoor.example/assets/shop-3f9a1c.js:1:47902)",
+    },
+    since: 26,
+    lastHour: 2,
+  },
+  {
+    message: 'ResizeObserver loop completed with undelivered notifications.',
+    count: 288,
+    visitors: 190,
+    pages: [['/menu', 141], ['/brew-guides', 97], ['/', 50]],
+    browsers: [['Chrome', 172], ['Edge', 70], ['Firefox', 46]],
+    sample: { page: '/menu', browser: 'Chrome' },
+    since: 28,
+    lastHour: 5,
+  },
+  {
+    message: 'Unhandled rejection: TypeError: Failed to fetch',
+    count: 131,
+    visitors: 97,
+    pages: [['/checkout', 84], ['/subscriptions', 47]],
+    browsers: [['Safari', 79], ['Chrome', 52]],
+    sample: {
+      page: '/checkout',
+      browser: 'Safari',
+      frame: 'https://quillmoor.example/assets/checkout-81be02.js:1:9930',
+      stack:
+        'TypeError: Failed to fetch\n    at placeOrder (https://quillmoor.example/assets/checkout-81be02.js:1:9930)',
+    },
+    since: 9,
+    lastHour: 11,
+  },
+  {
+    message: 'ReferenceError: grindSizes is not defined',
+    count: 64,
+    visitors: 41,
+    pages: [['/brew-guides', 64]],
+    browsers: [['Firefox', 37], ['Safari', 27]],
+    sample: {
+      page: '/brew-guides',
+      browser: 'Firefox',
+      frame: 'https://quillmoor.example/assets/guides-c47d10.js:1:2210',
+      stack:
+        'ReferenceError: grindSizes is not defined\n    at pickGrind (https://quillmoor.example/assets/guides-c47d10.js:1:2210)',
+    },
+    since: 4,
+    lastHour: 20,
+  },
+  {
+    message: "SyntaxError: Unexpected token '<'",
+    count: 22,
+    visitors: 19,
+    pages: [['/events', 22]],
+    browsers: [['Safari', 22]],
+    sample: { page: '/events', browser: 'Safari' },
+    since: 15,
+    lastHour: 30,
+  },
+  {
+    message: 'Script error.',
+    count: 17,
+    visitors: 15,
+    pages: [['/', 11], ['/menu', 6]],
+    browsers: [['Safari', 17]],
+    sample: { page: '/', browser: 'Safari' },
+    since: 21,
+    lastHour: 44,
+  },
+];
+
+export function errors(from, to, limit) {
+  const days = Math.max(1, Math.round((to - from) / 86_400_000));
+  const today = startOfLastDay(to);
+  const kept = ERRORS.map((error) => ({
+    error,
+    // The part of its four weeks that falls inside the window.
+    scale: Math.min(days, error.since) / Math.min(28, error.since),
+  }));
+  const scaled = (n, scale) => Math.max(1, Math.round(n * scale));
+  const messages = kept.map(({ error, scale }) => {
+    const lastSeen = today - error.lastHour * HOUR;
+    return {
+      message: error.message,
+      count: scaled(error.count, scale),
+      visitors: scaled(error.visitors, scale),
+      firstSeen: Math.max(from, today - error.since * 86_400_000),
+      lastSeen,
+      sample: { at: lastSeen, ...error.sample },
+    };
+  });
+  const facet = (key) =>
+    kept.flatMap(({ error, scale }) =>
+      error[key].map(([value, n]) => ({
+        message: error.message,
+        key: value,
+        count: Math.max(1, Math.floor(n * scale)),
+      })),
+    );
+  return foldErrors(
+    {
+      total: messages.reduce((acc, row) => acc + row.count, 0),
+      // Some people met more than one of them.
+      visitors: Math.round(messages.reduce((acc, row) => acc + row.visitors, 0) * 0.86),
+      groupsTotal: messages.length,
+      messages,
+      pages: facet('pages'),
+      browsers: facet('browsers'),
+    },
+    limit,
+  );
+}
+
+// Of the customers the shop's own server named, the share no browser row
+// carries: about one in six, blocked or declined. Distinct people grow more
+// slowly than the window does.
+export function coverage(from, to) {
+  const days = Math.max(1, Math.round((to - from) / 86_400_000));
+  const people = Math.round(640 * (days / 28) ** 0.6);
+  const seen = Math.round(people * 0.83);
+  const browserOnly = Math.round(people * 0.12);
+  return foldCoverage([
+    ...Array.from({ length: people }, (_row, index) => ({
+      userId: `cus_s${index}`,
+      server: true,
+      browser: index < seen,
+    })),
+    ...Array.from({ length: browserOnly }, (_row, index) => ({
+      userId: `cus_b${index}`,
+      server: false,
+      browser: true,
+    })),
+  ]);
 }

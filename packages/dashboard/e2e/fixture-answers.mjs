@@ -21,13 +21,21 @@ import {
   TEAM_MEMBERS,
   PROFILE,
   REALTIME,
+  activity,
   aggregateFor,
+  attribution,
   breakdownFor,
+  cohorts,
+  coverage,
+  errors,
   funnelStats,
   goalStats,
   journeys,
+  peoplePage,
+  powerUsers,
   properties,
   timeseries,
+  vitals,
 } from './fixture-data.mjs';
 import { DEMO_SITE } from './demo-site.mjs';
 
@@ -42,6 +50,29 @@ function ok(data, meta) {
 function refuse(status, code, message) {
   return { status, body: { success: false, error: { code, message } } };
 }
+
+// The window a retention or health read was asked for, or null for one the
+// server would refuse.
+function windowOf(params) {
+  const from = Number(params.get('from'));
+  const to = Number(params.get('to'));
+  return Number.isFinite(from) && Number.isFinite(to) && to > from ? { from, to } : null;
+}
+
+// What a raw read of a window says about itself (rawMeta on the server).
+function rawMeta(window) {
+  return {
+    siteId: SITE.id,
+    timezone: SITE.settings.timezone,
+    from: window.from,
+    to: window.to,
+    retentionDays: SITE.settings.retentionDays,
+    visitorIdMode: SITE.settings.visitorIdMode,
+    rawOnly: true,
+  };
+}
+
+const BAD_RANGE = refuse(400, 'INVALID_RANGE', 'The range must be two instants, from before to');
 
 // A licence that names every feature, for the demo: every page then shows
 // what a licensed install shows, and the demo's banner says which are paid.
@@ -150,6 +181,84 @@ export function answer(path, params, { licensed = false, invite = false } = {}) 
     // No identity, which is the default an install has: the address column is
     // absent and the page says which permission would show it.
     return ok(REALTIME, { identity: false });
+  }
+  // Retention (AN-PPL01) and Health (AN-VIT01): each its own window, each
+  // answered for the window asked, as the server does. The demo's owner holds
+  // read:identity, so the reads that name people name them.
+  if (path.endsWith('/stats/cohorts')) {
+    const window = windowOf(params);
+    const interval = params.get('interval') === 'month' ? 'month' : 'week';
+    return window === null
+      ? BAD_RANGE
+      : ok(cohorts(window.from, window.to, interval), { ...rawMeta(window), interval });
+  }
+  if (path.endsWith('/stats/activity')) {
+    const window = windowOf(params);
+    return window === null ? BAD_RANGE : ok(activity(window.from, window.to), rawMeta(window));
+  }
+  if (path.endsWith('/stats/power-users')) {
+    const window = windowOf(params);
+    const limit = Number(params.get('limit') ?? 20);
+    return window === null
+      ? BAD_RANGE
+      : ok(powerUsers(window.from, window.to, limit), { ...rawMeta(window), identity: true, limit });
+  }
+  if (path.endsWith('/stats/attribution')) {
+    const window = windowOf(params);
+    const goal = GOALS.find((candidate) => candidate.id === params.get('goal'));
+    const dim = params.get('dim') ?? 'channel';
+    if (window === null) {
+      return BAD_RANGE;
+    }
+    if (goal === undefined) {
+      return refuse(404, 'GOAL_NOT_FOUND', 'No goal of this site has that id');
+    }
+    return ok(attribution(window.from, window.to, goal, dim), { ...rawMeta(window), goal: goal.id, dim });
+  }
+  if (path.endsWith('/stats/vitals')) {
+    const window = windowOf(params);
+    const sort = params.get('sort') ?? 'LCP';
+    const device = params.get('device');
+    return window === null
+      ? BAD_RANGE
+      : ok(vitals(window.from, window.to, device, sort), { ...rawMeta(window), sort, device });
+  }
+  if (path.endsWith('/stats/errors')) {
+    const window = windowOf(params);
+    const limit = Number(params.get('limit') ?? 50);
+    return window === null
+      ? BAD_RANGE
+      : ok(errors(window.from, window.to, limit), {
+          ...rawMeta(window),
+          limit,
+          errorCapture: SITE.settings.errorCapture === true,
+          errorStacks: SITE.settings.errorStacks === true,
+        });
+  }
+  if (path.endsWith('/stats/coverage')) {
+    const window = windowOf(params);
+    return window === null ? BAD_RANGE : ok(coverage(window.from, window.to), rawMeta(window));
+  }
+  // The people directory (AN-PPL02), a page at a time.
+  if (path.endsWith('/people')) {
+    const limit = Number(params.get('limit') ?? 50);
+    return ok(
+      peoplePage({
+        limit,
+        cursor: params.get('cursor'),
+        identifiedOnly: params.get('identifiedOnly') === 'true',
+        q: params.get('q'),
+      }),
+      { identity: true, limit },
+    );
+  }
+  // No saved segments yet, which is what a site has until somebody saves one.
+  if (path.endsWith('/segments')) {
+    return ok({ segments: [] }, { siteId: SITE.id, max: 50 });
+  }
+  // The signed-in account's single sign-on connection: none, with sign-on off.
+  if (path === '/api/ee/oidc/identity') {
+    return ok({ enabled: false, connected: false, canDisconnect: false });
   }
   if (path.includes('/visitors/')) {
     return ok(PROFILE, { identity: false });

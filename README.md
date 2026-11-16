@@ -311,7 +311,7 @@ takes a key the browser already uses.
 
 ```bash
 pnpm build
-pnpm --filter @chokh/dashboard run shots   # thirty-four screenshots, seventeen views in two themes
+pnpm --filter @chokh/dashboard run shots   # thirty-eight screenshots, nineteen views in two themes
 pnpm --filter @chokh/dashboard run a11y    # the audit above, as JSON
 pnpm --filter @chokh/dashboard run test:e2e
 ```
