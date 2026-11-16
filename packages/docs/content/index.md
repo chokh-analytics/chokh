@@ -14,6 +14,13 @@ and keeps what it counts there. By default it sets no cookie and stores no full
 address; a site that signs people in can choose a persistent visitor id and
 full addresses instead, as settings of that site.
 
+<div class="cards">
+<a class="card" href="features/"><strong>The reports are all free</strong><span>Funnels, retention, identified people and the API are in the MIT core, with no plan to buy.</span></a>
+<a class="card" href="quickstart/#what-is-counted-and-what-is-kept"><strong>Your server, your data</strong><span>No cookie by default, and nothing is sent to us or to anybody else.</span></a>
+<a class="card" href="self-hosting/"><strong>One process, your database</strong><span>One command starts all of it, on PostgreSQL or on MongoDB.</span></a>
+<a class="card" href="compare/"><strong>Checked against the others</strong><span>Plausible, Umami and GA4, every claim linked to their own pages.</span></a>
+</div>
+
 ## Run it
 
 Docker Compose starts the dashboard and the collector on
@@ -67,6 +74,8 @@ address your install answers on:
   you identify by your own id.
 - Web vitals and JavaScript errors.
 - A JSON API for all of it, a CSV export, and a live stream.
+
+[Every feature, with a picture of each](/features/).
 
 ## Free, and what is paid
 

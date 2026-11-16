@@ -21,6 +21,7 @@ docker compose up
 Then open `http://localhost:4100`, register the first account and add a site.
 
 **[Docs](https://chokh.dev/)** ·
+**[Features](https://chokh.dev/features/)** ·
 **[Demo](https://chokh.dev/demo/)**, over invented data ·
 **[Compared with Plausible, Umami and GA4](https://chokh.dev/compare/)** ·
 **[API](https://chokh.dev/api/)**

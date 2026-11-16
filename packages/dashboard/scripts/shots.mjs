@@ -19,23 +19,32 @@ import { startFixture } from '../e2e/serve.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = resolve(HERE, '..', 'screenshots');
-// The ones the README carries, and every one of them is embedded in it: a
-// picture committed and referenced from nowhere is a file nobody can find and
-// nobody can delete. All thirty-four are taken every run and the rest are not
-// committed, because a README picture has to be in the repository to be a
-// README picture and the others are a regenerable command away.
+// The ones the README and the docs' Features page carry, and every one of
+// them is embedded in one or the other: a picture committed and referenced
+// from nowhere is a file nobody can find and nobody can delete. All
+// thirty-four are taken every run and the rest are not committed, because a
+// picture on a page has to be in the repository to be on the page and the
+// others are a regenerable command away. The Features page shows a view in
+// the reader's own theme, so the views it carries are here in both.
 const README_OUT = resolve(HERE, '..', '..', '..', 'docs', 'images');
 const README_SHOTS = new Map([
   ['01-overview-light', 'dashboard-overview-light.png'],
   ['01-overview-dark', 'dashboard-overview-dark.png'],
+  ['02-realtime-light', 'dashboard-realtime-light.png'],
   ['02-realtime-dark', 'dashboard-realtime-dark.png'],
   ['05-geo-light', 'dashboard-geo-light.png'],
+  ['05-geo-dark', 'dashboard-geo-dark.png'],
+  ['07-people-light', 'dashboard-people-light.png'],
   ['07-people-dark', 'dashboard-people-dark.png'],
   ['08-events-dark', 'dashboard-events-dark.png'],
   ['09-goals-light', 'dashboard-goals-light.png'],
+  ['09-goals-dark', 'dashboard-goals-dark.png'],
   ['10-funnels-light', 'dashboard-funnels-light.png'],
+  ['10-funnels-dark', 'dashboard-funnels-dark.png'],
+  ['11-journeys-light', 'dashboard-journeys-light.png'],
   ['11-journeys-dark', 'dashboard-journeys-dark.png'],
   ['15-team-light', 'dashboard-team-light.png'],
+  ['15-team-dark', 'dashboard-team-dark.png'],
   ['16-audit-dark', 'dashboard-audit-dark.png'],
 ]);
 // A port of its own, so the frozen fixture and the real server the browser

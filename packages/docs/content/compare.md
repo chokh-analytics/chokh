@@ -18,6 +18,39 @@ data on their own server, and still have funnels, retention, identified
 people and an API without a paid plan. If you would rather not run a server,
 each of the other three has a hosted service and Chokh has none.
 
+## Where Chokh is ahead, and where it is not
+
+Each line here is a row of the tables below, said in a sentence; the sources
+are in the rows.
+
+Where Chokh is ahead:
+
+- **Funnels and the stats API are in the free core.** Plausible's pricing
+  page puts both on its Business plan, and funnels are not in its Community
+  Edition; Umami's API is on its Pro plan.
+- **Identified people and retention cohorts are in the free core too**,
+  beside events and goals. Plausible's pages did not state either.
+- **One database, and it may be one you already run**: PostgreSQL or
+  MongoDB. Plausible's Community Edition needs PostgreSQL and ClickHouse.
+- **Signing in from your own application is free.** Plausible and Umami put
+  single sign-on on their Enterprise plans.
+- **Against Google Analytics 4**: no cookie by default where GA4 sets two for
+  two years each, raw data kept for up to 3650 days where GA4 keeps 2 or 14
+  months, and a script of 2,873 bytes where GA4's is 155,023.
+- **History comes with you** from Plausible, Umami and GA4.
+
+Where it is not:
+
+- **There is no hosted Chokh.** You run a server. All three others will run
+  it for you, and Umami and GA4 have a free tier.
+- **Plausible's script is smaller**: 1,285 bytes against 2,873.
+- **GA4 exports to BigQuery.** Chokh exports CSV and has an API.
+- **Plausible's plans keep data with no limit.** On Chokh the limit is
+  yours to set, and the disk is yours to buy.
+- **Chokh is before its 1.0**, and its API may still change.
+- **Four features need a key**: alerts, email digests, more than one team
+  and OpenID Connect ([licence](/licence/#what-is-in-each-half)).
+
 ## What each one is
 
 | | Chokh | Plausible | Umami | Google Analytics 4 |

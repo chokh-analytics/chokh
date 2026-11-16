@@ -859,7 +859,8 @@ dialog::backdrop {
   border-color: var(--accent);
 }
 
-.hero-shot {
+.hero-shot,
+.shot {
   display: block;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -867,10 +868,99 @@ dialog::backdrop {
   box-shadow: var(--shadow-sm);
 }
 
-.hero-shot img {
+.hero-shot img,
+.shot img {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* The Features page: a picture of a report in the reader's theme, which
+ * opens that report in the demo, and a line under each heading that says
+ * whether it is free and where to try it. */
+.shot {
+  margin: var(--s5) 0 var(--s6);
+  transition: border-color 120ms ease;
+}
+
+.shot:hover {
+  border-color: var(--accent);
+}
+
+.feature-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin: 0 0 var(--s4) !important;
+  font-size: 14px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px var(--s2);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--accent-soft);
+  border-radius: var(--r4);
+}
+
+.tag.pro {
+  color: var(--ink);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+
+/* The home page's four reasons, each a link to the page that shows it. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--s4);
+  margin: var(--s6) 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s4) var(--s5);
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.card strong {
+  font-size: 16px;
+}
+
+.card span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot,
+  .card {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
 }
 
 .shot-dark {
