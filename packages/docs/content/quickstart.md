@@ -9,9 +9,9 @@ You need a running Chokh and a site in it. If you have neither,
 Below, `my_site` is your site's id and `https://analytics.example.com` is the
 address your install answers on.
 
-> The npm packages `@chokh/next`, `@chokh/react` and `@chokh/sdk-node` are not
-> on npm yet: they are published with Chokh's first release. The script tag
-> works today, on any site.
+> The script tag works on any site. For a Next.js or React app, or to send
+> events from a server, there are the npm packages `@chokh/next`,
+> `@chokh/react` and `@chokh/sdk-node`.
 
 ## Add the tracker
 

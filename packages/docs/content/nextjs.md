@@ -5,7 +5,7 @@ description: Add Chokh to a Next.js App Router app with @chokh/next, in three fi
 ---
 
 `@chokh/next` works with Next 15 or 16, React 18.2 or newer, and Node 22 or
-newer. It is not on npm yet: it is published with Chokh's first release.
+newer. It is on npm, as are `@chokh/react` and `@chokh/sdk-node`.
 
 ```bash
 npm install @chokh/next

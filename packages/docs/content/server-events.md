@@ -5,8 +5,7 @@ description: Send events and identifies to Chokh from Node with @chokh/sdk-node.
 ---
 
 `@chokh/sdk-node` needs nothing beyond Node's own library, Node 22 or newer,
-and works as an ES module or CommonJS. It is not on npm yet: it is published
-with Chokh's first release.
+and works as an ES module or CommonJS. It is on npm.
 
 ```bash
 npm install @chokh/sdk-node
